@@ -1,0 +1,6 @@
+preview/source/*.jpg filter=lfs diff=lfs merge=lfs -text
+preview/variants/*.png filter=lfs diff=lfs merge=lfs -text
+preview/locales/**/*.png filter=lfs diff=lfs merge=lfs -text
+preview/preview-*.png filter=lfs diff=lfs merge=lfs -text
+preview/preview-terminal-demo.gif filter=lfs diff=lfs merge=lfs -text
+preview/preview-terminal-demo.mp4 filter=lfs diff=lfs merge=lfs -text
