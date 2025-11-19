@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cosmic Camera
+Comment=An application for the COSMIC™ desktop
+Type=Application
+Icon=com.github.pop-os.cosmic-app-template
+Exec=cosmic-camera %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=
