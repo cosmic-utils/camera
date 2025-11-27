@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=COSMIC Camera
+GenericName=Camera
+Comment=Take photos and videos with your camera
+Icon=io.github.freddyfunk.CosmicCamera
+Exec=cosmic-camera
+Terminal=false
+Categories=AudioVideo;Video;Recorder;Photography;
+Keywords=camera;webcam;photo;video;
+MimeType=
+StartupNotify=true
+X-GNOME-UsesNotifications=true

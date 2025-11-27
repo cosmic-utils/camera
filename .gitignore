@@ -13,3 +13,11 @@ debian/*
 !debian/rules
 !debian/source
 .idea
+.flatpak-builder
+.flatpak-venv
+.flatpak-version
+build-dir
+repo
+cargo-sources.json
+flatpak-cargo-generator.py
+*.flatpak

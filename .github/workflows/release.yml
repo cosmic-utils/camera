@@ -1,0 +1,414 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  FLATHUB_REPO: flathub/io.github.freddyfunk.CosmicCamera
+
+jobs:
+  # Build Linux binaries for multiple architectures
+  build-binaries:
+    name: Build Binary (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+          - target: riscv64gc-unknown-linux-gnu
+            arch: riscv64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target != 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libinput-dev \
+            libudev-dev \
+            libseat-dev
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build binary
+        run: |
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            cargo build --release --target ${{ matrix.target }}
+          else
+            cross build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/cosmic-camera dist/
+          cd dist
+          tar -czvf cosmic-camera-${{ matrix.arch }}-linux.tar.gz cosmic-camera
+          rm cosmic-camera
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: dist/cosmic-camera-${{ matrix.arch }}-linux.tar.gz
+          retention-days: 1
+
+  # Build Flatpak for x86_64 (native, fast)
+  build-flatpak-x86_64:
+    name: Build Flatpak (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Add Flathub remote
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install Flatpak SDK and runtime
+        run: |
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//24.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//24.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//24.08 --arch=x86_64
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Python dependencies for cargo-sources generator
+        run: pip install aiohttp toml tomlkit
+
+      - name: Build Flatpak bundle
+        run: just flatpak-bundle-arch x86_64
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-x86_64
+          path: cosmic-camera-x86_64.flatpak
+          retention-days: 1
+
+  # Build Flatpak for aarch64 (QEMU emulation, slow but necessary for releases)
+  build-flatpak-aarch64:
+    name: Build Flatpak (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Set up QEMU for multi-arch builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Add Flathub remote
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install Flatpak SDK and runtime
+        run: |
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//24.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//24.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//24.08 --arch=aarch64
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Python dependencies for cargo-sources generator
+        run: pip install aiohttp toml tomlkit
+
+      - name: Build Flatpak bundle
+        run: just flatpak-bundle-arch aarch64
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-aarch64
+          path: cosmic-camera-aarch64.flatpak
+          retention-days: 1
+
+  # Create the GitHub release with all artifacts
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-binaries, build-flatpak-x86_64, build-flatpak-aarch64]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          # Move binaries
+          mv artifacts/binary-x86_64/cosmic-camera-x86_64-linux.tar.gz release-assets/
+          mv artifacts/binary-aarch64/cosmic-camera-aarch64-linux.tar.gz release-assets/
+          mv artifacts/binary-riscv64/cosmic-camera-riscv64-linux.tar.gz release-assets/
+
+          # Move Flatpaks
+          mv artifacts/flatpak-x86_64/cosmic-camera-x86_64.flatpak release-assets/
+          mv artifacts/flatpak-aarch64/cosmic-camera-aarch64.flatpak release-assets/
+
+          # Create source archive
+          git archive --format=zip --prefix=cosmic-camera-${{ github.ref_name }}/ -o release-assets/cosmic-camera-${{ github.ref_name }}-source.zip HEAD
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          CURRENT_TAG="${{ github.ref_name }}"
+
+          # Start building release notes
+          cat << 'HEADER' > release_notes.md
+          ## What's Changed
+
+          HEADER
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "### Pull Requests" >> release_notes.md
+            echo "" >> release_notes.md
+
+            # Get merged PRs between tags using GitHub API
+            gh pr list \
+              --state merged \
+              --search "merged:>=$(git log -1 --format=%ci $PREVIOUS_TAG | cut -d' ' -f1)" \
+              --json number,title,author,url \
+              --jq '.[] | "* \(.title) by @\(.author.login) in \(.url)"' >> release_notes.md || echo "* No pull requests in this release" >> release_notes.md
+
+            echo "" >> release_notes.md
+            echo "### Issues Closed" >> release_notes.md
+            echo "" >> release_notes.md
+
+            # Get closed issues between tags
+            gh issue list \
+              --state closed \
+              --search "closed:>=$(git log -1 --format=%ci $PREVIOUS_TAG | cut -d' ' -f1)" \
+              --json number,title,url \
+              --jq '.[] | "* \(.title) - \(.url)"' >> release_notes.md || echo "* No issues closed in this release" >> release_notes.md
+
+            echo "" >> release_notes.md
+            echo "### New Contributors" >> release_notes.md
+            echo "" >> release_notes.md
+
+            # Get new contributors (authors who made their first contribution in this release)
+            # This is a simplified version - GitHub's auto-generated notes do this better
+            echo "Thank you to all contributors who made this release possible! 🎉" >> release_notes.md
+            echo "" >> release_notes.md
+
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${CURRENT_TAG}" >> release_notes.md
+          else
+            echo "This is the first release! 🎉" >> release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Flatpak (Recommended)" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "# Install from downloaded .flatpak file" >> release_notes.md
+          echo "flatpak install cosmic-camera-x86_64.flatpak" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Binary" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "# Extract and run" >> release_notes.md
+          echo "tar -xzf cosmic-camera-x86_64-linux.tar.gz" >> release_notes.md
+          echo "./cosmic-camera" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "## Assets" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "| File | Description |" >> release_notes.md
+          echo "|------|-------------|" >> release_notes.md
+          echo "| \`cosmic-camera-x86_64.flatpak\` | Flatpak bundle for x86_64 |" >> release_notes.md
+          echo "| \`cosmic-camera-aarch64.flatpak\` | Flatpak bundle for ARM64 |" >> release_notes.md
+          echo "| \`cosmic-camera-x86_64-linux.tar.gz\` | Linux binary for x86_64 |" >> release_notes.md
+          echo "| \`cosmic-camera-aarch64-linux.tar.gz\` | Linux binary for ARM64 |" >> release_notes.md
+          echo "| \`cosmic-camera-riscv64-linux.tar.gz\` | Linux binary for RISC-V 64 |" >> release_notes.md
+          echo "| \`cosmic-camera-${{ github.ref_name }}-source.zip\` | Source code |" >> release_notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "COSMIC Camera ${{ github.ref_name }}" \
+            --notes-file release_notes.md \
+            release-assets/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Publish to Flathub by updating the Flathub repository
+  # Requires FLATHUB_TOKEN secret: a GitHub PAT with write access to the Flathub repo
+  # To set up:
+  # 1. Create a PAT at https://github.com/settings/tokens with 'repo' scope
+  # 2. Add it as a repository secret named FLATHUB_TOKEN
+  # 3. Ensure the Flathub repo (flathub/com.system76.CosmicCamera) exists
+  publish-flathub:
+    name: Publish to Flathub
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Check for Flathub token
+        id: check_token
+        run: |
+          if [ -z "${{ secrets.FLATHUB_TOKEN }}" ]; then
+            echo "FLATHUB_TOKEN secret is not set. Skipping Flathub publish."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout source repository
+        if: steps.check_token.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          path: source
+
+      - name: Checkout Flathub repository
+        if: steps.check_token.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.FLATHUB_REPO }}
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          path: flathub
+
+      - name: Install Python dependencies
+        if: steps.check_token.outputs.skip != 'true'
+        run: pip install aiohttp toml tomlkit pyyaml
+
+      - name: Get release commit SHA
+        if: steps.check_token.outputs.skip != 'true'
+        id: get_sha
+        run: |
+          cd source
+          COMMIT_SHA=$(git rev-parse ${{ github.ref_name }})
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Release commit SHA: $COMMIT_SHA"
+
+      - name: Download flatpak-cargo-generator
+        if: steps.check_token.outputs.skip != 'true'
+        run: |
+          curl -sLo flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+
+      - name: Generate cargo-sources.json for Flathub
+        if: steps.check_token.outputs.skip != 'true'
+        run: |
+          cd source
+          python3 ../flatpak-cargo-generator.py Cargo.lock -o ../flathub/cargo-sources.json
+
+      - name: Update Flathub manifest
+        if: steps.check_token.outputs.skip != 'true'
+        run: |
+          cd flathub
+
+          # Create updated manifest with git source pointing to the release tag
+          python3 << 'EOF'
+          import yaml
+          import os
+
+          tag = "${{ github.ref_name }}"
+          commit = "${{ steps.get_sha.outputs.sha }}"
+          repo_url = "https://github.com/${{ github.repository }}.git"
+
+          # Read existing manifest
+          with open("io.github.freddyfunk.CosmicCamera.yml", "r") as f:
+              manifest = yaml.safe_load(f)
+
+          # Find the cosmic-camera module and update its sources
+          for module in manifest.get("modules", []):
+              if module.get("name") == "cosmic-camera":
+                  # Replace sources with git source and cargo-sources.json
+                  module["sources"] = [
+                      {
+                          "type": "git",
+                          "url": repo_url,
+                          "tag": tag,
+                          "commit": commit
+                      },
+                      "cargo-sources.json"
+                  ]
+                  break
+
+          # Write updated manifest
+          with open("io.github.freddyfunk.CosmicCamera.yml", "w") as f:
+              yaml.dump(manifest, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+          print(f"Updated manifest to use tag {tag} (commit {commit})")
+          EOF
+
+      - name: Commit and push to Flathub
+        if: steps.check_token.outputs.skip != 'true'
+        run: |
+          cd flathub
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add io.github.freddyfunk.CosmicCamera.yml cargo-sources.json
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Update to ${{ github.ref_name }}"
+          git push origin main
+
+          echo "Successfully pushed update to Flathub!"

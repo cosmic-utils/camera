@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: MPL-2.0
+
+//! Format picker UI view
+
+use crate::app::state::{AppModel, Message};
+use crate::constants::{formats, ui};
+use cosmic::Element;
+use cosmic::iced::{Alignment, Background, Border, Color, Length};
+use cosmic::widget;
+
+impl AppModel {
+    /// Build the iOS-style format picker overlay
+    ///
+    /// Shows resolution and framerate selection buttons in a semi-transparent overlay.
+    /// Click outside the picker to close.
+    pub fn build_format_picker(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+
+        // Group formats by resolution label
+        let (unique_resolutions, resolution_groups) = self.group_formats_by_label();
+
+        // Determine currently selected resolution for picker
+        let selected_res = self
+            .picker_selected_resolution
+            .or_else(|| self.active_format.as_ref().map(|f| f.width))
+            .unwrap_or(formats::DEFAULT_PICKER_RESOLUTION);
+
+        const BUTTON_WIDTH: f32 = ui::PICKER_BUTTON_WIDTH;
+
+        // Build resolution row
+        let mut res_row = widget::row()
+            .spacing(spacing.space_xxs)
+            .align_y(Alignment::Center)
+            .push(
+                widget::text("Resolution:")
+                    .size(ui::PICKER_LABEL_TEXT_SIZE)
+                    .width(Length::Fixed(ui::PICKER_LABEL_WIDTH)),
+            );
+
+        for &(res_label, width) in &unique_resolutions {
+            let centered_text = widget::container(widget::text(res_label))
+                .width(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center);
+
+            let button = widget::container(
+                widget::button::custom(centered_text)
+                    .on_press(Message::PickerSelectResolution(width))
+                    .class(if width == selected_res {
+                        cosmic::theme::Button::Suggested
+                    } else {
+                        cosmic::theme::Button::Standard
+                    })
+                    .width(Length::Fill),
+            )
+            .width(Length::Fixed(BUTTON_WIDTH));
+            res_row = res_row.push(button);
+        }
+
+        // Build framerate row
+        let mut fps_row = widget::row()
+            .spacing(spacing.space_xxs)
+            .align_y(Alignment::Center)
+            .push(
+                widget::text("Frame Rate:")
+                    .size(ui::PICKER_LABEL_TEXT_SIZE)
+                    .width(Length::Fixed(ui::PICKER_LABEL_WIDTH)),
+            );
+
+        if let Some(formats) = resolution_groups.get(&selected_res) {
+            use std::collections::HashSet;
+            let mut seen_fps: HashSet<u32> = HashSet::new();
+            let mut fps_buttons: Vec<(u32, usize)> = Vec::new();
+
+            // Collect unique framerates
+            for &(idx, fmt) in formats {
+                if let Some(fps) = fmt.framerate {
+                    if seen_fps.insert(fps) {
+                        fps_buttons.push((fps, idx));
+                    }
+                }
+            }
+
+            fps_buttons.sort_by_key(|(fps, _)| *fps);
+
+            // Create framerate buttons
+            for (fps, idx) in fps_buttons {
+                let centered_text = widget::container(widget::text(fps.to_string()))
+                    .width(Length::Fill)
+                    .align_x(cosmic::iced::alignment::Horizontal::Center);
+
+                // Check if this framerate matches the active format's framerate
+                // (not exact format match, since pixel format may differ)
+                let is_selected = self
+                    .active_format
+                    .as_ref()
+                    .and_then(|active| active.framerate)
+                    .map(|active_fps| active_fps == fps)
+                    .unwrap_or(false);
+
+                let button = widget::container(
+                    widget::button::custom(centered_text)
+                        .on_press(Message::PickerSelectFormat(idx))
+                        .class(if is_selected {
+                            cosmic::theme::Button::Suggested
+                        } else {
+                            cosmic::theme::Button::Standard
+                        })
+                        .width(Length::Fill),
+                )
+                .width(Length::Fixed(BUTTON_WIDTH));
+                fps_row = fps_row.push(button);
+            }
+        }
+
+        // Build picker panel with semi-transparent background
+        let picker_panel = widget::container(
+            widget::column()
+                .push(res_row)
+                .push(widget::vertical_space().height(spacing.space_s))
+                .push(fps_row)
+                .padding(spacing.space_xs),
+        )
+        .style(|_theme| widget::container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))),
+            border: Border {
+                radius: [ui::PICKER_BORDER_RADIUS; 4].into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        // Position picker and add click-outside-to-close
+        let picker_positioned = widget::row()
+            .push(picker_panel)
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+
+        widget::mouse_area(
+            widget::container(picker_positioned)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::CloseFormatPicker)
+        .into()
+    }
+}

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.freddyfunk.CosmicCamera</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <name>COSMIC Camera</name>
+  <summary>Capture photos and videos</summary>
+
+  <description>
+    <p>
+      COSMIC Camera is a modern, easy-to-use camera application designed for the COSMIC desktop.
+      Whether you need to snap a quick photo or record a video, COSMIC Camera provides a clean
+      and intuitive interface that stays out of your way.
+    </p>
+    <p>
+      Built with simplicity in mind, the app automatically detects your cameras and microphones
+      via PipeWire, letting you start capturing moments right away. When you need more control,
+      the settings panel gives you access to resolution, frame rate, and encoding options.
+    </p>
+    <p>Key features:</p>
+    <ul>
+      <li>Take photos and record videos with audio</li>
+      <li>Real-time preview filters to add creative effects</li>
+      <li>Hardware-accelerated video encoding (VA-API, NVENC, QuickSync)</li>
+      <li>Support for multiple cameras and audio devices</li>
+      <li>Adjustable resolution, frame rate, and bitrate quality</li>
+      <li>Theatre mode for distraction-free fullscreen preview</li>
+      <li>Built-in gallery to quickly view your captures</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.freddyfunk.CosmicCamera.desktop</launchable>
+
+  <provides>
+    <binary>cosmic-camera</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/FreddyFunk/cosmic-camera</url>
+  <url type="bugtracker">https://github.com/FreddyFunk/cosmic-camera/issues</url>
+  <url type="vcs-browser">https://github.com/FreddyFunk/cosmic-camera</url>
+
+  <developer id="io.github.freddyfunk">
+    <name>Frederic Laing</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <branding>
+    <color type="primary" scheme_preference="light">#62a0ea</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Photo mode with live camera preview</caption>
+      <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-002.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Apply real-time filters to your preview</caption>
+      <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-001.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Record videos with a simple interface</caption>
+      <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-003.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Configure camera, audio, and encoding settings</caption>
+      <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-004.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Theatre mode for fullscreen preview</caption>
+      <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-006.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.1.0" date="2025-01-21">
+      <description>
+        <p>Initial release of COSMIC Camera.</p>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Recorder</category>
+    <category>Photography</category>
+  </categories>
+
+  <keywords>
+    <keyword>camera</keyword>
+    <keyword>webcam</keyword>
+    <keyword>photo</keyword>
+    <keyword>video</keyword>
+    <keyword>recording</keyword>
+    <keyword>capture</keyword>
+    <keyword>cosmic</keyword>
+  </keywords>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+</component>
