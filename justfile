@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 name := 'cosmic-camera'
-export APPID := 'io.github.freddyfunk.CosmicCamera'
+export APPID := 'io.github.freddyfunk.cosmic-camera'
 
 rootdir := ''
 prefix := '/usr'

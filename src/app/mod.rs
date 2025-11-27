@@ -77,7 +77,7 @@ fn ensure_photo_directory() -> Result<std::path::PathBuf, std::io::Error> {
 
 const REPOSITORY: &str = "https://github.com/FreddyFunk/cosmic-camera";
 const APP_ICON: &[u8] = include_bytes!(
-    "../../resources/icons/hicolor/scalable/apps/io.github.freddyfunk.CosmicCamera.svg"
+    "../../resources/icons/hicolor/scalable/apps/io.github.freddyfunk.cosmic-camera.svg"
 );
 
 impl cosmic::Application for AppModel {
@@ -91,7 +91,7 @@ impl cosmic::Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "io.github.freddyfunk.CosmicCamera";
+    const APP_ID: &'static str = "io.github.freddyfunk.cosmic-camera";
 
     fn core(&self) -> &cosmic::Core {
         &self.core
