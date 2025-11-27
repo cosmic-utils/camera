@@ -26,7 +26,7 @@ This is a personal project by [Frederic Laing](https://github.com/FreddyFunk). I
 
 ```bash
 # Install from Flathub (when available)
-flatpak install flathub io.github.freddyfunk.CosmicCamera
+flatpak install flathub io.github.freddyfunk.cosmic-camera
 
 # Or install from a downloaded .flatpak bundle
 flatpak install cosmic-camera-x86_64.flatpak

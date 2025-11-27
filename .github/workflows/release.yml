@@ -7,7 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FLATHUB_REPO: flathub/io.github.freddyfunk.CosmicCamera
+  FLATHUB_REPO: flathub/io.github.freddyfunk.cosmic-camera
 
 jobs:
   # Build Linux binaries for multiple architectures
@@ -302,7 +302,7 @@ jobs:
   # To set up:
   # 1. Create a PAT at https://github.com/settings/tokens with 'repo' scope
   # 2. Add it as a repository secret named FLATHUB_TOKEN
-  # 3. Ensure the Flathub repo (flathub/com.system76.CosmicCamera) exists
+  # 3. Ensure the Flathub repo (flathub/com.system76.cosmic-camera) exists
   publish-flathub:
     name: Publish to Flathub
     runs-on: ubuntu-latest
@@ -373,7 +373,7 @@ jobs:
           repo_url = "https://github.com/${{ github.repository }}.git"
 
           # Read existing manifest
-          with open("io.github.freddyfunk.CosmicCamera.yml", "r") as f:
+          with open("io.github.freddyfunk.cosmic-camera.yml", "r") as f:
               manifest = yaml.safe_load(f)
 
           # Find the cosmic-camera module and update its sources
@@ -392,7 +392,7 @@ jobs:
                   break
 
           # Write updated manifest
-          with open("io.github.freddyfunk.CosmicCamera.yml", "w") as f:
+          with open("io.github.freddyfunk.cosmic-camera.yml", "w") as f:
               yaml.dump(manifest, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
           print(f"Updated manifest to use tag {tag} (commit {commit})")
@@ -405,7 +405,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add io.github.freddyfunk.CosmicCamera.yml cargo-sources.json
+          git add io.github.freddyfunk.cosmic-camera.yml cargo-sources.json
 
           # Check if there are changes to commit
           if git diff --staged --quiet; then
