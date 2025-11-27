@@ -81,7 +81,7 @@ impl AppModel {
 
         // Bug report buttons
         let bug_report_button =
-            widget::button::standard("Report a Bug").on_press(Message::GenerateBugReport);
+            widget::button::standard("Report a bug").on_press(Message::GenerateBugReport);
 
         // Show report button (only if a report was generated)
         let bug_report_row = if self.last_bug_report_path.is_some() {
@@ -115,7 +115,7 @@ impl AppModel {
             .push(camera_dropdown)
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Audio Device")
+                widget::text("Microphone")
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -123,7 +123,7 @@ impl AppModel {
             .push(audio_dropdown)
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Video Encoder")
+                widget::text("Video encoder")
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -133,7 +133,7 @@ impl AppModel {
             .push(
                 widget::row()
                     .push(
-                        widget::text("Bitrate Quality")
+                        widget::text("Video quality")
                             .size(16)
                             .font(cosmic::font::bold()),
                     )
@@ -146,7 +146,7 @@ impl AppModel {
             .push(self.build_bitrate_info_matrix(spacing.space_xxs))
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Manual Mode Override")
+                widget::text("Manual mode override")
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -158,7 +158,7 @@ impl AppModel {
             .push(
                 widget::row()
                     .push(
-                        widget::text("Mirror Preview")
+                        widget::text("Mirror preview")
                             .size(16)
                             .font(cosmic::font::bold()),
                     )
@@ -170,7 +170,7 @@ impl AppModel {
             .push(widget::divider::horizontal::default())
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Bug Reports")
+                widget::text("Bug reports")
                     .size(16)
                     .font(cosmic::font::bold()),
             )
