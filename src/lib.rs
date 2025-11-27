@@ -31,6 +31,7 @@ pub mod constants;
 pub mod errors;
 pub mod i18n;
 pub mod media;
+pub mod network_manager;
 pub mod pipelines;
 pub mod storage;
 
