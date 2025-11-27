@@ -39,11 +39,14 @@ fn get_git_version() -> String {
     // Strip 'v' prefix if present
     let version = version.strip_prefix('v').unwrap_or(&version);
 
+    // Get the current commit hash for all builds
+    let commit_hash = get_commit_hash().unwrap_or_else(|| "unknown".to_string());
+
     // Transform git describe output to our format:
-    // "0.1.0" stays as "0.1.0"
-    // "0.1.0-5-gabcdef1" becomes "0.1.0-dirty-abcdef1"
+    // "0.1.0" (exact tag) becomes "0.1.0-abcdef1"
+    // "0.1.0-5-gabcdef1" (commits after tag) becomes "0.1.0-dirty-abcdef1"
     if version.contains('-') {
-        // Parse: version-commits-ghash
+        // Parse: version-commits-ghash (commits after a tag)
         let parts: Vec<&str> = version.rsplitn(3, '-').collect();
         if parts.len() >= 3 {
             let hash = parts[0].strip_prefix('g').unwrap_or(parts[0]);
@@ -53,7 +56,8 @@ fn get_git_version() -> String {
             version.to_string()
         }
     } else {
-        version.to_string()
+        // Exact tag - still append commit hash for traceability
+        format!("{}-{}", version, commit_hash)
     }
 }
 
