@@ -50,7 +50,7 @@ impl Default for Config {
             photo_settings: HashMap::new(),
             backend: crate::backends::camera::CameraBackendType::default(),
             last_video_encoder_index: None,
-            bug_report_url: "https://github.com/FreddyFunk/cosmic-camera/issues/new".to_string(),
+            bug_report_url: "https://github.com/FreddyFunk/cosmic-camera/issues/new?template=bug_report_from_app.yml".to_string(),
             mirror_preview: true, // Default to mirrored (selfie mode)
             bitrate_preset: BitratePreset::default(), // Default to Medium
         }
