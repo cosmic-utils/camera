@@ -8,6 +8,7 @@
 //! - GPU information from WGPU
 //! - System information (kernel, flatpak, etc.)
 
+use crate::constants::app_info;
 use std::path::PathBuf;
 use std::process::Command;
 use tracing::{info, warn};
@@ -39,7 +40,11 @@ impl BugReportGenerator {
 
         // Application version
         report.push_str("## Application Information\n\n");
-        report.push_str(&format!("**Version:** {}\n", env!("GIT_VERSION")));
+        report.push_str(&format!("**Version:** {}\n", app_info::version()));
+        report.push_str(&format!(
+            "**Runtime:** {}\n",
+            app_info::runtime_environment()
+        ));
         report.push_str("\n");
 
         // System information
@@ -122,7 +127,7 @@ impl BugReportGenerator {
         }
 
         // Check if running in Flatpak
-        if std::path::Path::new("/.flatpak-info").exists() {
+        if app_info::is_flatpak() {
             info.push_str("**Runtime:** Flatpak\n");
 
             // Get flatpak runtime details
