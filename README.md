@@ -98,3 +98,18 @@ This project is licensed under the [Mozilla Public License 2.0](LICENSE).
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
+
+### Reporting Bugs
+
+The easiest way to report a bug is to use the **"Report a Bug"** button in the app settings. This generates a detailed system report that helps with debugging.
+
+1. Open COSMIC Camera → Settings → "Report a Bug"
+2. A bug report file will be saved to `~/Pictures/cosmic-camera/`
+3. Your browser will open the [bug report form](https://github.com/FreddyFunk/cosmic-camera/issues/new?template=bug_report_from_app.yml)
+4. Attach the generated report file and describe the issue
+
+You can also [report bugs manually](https://github.com/FreddyFunk/cosmic-camera/issues/new?template=bug_report.yml) if you prefer.
+
+### Feature Requests
+
+Have an idea for a new feature? [Submit a feature request](https://github.com/FreddyFunk/cosmic-camera/issues/new?template=feature_request.yml)!
