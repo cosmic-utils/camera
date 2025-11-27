@@ -1194,109 +1194,9 @@ impl AppModel {
         security: String,
         hidden: bool,
     ) -> Task<cosmic::Action<Message>> {
-        info!(
-            ssid = %ssid,
-            security = %security,
-            hidden,
-            has_password = password.is_some(),
-            "Connecting to WiFi from QR code"
-        );
-
-        // Map security type to nmcli key-mgmt value
-        let key_mgmt = match security.to_uppercase().as_str() {
-            "OPEN" => "none",
-            "WEP" => "wep",
-            "WPA/WPA2" | "WPA" | "WPA2" => "wpa-psk",
-            "ENTERPRISE" => "wpa-eap",
-            "WPA3" => "sae",
-            _ => "wpa-psk", // Default to WPA-PSK for unknown types
-        };
-
+        // Use NetworkManager D-Bus API - works in both native and flatpak
         Task::perform(
-            async move {
-                use std::process::Command;
-
-                // First, try to delete any existing connection with this SSID
-                // (ignore errors - connection might not exist)
-                let _ = Command::new("nmcli")
-                    .args(["connection", "delete", &ssid])
-                    .output();
-
-                // Build the connection add command
-                let mut args = vec![
-                    "connection".to_string(),
-                    "add".to_string(),
-                    "type".to_string(),
-                    "wifi".to_string(),
-                    "con-name".to_string(),
-                    ssid.clone(),
-                    "ssid".to_string(),
-                    ssid.clone(),
-                ];
-
-                // Add security settings based on key management type
-                if key_mgmt != "none" {
-                    args.push("wifi-sec.key-mgmt".to_string());
-                    args.push(key_mgmt.to_string());
-
-                    if let Some(pwd) = &password {
-                        if key_mgmt == "wpa-psk" || key_mgmt == "sae" {
-                            args.push("wifi-sec.psk".to_string());
-                            args.push(pwd.clone());
-                        } else if key_mgmt == "wep" {
-                            args.push("wifi-sec.wep-key0".to_string());
-                            args.push(pwd.clone());
-                        }
-                    }
-                }
-
-                // Handle hidden networks
-                if hidden {
-                    args.push("wifi.hidden".to_string());
-                    args.push("yes".to_string());
-                }
-
-                info!(args = ?args, "Creating WiFi connection");
-
-                // Create the connection
-                let create_result = Command::new("nmcli").args(&args).output();
-
-                match create_result {
-                    Ok(output) => {
-                        if !output.status.success() {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            error!(ssid = %ssid, error = %stderr, "Failed to create WiFi connection");
-                            return Err(stderr.to_string());
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Failed to execute nmcli");
-                        return Err(e.to_string());
-                    }
-                }
-
-                // Activate the connection
-                let activate_result = Command::new("nmcli")
-                    .args(["connection", "up", &ssid])
-                    .output();
-
-                match activate_result {
-                    Ok(output) => {
-                        if output.status.success() {
-                            info!(ssid = %ssid, "WiFi connection successful");
-                            Ok(())
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            error!(ssid = %ssid, error = %stderr, "WiFi connection activation failed");
-                            Err(stderr.to_string())
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Failed to execute nmcli");
-                        Err(e.to_string())
-                    }
-                }
-            },
+            crate::network_manager::connect_wifi(ssid, password, security, hidden),
             |_| cosmic::Action::App(Message::Noop),
         )
     }
@@ -1307,53 +1207,7 @@ impl AppModel {
             "Copying text from QR code to clipboard"
         );
 
-        // Use wl-copy for Wayland or xclip for X11
-        Task::perform(
-            async move {
-                use std::io::Write;
-                use std::process::{Command, Stdio};
-
-                // Try wl-copy first (Wayland)
-                let wl_result = Command::new("wl-copy")
-                    .stdin(Stdio::piped())
-                    .spawn()
-                    .and_then(|mut child| {
-                        if let Some(stdin) = child.stdin.as_mut() {
-                            stdin.write_all(text.as_bytes())?;
-                        }
-                        child.wait()
-                    });
-
-                if let Ok(status) = wl_result {
-                    if status.success() {
-                        info!("Text copied to clipboard via wl-copy");
-                        return Ok(());
-                    }
-                }
-
-                // Fallback to xclip
-                let xclip_result = Command::new("xclip")
-                    .args(["-selection", "clipboard"])
-                    .stdin(Stdio::piped())
-                    .spawn()
-                    .and_then(|mut child| {
-                        if let Some(stdin) = child.stdin.as_mut() {
-                            stdin.write_all(text.as_bytes())?;
-                        }
-                        child.wait()
-                    });
-
-                if let Ok(status) = xclip_result {
-                    if status.success() {
-                        info!("Text copied to clipboard via xclip");
-                        return Ok(());
-                    }
-                }
-
-                error!("Failed to copy text to clipboard - no clipboard tool available");
-                Err("No clipboard tool available (tried wl-copy and xclip)".to_string())
-            },
-            |_| cosmic::Action::App(Message::Noop),
-        )
+        // Use iced/cosmic clipboard API - works in both native and flatpak
+        cosmic::iced::clipboard::write(text).map(|_: ()| cosmic::Action::App(Message::Noop))
     }
 }

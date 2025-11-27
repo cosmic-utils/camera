@@ -19,13 +19,21 @@ finish-args:
   # Automatically includes GPU support since "dri" is part of "all"
   - --device=all
   # Home directory access for saving photos/videos
-  - --filesystem=xdg-pictures
-  - --filesystem=xdg-videos
+  - --filesystem=xdg-pictures:rw
+  - --filesystem=xdg-videos:rw
+  # Cosmic configs for cosmic-camera
+  - --filesystem=xdg-config/cosmic:rw
   # PipeWire access for camera and audio
   # - Camera: pipewiresrc for video capture via Camera Portal
   # - Audio: pipewiresrc for microphone input and audio sink (streaming)
   # This is the sandboxed approach - PipeWire handles all media access
   - --filesystem=xdg-run/pipewire-0:ro
+  # D-Bus access for COSMIC config daemon (live theme/config updates)
+  - --talk-name=com.system76.CosmicSettingsDaemon
+  # D-Bus access for "Show in Files" functionality
+  - --talk-name=org.freedesktop.FileManager1
+  # D-Bus access for WiFi connection from QR codes (system bus, not session bus)
+  - --system-talk-name=org.freedesktop.NetworkManager
 
 modules:
   - name: cosmic-camera
