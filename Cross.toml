@@ -1,0 +1,20 @@
+# Cross-compilation configuration
+# https://github.com/cross-rs/cross
+
+[target.aarch64-unknown-linux-gnu]
+# Use custom Dockerfile based on Ubuntu 22.04 (which has libseat-dev)
+dockerfile = "docker/Dockerfile.aarch64"
+
+[target.aarch64-unknown-linux-gnu.env]
+passthrough = [
+    "RUST_BACKTRACE"
+]
+
+[target.riscv64gc-unknown-linux-gnu]
+# Use custom Dockerfile based on Ubuntu 22.04 (which has libseat-dev)
+dockerfile = "docker/Dockerfile.riscv64"
+
+[target.riscv64gc-unknown-linux-gnu.env]
+passthrough = [
+    "RUST_BACKTRACE"
+]

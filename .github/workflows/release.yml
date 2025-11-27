@@ -32,8 +32,9 @@ jobs:
           fetch-tags: true
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools
@@ -103,9 +104,10 @@ jobs:
 
       - name: Install Flatpak SDK and runtime
         run: |
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//24.08 --arch=x86_64
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//24.08 --arch=x86_64
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//24.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//25.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//25.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//25.08 --arch=x86_64
+          sudo flatpak install -y --noninteractive flathub com.system76.Cosmic.BaseApp//stable --arch=x86_64
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -121,6 +123,7 @@ jobs:
         with:
           name: flatpak-x86_64
           path: cosmic-camera-x86_64.flatpak
+          if-no-files-found: error
           retention-days: 1
 
   # Build Flatpak for aarch64 (QEMU emulation, slow but necessary for releases)
@@ -150,9 +153,10 @@ jobs:
 
       - name: Install Flatpak SDK and runtime
         run: |
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//24.08 --arch=aarch64
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//24.08 --arch=aarch64
-          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//24.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//25.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//25.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//25.08 --arch=aarch64
+          sudo flatpak install -y --noninteractive flathub com.system76.Cosmic.BaseApp//stable --arch=aarch64
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -168,6 +172,7 @@ jobs:
         with:
           name: flatpak-aarch64
           path: cosmic-camera-aarch64.flatpak
+          if-no-files-found: error
           retention-days: 1
 
   # Create the GitHub release with all artifacts
