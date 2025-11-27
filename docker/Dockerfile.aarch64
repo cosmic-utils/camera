@@ -1,0 +1,46 @@
+# Cross-compilation image for aarch64-unknown-linux-gnu
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Configure apt sources: amd64 from archive.ubuntu.com, arm64 from ports.ubuntu.com
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main universe' > /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
+
+# Install base tools (before adding arm64 architecture)
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add arm64 architecture
+RUN dpkg --add-architecture arm64
+
+# Install cross-compilation toolchain and dependencies
+RUN apt-get update && apt-get install -y \
+    gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    libglib2.0-dev:arm64 \
+    libgstreamer1.0-dev:arm64 \
+    libgstreamer-plugins-base1.0-dev:arm64 \
+    libgstreamer-plugins-bad1.0-dev:arm64 \
+    libwayland-dev:arm64 \
+    libxkbcommon-dev:arm64 \
+    libinput-dev:arm64 \
+    libudev-dev:arm64 \
+    libseat-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up environment for cross-compilation
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+    PKG_CONFIG_SYSROOT_DIR=/

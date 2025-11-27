@@ -191,6 +191,7 @@ flatpak-build: flatpak-cargo-sources
 # Build Flatpak bundle for distribution
 flatpak-bundle: flatpak-cargo-sources
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "Building Flatpak bundle..."
     # Generate version file for flatpak build
     just get-version > .flatpak-version
@@ -265,10 +266,9 @@ flatpak-deps:
     RUNTIME_VERSION=$(grep 'runtime-version:' {{APPID}}.yml | sed "s/.*runtime-version: *['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/")
     echo "Using runtime version: $RUNTIME_VERSION"
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-    flatpak remote-add --if-not-exists cosmic https://flatpak.system76.com/cosmic.flatpakrepo
     flatpak install -y flathub org.freedesktop.Platform//${RUNTIME_VERSION}
     flatpak install -y flathub org.freedesktop.Sdk//${RUNTIME_VERSION}
-    flatpak install -y cosmic com.system76.Cosmic.BaseApp//stable
+    flatpak install -y flathub com.system76.Cosmic.BaseApp//stable
     echo "Flatpak dependencies installed!"
 
 # Full clean (cargo + vendor + flatpak)
@@ -277,10 +277,17 @@ clean-all: clean clean-vendor flatpak-clean
 # Build Flatpak bundle for a specific architecture (for CI)
 flatpak-bundle-arch arch: flatpak-cargo-sources
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "Building Flatpak bundle for {{arch}}..."
     # Generate version file for flatpak build
     just get-version > .flatpak-version
     flatpak-builder --repo=repo --force-clean --arch={{arch}} build-dir {{APPID}}.yml
     flatpak build-bundle repo {{name}}-{{arch}}.flatpak {{APPID}} --arch={{arch}}
     rm -f .flatpak-version
+    # Verify the bundle was created
+    if [ ! -f "{{name}}-{{arch}}.flatpak" ]; then
+        echo "Error: Flatpak bundle was not created!"
+        exit 1
+    fi
     echo "Flatpak bundle created: {{name}}-{{arch}}.flatpak"
+    ls -la {{name}}-{{arch}}.flatpak

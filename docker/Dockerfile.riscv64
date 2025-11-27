@@ -1,0 +1,46 @@
+# Cross-compilation image for riscv64gc-unknown-linux-gnu
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Configure apt sources: amd64 from archive.ubuntu.com, riscv64 from ports.ubuntu.com
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main universe' > /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
+
+# Install base tools (before adding riscv64 architecture)
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add riscv64 architecture
+RUN dpkg --add-architecture riscv64
+
+# Install cross-compilation toolchain and dependencies
+RUN apt-get update && apt-get install -y \
+    gcc-riscv64-linux-gnu \
+    g++-riscv64-linux-gnu \
+    libglib2.0-dev:riscv64 \
+    libgstreamer1.0-dev:riscv64 \
+    libgstreamer-plugins-base1.0-dev:riscv64 \
+    libgstreamer-plugins-bad1.0-dev:riscv64 \
+    libwayland-dev:riscv64 \
+    libxkbcommon-dev:riscv64 \
+    libinput-dev:riscv64 \
+    libudev-dev:riscv64 \
+    libseat-dev:riscv64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up environment for cross-compilation
+ENV CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=riscv64-linux-gnu-gcc \
+    CC_riscv64gc_unknown_linux_gnu=riscv64-linux-gnu-gcc \
+    CXX_riscv64gc_unknown_linux_gnu=riscv64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/riscv64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+    PKG_CONFIG_SYSROOT_DIR=/
