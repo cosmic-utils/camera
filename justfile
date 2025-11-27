@@ -232,7 +232,7 @@ flatpak-install:
     if ! flatpak info org.freedesktop.Platform//${RUNTIME_VERSION} &>/dev/null; then
         DEPS_MISSING=true
     fi
-    if ! flatpak info org.freedesktop.Sdk.Extension.rust-stable//${RUNTIME_VERSION} &>/dev/null; then
+    if ! flatpak info com.system76.Cosmic.BaseApp//stable &>/dev/null; then
         DEPS_MISSING=true
     fi
 
@@ -265,9 +265,10 @@ flatpak-deps:
     RUNTIME_VERSION=$(grep 'runtime-version:' {{APPID}}.yml | sed "s/.*runtime-version: *['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/")
     echo "Using runtime version: $RUNTIME_VERSION"
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    flatpak remote-add --if-not-exists cosmic https://flatpak.system76.com/cosmic.flatpakrepo
     flatpak install -y flathub org.freedesktop.Platform//${RUNTIME_VERSION}
     flatpak install -y flathub org.freedesktop.Sdk//${RUNTIME_VERSION}
-    flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//${RUNTIME_VERSION}
+    flatpak install -y cosmic com.system76.Cosmic.BaseApp//stable
     echo "Flatpak dependencies installed!"
 
 # Full clean (cargo + vendor + flatpak)
