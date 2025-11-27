@@ -314,6 +314,26 @@ pub fn get_resolution_label(width: u32) -> Option<&'static str> {
     }
 }
 
+/// Application information utilities
+pub mod app_info {
+    use std::path::Path;
+
+    /// Get the application version from build-time environment
+    pub fn version() -> &'static str {
+        env!("GIT_VERSION")
+    }
+
+    /// Check if the application is running inside a Flatpak sandbox
+    pub fn is_flatpak() -> bool {
+        Path::new("/.flatpak-info").exists()
+    }
+
+    /// Get the runtime environment string (e.g., "Flatpak" or "Native")
+    pub fn runtime_environment() -> &'static str {
+        if is_flatpak() { "Flatpak" } else { "Native" }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
