@@ -32,8 +32,10 @@ mod controls;
 mod dropdowns;
 mod filter_picker;
 mod format_picker;
+pub mod frame_processor;
 mod gallery_primitive;
 mod gallery_widget;
+pub mod qr_overlay;
 pub mod settings;
 mod state;
 mod ui;
@@ -230,6 +232,10 @@ impl cosmic::Application for AppModel {
             bitrate_info_visible: false,
             filter_picker_scroll_offset: 0.0,
             transition_state: crate::app::state::TransitionState::new(),
+            // QR detection enabled by default
+            qr_detection_enabled: true,
+            qr_detections: Vec::new(),
+            last_qr_detection_time: None,
         };
 
         // Update all dropdown options based on initial format
@@ -683,7 +689,29 @@ impl cosmic::Application for AppModel {
             }),
         );
 
-        Subscription::batch([config_sub, camera_sub, hotplug_sub])
+        // QR detection subscription (samples frames at 1 FPS)
+        let should_detect_qr = self.qr_detection_enabled
+            && self
+                .last_qr_detection_time
+                .map(|t| t.elapsed() >= std::time::Duration::from_secs(1))
+                .unwrap_or(true);
+
+        let qr_detection_sub = match (should_detect_qr, &self.current_frame) {
+            (true, Some(frame)) => {
+                let frame = frame.clone();
+                Subscription::run_with_id(
+                    ("qr_detection", frame.captured_at),
+                    cosmic::iced::stream::channel(1, move |mut output| async move {
+                        let detector = frame_processor::tasks::QrDetector::new();
+                        let detections = detector.detect(frame).await;
+                        let _ = output.send(Message::QrDetectionsUpdated(detections)).await;
+                    }),
+                )
+            }
+            _ => Subscription::none(),
+        };
+
+        Subscription::batch([config_sub, camera_sub, hotplug_sub, qr_detection_sub])
     }
 
     /// Handles messages emitted by the application and its widgets.
