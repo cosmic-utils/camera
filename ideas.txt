@@ -1,0 +1,12 @@
+Here are some small bugs that I found. please fix them.
+
+
+if the camera at any time or encoder crashes during recording, the entire app can crash. in that case, stop the recording and reset the encoder and re-initialize the camera and do not restart the recording. please send a notification with a user friendly error message in that case.
+
+Please show the black and white filter again in video mode. We need to change the architecture of our recording pipeline for video. Without any filters, use the existing pipeline. As soon as filters are are enabled, use a different pipeline that we need to setup. this new pipeline uses captures the image data the same way like the photo mode does so the filters are applied on the GPU with the same shaders. we then need to create a custom gstreamer pipeline to paste this image data in and mux it with the audio like a normal video recording.
+
+virtual camera support. please provide a third mode besides photo and video called stream. stream should be similar to video mode but has no record button. stream mode sets up a new virtual camera called "cosmic-camera" and exposes it via pipewire. it should stream the same content that record would do to a file. 
+
+click to focus. checkout how ../cameractrls manages focus and then translate the user click on the camera preview to the point were the camera should focus and send that command to the device. please also show a transparent box with border colors of the cosmic theme on the area were the focus is beeing applied and that box should auto hide 1 second after the mouse click released
+
+the hardware recorder on my system only fails when recording SD content, no matter the webcam and no matter the frame rate (30 fps or 60 fps tested). Can you help me debug this?

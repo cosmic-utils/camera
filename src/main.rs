@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod app;
-mod config;
-mod i18n;
+use cosmic_camera::app::AppModel;
+use cosmic_camera::i18n;
 
 fn main() -> cosmic::iced::Result {
+    // Initialize logging
+    // Set RUST_LOG environment variable to control log level
+    // Examples: RUST_LOG=debug, RUST_LOG=cosmic_camera=debug, RUST_LOG=info
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_target(true)
+        .with_level(true)
+        .init();
+
     // Get the system's preferred languages.
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
 
@@ -19,5 +30,5 @@ fn main() -> cosmic::iced::Result {
     );
 
     // Starts the application's event loop with `()` as the application's flags.
-    cosmic::app::run::<app::AppModel>(settings, ())
+    cosmic::app::run::<AppModel>(settings, ())
 }

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a5f6f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#394a58;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="camera" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5a6f7f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4a5f6f;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7dd3fc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38bdf8;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="lens" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect x="156" y="156" width="712" height="712" rx="180" fill="url(#bg)"/>
+
+  <!-- Camera body -->
+  <path d="M 268 283 L 350 283 L 380 363 L 644 363 L 674 283 L 756 283 C 786 283 810 307 810 337 L 810 687 C 810 717 786 741 756 741 L 268 741 C 238 741 214 717 214 687 L 214 337 C 214 307 238 283 268 283 Z" fill="url(#camera)"/>
+
+  <!-- Flash -->
+  <rect x="280" y="310" width="70" height="30" rx="8" fill="#5a6f7f" opacity="0.6"/>
+
+  <!-- Outer ring (cyan) -->
+  <circle cx="512" cy="512" r="200" fill="none" stroke="url(#ring)" stroke-width="40"/>
+
+  <!-- Inner lens -->
+  <circle cx="512" cy="512" r="160" fill="url(#lens)"/>
+
+  <!-- Lens details - dark ring -->
+  <circle cx="512" cy="512" r="145" fill="none" stroke="#1e3a5f" stroke-width="8"/>
+
+  <!-- Sparkles -->
+  <g fill="#7dd3fc" opacity="0.8">
+    <!-- Star 1 -->
+    <path d="M 440 460 L 445 470 L 455 465 L 450 475 L 460 480 L 450 485 L 455 495 L 445 490 L 440 500 L 435 490 L 425 495 L 430 485 L 420 480 L 430 475 L 425 465 L 435 470 Z"/>
+
+    <!-- Star 2 -->
+    <path d="M 590 480 L 600 500 L 620 490 L 610 510 L 630 520 L 610 530 L 620 550 L 600 540 L 590 560 L 580 540 L 560 550 L 570 530 L 550 520 L 570 510 L 560 490 L 580 500 Z"/>
+
+    <!-- Small sparkle 1 -->
+    <circle cx="628" cy="428" r="4"/>
+    <path d="M 628 418 L 628 438 M 618 428 L 638 428"/>
+
+    <!-- Small sparkle 2 -->
+    <circle cx="548" cy="628" r="3"/>
+    <path d="M 548 620 L 548 636 M 540 628 L 556 628"/>
+
+    <!-- Small sparkle 3 -->
+    <circle cx="440 " cy="580" r="3"/>
+    <path d="M 440 572 L 440 588 M 432 580 L 448 580"/>
+  </g>
+
+  <!-- Lens reflection -->
+  <ellipse cx="490" cy="480" rx="40" ry="25" fill="#7dd3fc" opacity="0.3"/>
+  <ellipse cx="520" cy="500" rx="20" ry="12" fill="#ffffff" opacity="0.4"/>
+
+  <!-- Subtle dots on lens -->
+  <circle cx="512" cy="450" r="3" fill="#38bdf8" opacity="0.4"/>
+  <circle cx="498" cy="538" r="2" fill="#38bdf8" opacity="0.3"/>
+</svg>
