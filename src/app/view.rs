@@ -9,7 +9,9 @@
 //! - Bottom bar (bottom_bar module)
 //! - Format picker overlay (format_picker module)
 
+use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, CameraMode, FilterType, Message};
+use crate::app::video_widget::VideoContentFit;
 use crate::constants::{resolution_thresholds, ui};
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -132,6 +134,8 @@ impl AppModel {
 
                 let mut theatre_stack = cosmic::iced::widget::stack![
                     camera_preview,
+                    // QR overlay (custom widget calculates positions at render time)
+                    self.build_qr_overlay(),
                     // Top bar aligned to top (no extra padding - row has its own padding)
                     widget::container(top_bar)
                         .width(Length::Fill)
@@ -160,17 +164,19 @@ impl AppModel {
                     .height(Length::Fill)
                     .into()
             } else {
-                // Theatre mode with UI hidden - show only full-screen preview
-                cosmic::iced::widget::stack![camera_preview]
+                // Theatre mode with UI hidden - show only full-screen preview with QR overlay
+                cosmic::iced::widget::stack![camera_preview, self.build_qr_overlay()]
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
             }
         } else {
             // Normal mode - traditional layout
-            // Preview with top bar and optional filter name label overlaid
+            // Preview with top bar, QR overlay, and optional filter name label overlaid
             let mut preview_stack = cosmic::iced::widget::stack![
                 camera_preview,
+                // QR overlay (custom widget calculates positions at render time)
+                self.build_qr_overlay(),
                 widget::container(top_bar)
                     .width(Length::Fill)
                     .align_y(cosmic::iced::alignment::Vertical::Top)
@@ -417,5 +423,37 @@ impl AppModel {
         widget::button::text(filter_name)
             .class(cosmic::theme::Button::Suggested)
             .into()
+    }
+
+    /// Build the QR code overlay layer
+    ///
+    /// This creates an overlay that shows detected QR codes with bounding boxes
+    /// and action buttons. The overlay widget handles coordinate transformation
+    /// at render time to correctly position elements over the video content.
+    fn build_qr_overlay(&self) -> Element<'_, Message> {
+        // Only show overlay if QR detection is enabled and we have detections
+        if !self.qr_detection_enabled || self.qr_detections.is_empty() {
+            return widget::Space::new(Length::Fill, Length::Fill).into();
+        }
+
+        // Get frame dimensions
+        let Some(frame) = &self.current_frame else {
+            return widget::Space::new(Length::Fill, Length::Fill).into();
+        };
+
+        // Determine content fit mode based on theatre state
+        let content_fit = if self.theatre.enabled {
+            VideoContentFit::Cover
+        } else {
+            VideoContentFit::Contain
+        };
+
+        build_qr_overlay(
+            &self.qr_detections,
+            frame.width,
+            frame.height,
+            content_fit,
+            self.config.mirror_preview,
+        )
     }
 }
