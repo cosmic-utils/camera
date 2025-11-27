@@ -2,6 +2,7 @@
 
 //! Application state management
 
+use crate::app::frame_processor::QrDetection;
 use crate::backends::audio::AudioDevice;
 use crate::backends::camera::CameraBackendManager;
 use crate::backends::camera::types::{CameraDevice, CameraFormat, CameraFrame};
@@ -223,6 +224,14 @@ pub struct AppModel {
 
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
+
+    // ===== QR Code Detection =====
+    /// Whether QR code detection is enabled
+    pub qr_detection_enabled: bool,
+    /// Current QR code detections (updated at 1 FPS)
+    pub qr_detections: Vec<QrDetection>,
+    /// Last time QR detection was processed
+    pub last_qr_detection_time: Option<Instant>,
 }
 
 /// State for smooth blur transitions when changing camera settings
@@ -429,6 +438,25 @@ pub enum Message {
     BugReportGenerated(Result<String, String>),
     /// Show bug report in file manager
     ShowBugReport,
+
+    // ===== QR Code Detection =====
+    /// Toggle QR code detection on/off
+    ToggleQrDetection,
+    /// QR detection results updated
+    QrDetectionsUpdated(Vec<QrDetection>),
+    /// Open URL from QR code
+    QrOpenUrl(String),
+    /// Connect to WiFi network from QR code
+    QrConnectWifi {
+        ssid: String,
+        password: Option<String>,
+        security: String,
+        hidden: bool,
+    },
+    /// Copy text from QR code to clipboard
+    QrCopyText(String),
+    /// No-op message for async tasks that don't need a response
+    Noop,
 }
 
 impl TransitionState {

@@ -35,6 +35,7 @@ pub mod pipelines;
 pub mod storage;
 
 // Re-export commonly used types
+pub use app::frame_processor::{QrAction, QrDetection};
 pub use app::{AppModel, CameraMode, FilterType, Message};
 pub use config::Config;
 pub use constants::BitratePreset;
