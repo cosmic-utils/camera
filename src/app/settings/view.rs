@@ -3,7 +3,7 @@
 //! Settings drawer view
 
 use crate::app::state::{AppModel, Message};
-use crate::constants::{BitratePreset, ResolutionTier, format_bitrate};
+use crate::constants::{BitratePreset, ResolutionTier, app_info, format_bitrate};
 use cosmic::Element;
 use cosmic::app::context_drawer;
 use cosmic::iced::Length;
@@ -101,6 +101,13 @@ impl AppModel {
         let mirror_toggle =
             widget::toggler(self.config.mirror_preview).on_toggle(|_| Message::ToggleMirrorPreview);
 
+        // Version info string
+        let version_info = if app_info::is_flatpak() {
+            format!("Version {} (Flatpak)", app_info::version())
+        } else {
+            format!("Version {}", app_info::version())
+        };
+
         // Build settings column
         let settings_column: Element<'_, Message> = widget::column()
             .push(widget::text("Camera").size(16).font(cosmic::font::bold()))
@@ -169,6 +176,14 @@ impl AppModel {
             )
             .push(widget::vertical_space().height(spacing.space_xxs))
             .push(bug_report_row)
+            .push(widget::vertical_space().height(spacing.space_l))
+            .push(widget::divider::horizontal::default())
+            .push(widget::vertical_space().height(spacing.space_s))
+            .push(
+                widget::text(version_info)
+                    .size(12)
+                    .class(cosmic::theme::Text::Accent),
+            )
             .spacing(0)
             .into();
 
