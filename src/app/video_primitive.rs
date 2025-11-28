@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 
 //! Custom video rendering primitive with direct GPU texture updates
 //!

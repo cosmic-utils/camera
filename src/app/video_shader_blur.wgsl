@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // GPU shader for Gaussian blur (for multi-pass blur transitions)
 
 @group(0) @binding(0)

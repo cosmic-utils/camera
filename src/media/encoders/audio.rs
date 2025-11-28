@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Audio encoder module - some features for future multi-quality support
 #![allow(dead_code)]
 
