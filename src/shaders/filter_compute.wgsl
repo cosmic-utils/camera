@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // GPU compute shader for applying filters to images
 // Used by photo capture and virtual camera for GPU-accelerated filtering
 // Filter functions are prepended by the Rust code from filters.wgsl

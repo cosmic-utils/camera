@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Shader for rendering images with rounded corners
 
 @group(0) @binding(0)
