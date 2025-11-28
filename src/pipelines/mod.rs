@@ -11,8 +11,8 @@
 //! ```text
 //! ┌──────────────┐     ┌───────────────────┐     ┌──────────────┐
 //! │ Camera Frame │ ──▶ │  Photo Pipeline   │ ──▶ │  JPEG File   │
-//! │   (NV12)     │     │  - NV12→RGB       │     │              │
-//! │              │     │  - Filters        │     │              │
+//! │   (RGBA)     │     │  - Filters (RGBA) │     │              │
+//! │              │     │  - RGBA→RGB       │     │              │
 //! │              │     │  - Encoding       │     │              │
 //! └──────────────┘     └───────────────────┘     └──────────────┘
 //!
@@ -27,7 +27,7 @@
 //! # Design Principles
 //!
 //! 1. **Non-blocking**: Preview never freezes during capture
-//! 2. **GPU-accelerated**: NV12→RGB conversion uses compute shaders when available
+//! 2. **GPU-accelerated**: Filter processing uses GPU shaders
 //! 3. **Hardware encoding**: Video uses VA-API/NVENC when available
 //! 4. **Graceful degradation**: Falls back to software when HW unavailable
 //!

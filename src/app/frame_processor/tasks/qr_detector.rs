@@ -7,7 +7,7 @@
 //! returning their positions and decoded content.
 
 use crate::app::frame_processor::types::{FrameRegion, QrDetection};
-use crate::backends::camera::types::{CameraFrame, PixelFormat};
+use crate::backends::camera::types::CameraFrame;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -63,11 +63,8 @@ impl QrDetector {
 fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     let start = std::time::Instant::now();
 
-    // Convert frame to grayscale
-    let (gray_data, width, height) = match frame.format {
-        PixelFormat::NV12 => convert_nv12_to_gray(frame),
-        PixelFormat::RGBA => convert_rgba_to_gray(frame),
-    };
+    // Convert RGBA frame to grayscale
+    let (gray_data, width, height) = convert_rgba_to_gray(frame);
 
     let conversion_time = start.elapsed();
     trace!(
@@ -181,47 +178,30 @@ fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     detections
 }
 
-/// Convert NV12 frame to grayscale (Y plane only)
-fn convert_nv12_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
-    let width = frame.width;
-    let height = frame.height;
-    let stride = frame.stride_y as usize;
-
-    // Y plane is the grayscale data - just need to copy with proper stride
-    let mut gray = Vec::with_capacity((width * height) as usize);
-
-    for y in 0..height as usize {
-        let row_start = y * stride;
-        let row_end = row_start + width as usize;
-        if row_end <= frame.data.len() {
-            gray.extend_from_slice(&frame.data[row_start..row_end]);
-        }
-    }
-
-    (gray, width, height)
-}
-
 /// Convert RGBA frame to grayscale
 fn convert_rgba_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
-    let width = frame.width;
-    let height = frame.height;
-    let pixels = (width * height) as usize;
+    let width = frame.width as usize;
+    let height = frame.height as usize;
+    let stride = frame.stride as usize;
 
-    let mut gray = Vec::with_capacity(pixels);
+    let mut gray = Vec::with_capacity(width * height);
 
-    for i in 0..pixels {
-        let offset = i * 4;
-        if offset + 2 < frame.data.len() {
-            let r = frame.data[offset] as u32;
-            let g = frame.data[offset + 1] as u32;
-            let b = frame.data[offset + 2] as u32;
-            // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
-            let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
-            gray.push(gray_val);
+    for y in 0..height {
+        let row_start = y * stride;
+        for x in 0..width {
+            let offset = row_start + x * 4;
+            if offset + 2 < frame.data.len() {
+                let r = frame.data[offset] as u32;
+                let g = frame.data[offset + 1] as u32;
+                let b = frame.data[offset + 2] as u32;
+                // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
+                let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+                gray.push(gray_val);
+            }
         }
     }
 
-    (gray, width, height)
+    (gray, frame.width, frame.height)
 }
 
 /// Downscale grayscale image using bilinear interpolation
@@ -275,6 +255,7 @@ fn downscale_gray(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backends::camera::types::PixelFormat;
 
     #[test]
     fn test_rgba_to_gray() {
@@ -291,9 +272,7 @@ mod tests {
             height: 2,
             data: Arc::from(data.as_slice()),
             format: PixelFormat::RGBA,
-            stride_y: 8,
-            stride_uv: 0,
-            offset_uv: 0,
+            stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
             captured_at: std::time::Instant::now(),
         };
 
