@@ -139,11 +139,11 @@ impl AppModel {
         // Wrap filter row in horizontal scrollable for narrow displays
         // Use Direction::Horizontal with programmatic scrolling via mouse_area
         // Use Length::Shrink so content centers when it fits
-        // Show a thin scrollbar at the bottom when content overflows
+        // Scrollbar floats over content and only appears when scrolling is needed
         let scrollable_filters = widget::scrollable(filter_row)
             .id(cosmic::widget::Id::new(FILTER_PICKER_SCROLLABLE_ID))
             .direction(Direction::Horizontal(
-                Scrollbar::new().width(4).scroller_width(4).spacing(2),
+                Scrollbar::new().width(4).scroller_width(4),
             ))
             .width(Length::Shrink);
 

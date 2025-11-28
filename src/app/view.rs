@@ -60,12 +60,19 @@ impl AppModel {
         // Build top bar
         let top_bar = self.build_top_bar();
 
-        // Wrap preview in mouse area for theatre mode interaction
+        // Wrap preview in mouse area for interactions:
+        // - Theatre mode: show UI on click or mouse movement
+        // - Filter picker: close on click outside the picker
         let camera_preview = if self.theatre.enabled {
             // In theatre mode, show UI on click or mouse movement
             widget::mouse_area(camera_preview)
                 .on_press(Message::TheatreShowUI)
                 .on_move(|_| Message::TheatreShowUI)
+                .into()
+        } else if self.filter_picker_visible && self.mode == CameraMode::Photo {
+            // Close filter picker when clicking on the preview area
+            widget::mouse_area(camera_preview)
+                .on_press(Message::CloseFilterPicker)
                 .into()
         } else {
             camera_preview
@@ -102,7 +109,15 @@ impl AppModel {
         };
 
         // Capture button area (filter name label is now an overlay on the preview)
-        let capture_button_area: Element<'_, Message> = capture_button_only;
+        // Wrap in mouse_area to close filter picker when clicking the empty space around the button
+        let capture_button_area: Element<'_, Message> =
+            if self.filter_picker_visible && self.mode == CameraMode::Photo {
+                widget::mouse_area(capture_button_only)
+                    .on_press(Message::CloseFilterPicker)
+                    .into()
+            } else {
+                capture_button_only
+            };
 
         // Bottom area: either bottom bar or filter picker
         let bottom_area: Element<'_, Message> =
@@ -126,13 +141,23 @@ impl AppModel {
                 // Theatre mode with UI visible - overlay all UI on top of preview
                 // Use same layout structure as normal mode to prevent position jumps
 
-                // Bottom controls: capture button + bottom area in a column (same as normal mode)
-                let bottom_controls = widget::column()
-                    .push(capture_button_area)
-                    .push(bottom_area)
-                    .width(Length::Fill);
+                // Bottom controls: filter label + capture button + bottom area in a column
+                // Filter label is added first (above capture button) with same 8px padding as normal mode
+                let mut bottom_controls = widget::column().width(Length::Fill);
 
-                let mut theatre_stack = cosmic::iced::widget::stack![
+                // Add filter name label above capture button (same 8px margin as normal mode)
+                if show_filter_label {
+                    bottom_controls = bottom_controls.push(
+                        widget::container(self.build_filter_name_label())
+                            .width(Length::Fill)
+                            .center_x(Length::Fill)
+                            .padding([0, 0, 8, 0]),
+                    );
+                }
+
+                bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
+
+                let theatre_stack = cosmic::iced::widget::stack![
                     camera_preview,
                     // QR overlay (custom widget calculates positions at render time)
                     self.build_qr_overlay(),
@@ -146,18 +171,6 @@ impl AppModel {
                         .height(Length::Fill)
                         .align_y(cosmic::iced::alignment::Vertical::Bottom)
                 ];
-
-                // Add filter name label overlapping preview (positioned above bottom controls)
-                if show_filter_label {
-                    theatre_stack = theatre_stack.push(
-                        widget::container(self.build_filter_name_label())
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .align_x(cosmic::iced::alignment::Horizontal::Center)
-                            .align_y(cosmic::iced::alignment::Vertical::Bottom)
-                            .padding([0, 0, 120, 0]), // Position above bottom controls
-                    );
-                }
 
                 theatre_stack
                     .width(Length::Fill)
