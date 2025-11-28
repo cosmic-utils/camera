@@ -81,13 +81,13 @@ impl AppModel {
         );
 
         // Bug report buttons
-        let bug_report_button =
-            widget::button::standard(fl!("settings-report-bug")).on_press(Message::GenerateBugReport);
+        let bug_report_button = widget::button::standard(fl!("settings-report-bug"))
+            .on_press(Message::GenerateBugReport);
 
         // Show report button (only if a report was generated)
         let bug_report_row = if self.last_bug_report_path.is_some() {
-            let show_report_button =
-                widget::button::standard(fl!("settings-show-report")).on_press(Message::ShowBugReport);
+            let show_report_button = widget::button::standard(fl!("settings-show-report"))
+                .on_press(Message::ShowBugReport);
 
             widget::row()
                 .push(bug_report_button)
@@ -115,7 +115,11 @@ impl AppModel {
 
         // Build settings column
         let settings_column: Element<'_, Message> = widget::column()
-            .push(widget::text(fl!("settings-camera")).size(16).font(cosmic::font::bold()))
+            .push(
+                widget::text(fl!("settings-camera"))
+                    .size(16)
+                    .font(cosmic::font::bold()),
+            )
             .push(widget::vertical_space().height(spacing.space_xxs))
             .push(camera_dropdown)
             .push(widget::vertical_space().height(spacing.space_s))
@@ -239,19 +243,31 @@ impl AppModel {
                 .width(Length::Fixed(70.0)),
             )
             .push(
-                widget::container(widget::text(fl!("preset-low")).size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-low"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .push(
-                widget::container(widget::text(fl!("preset-medium")).size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-medium"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .push(
-                widget::container(widget::text(fl!("preset-high")).size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-high"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .spacing(4);
 
