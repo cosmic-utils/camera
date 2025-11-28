@@ -8,7 +8,7 @@
 
 mod gpu_filter;
 
-pub use gpu_filter::{apply_filter_gpu_rgba, get_gpu_filter_pipeline, GpuFilterPipeline};
+pub use gpu_filter::{GpuFilterPipeline, apply_filter_gpu_rgba, get_gpu_filter_pipeline};
 
 /// Shared filter functions (WGSL)
 /// Contains: luminance(), hash(), apply_filter()

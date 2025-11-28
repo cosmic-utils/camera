@@ -381,7 +381,8 @@ static GPU_FILTER_PIPELINE: std::sync::OnceLock<tokio::sync::Mutex<Option<GpuFil
     std::sync::OnceLock::new();
 
 /// Get or create the shared GPU filter pipeline instance
-pub async fn get_gpu_filter_pipeline() -> Result<tokio::sync::MutexGuard<'static, Option<GpuFilterPipeline>>, String> {
+pub async fn get_gpu_filter_pipeline()
+-> Result<tokio::sync::MutexGuard<'static, Option<GpuFilterPipeline>>, String> {
     let lock = GPU_FILTER_PIPELINE.get_or_init(|| tokio::sync::Mutex::new(None));
     let mut guard = lock.lock().await;
 
@@ -415,5 +416,7 @@ pub async fn apply_filter_gpu_rgba(
         .as_mut()
         .ok_or("GPU filter pipeline not initialized")?;
 
-    pipeline.apply_filter_rgba(rgba_data, width, height, filter).await
+    pipeline
+        .apply_filter_rgba(rgba_data, width, height, filter)
+        .await
 }

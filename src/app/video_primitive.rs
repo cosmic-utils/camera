@@ -245,7 +245,10 @@ impl PrimitiveTrait for VideoPrimitive {
             pipeline.get_or_create_binding(device, self.video_id, filter_mode);
 
             // Get texture dimensions for blur passes
-            let tex_dims = pipeline.textures.get(&self.video_id).map(|t| (t.width, t.height));
+            let tex_dims = pipeline
+                .textures
+                .get(&self.video_id)
+                .map(|t| (t.width, t.height));
 
             // Update viewport buffer for this specific filter binding
             let binding_key = (self.video_id, filter_mode);
@@ -283,7 +286,11 @@ impl PrimitiveTrait for VideoPrimitive {
                         _padding1: 0.0,
                         _padding2: 0.0,
                     };
-                    queue.write_buffer(&binding.viewport_buffer, 0, bytemuck::cast_slice(&[uniform_data]));
+                    queue.write_buffer(
+                        &binding.viewport_buffer,
+                        0,
+                        bytemuck::cast_slice(&[uniform_data]),
+                    );
                 }
 
                 // Update intermediate texture viewport buffers for blur passes
@@ -620,7 +627,10 @@ impl VideoPipeline {
         }
 
         // Now we can safely get the texture
-        let tex = self.textures.get_mut(&frame.id).expect("Texture should exist");
+        let tex = self
+            .textures
+            .get_mut(&frame.id)
+            .expect("Texture should exist");
 
         // Update last frame pointer before upload
         tex.last_frame_ptr = frame_data_ptr;
@@ -734,10 +744,13 @@ impl VideoPipeline {
             ],
         });
 
-        self.bindings.insert(key, FilterBinding {
-            bind_group,
-            viewport_buffer,
-        });
+        self.bindings.insert(
+            key,
+            FilterBinding {
+                bind_group,
+                viewport_buffer,
+            },
+        );
 
         self.bindings.get(&key)
     }
@@ -896,21 +909,20 @@ impl VideoPipeline {
 
                 if intermediate_1_opt.is_none() || intermediate_2_opt.is_none() {
                     // Fallback to single-pass if intermediates aren't ready
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("cosmic-camera video render pass fallback"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: target,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("cosmic-camera video render pass fallback"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: target,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
                     render_pass.set_viewport(
                         clip_bounds.x as f32,
@@ -939,21 +951,20 @@ impl VideoPipeline {
 
                 // Pass 1: RGBA blur to intermediate texture 1
                 {
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("cosmic-camera blur pass 1"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &intermediate_1.view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("cosmic-camera blur pass 1"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &intermediate_1.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
                     render_pass.set_pipeline(&self.pipeline_rgb_blur);
                     render_pass.set_bind_group(0, &binding.bind_group, &[]);
@@ -962,21 +973,20 @@ impl VideoPipeline {
 
                 // Pass 2: RGB blur from intermediate 1 to intermediate 2
                 {
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("cosmic-camera blur pass 2"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &intermediate_2.view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("cosmic-camera blur pass 2"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &intermediate_2.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
                     render_pass.set_pipeline(&self.pipeline_rgb_blur);
                     render_pass.set_bind_group(0, &intermediate_1.bind_group, &[]);
@@ -985,21 +995,20 @@ impl VideoPipeline {
 
                 // Pass 3: RGB blur from intermediate 2 to final target
                 {
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("cosmic-camera blur pass 3"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: target,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("cosmic-camera blur pass 3"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: target,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
                     render_pass.set_viewport(
                         clip_bounds.x as f32,
