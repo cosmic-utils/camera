@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Shared filter functions for all camera components
 // This is the single source of truth for all image filters.
 

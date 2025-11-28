@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // GPU shader for direct RGBA texture rendering with object-fit: cover support
 // Filter functions are prepended by the Rust code from shaders/filters.wgsl
 

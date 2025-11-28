@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 //! GPU-accelerated filter pipeline for images
 //!
 //! This module provides a unified GPU filter pipeline used by both photo capture

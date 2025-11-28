@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Codec utilities - some methods for future format selection UI
 #![allow(dead_code)]
 
