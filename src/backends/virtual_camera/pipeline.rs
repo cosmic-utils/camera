@@ -3,8 +3,8 @@
 //! GStreamer pipeline for virtual camera output via PipeWire
 //!
 //! Creates a pipeline that:
-//! 1. Receives NV12 frames from the app (via appsrc)
-//! 2. Converts format as needed (via videoconvert)
+//! 1. Receives RGBA frames from the app (via appsrc)
+//! 2. Converts to a format supported by PipeWire (via videoconvert)
 //! 3. Outputs to a PipeWire virtual camera node
 
 use crate::backends::camera::types::{BackendError, BackendResult};
@@ -18,8 +18,8 @@ static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Virtual camera GStreamer pipeline
 ///
 /// Uses pipewiresink to create a virtual camera device that other
-/// applications can use as a video source. Accepts NV12 format directly
-/// to avoid any conversion overhead.
+/// applications can use as a video source. Accepts RGBA frames from the app
+/// and uses videoconvert for proper format negotiation with PipeWire.
 pub struct VirtualCameraPipeline {
     pipeline: gstreamer::Pipeline,
     appsrc: AppSrc,
@@ -30,10 +30,11 @@ pub struct VirtualCameraPipeline {
 impl VirtualCameraPipeline {
     /// Create a new virtual camera pipeline
     ///
-    /// The pipeline accepts NV12 frames and outputs them directly to a PipeWire
+    /// The pipeline accepts RGBA frames and outputs them to a PipeWire
     /// virtual camera node named "COSMIC Camera (Virtual)".
+    /// Uses videoconvert for proper format negotiation with PipeWire.
     pub fn new(width: u32, height: u32) -> BackendResult<Self> {
-        info!(width, height, "Creating virtual camera pipeline (NV12)");
+        info!(width, height, "Creating virtual camera pipeline");
 
         // Initialize GStreamer if needed
         gstreamer::init().map_err(|e| {
@@ -43,7 +44,7 @@ impl VirtualCameraPipeline {
         // Create pipeline elements
         let pipeline = gstreamer::Pipeline::new();
 
-        // appsrc: receives NV12 frames from the app
+        // appsrc: receives RGBA frames from the app
         let appsrc = gstreamer::ElementFactory::make("appsrc")
             .name("virtual_camera_src")
             .build()
@@ -51,7 +52,7 @@ impl VirtualCameraPipeline {
                 BackendError::InitializationFailed(format!("Failed to create appsrc: {}", e))
             })?;
 
-        // videoconvert: handles format negotiation between appsrc and pipewiresink
+        // videoconvert: handles format negotiation with pipewiresink
         let videoconvert = gstreamer::ElementFactory::make("videoconvert")
             .name("virtual_camera_convert")
             .build()
@@ -72,9 +73,9 @@ impl VirtualCameraPipeline {
             BackendError::InitializationFailed("Failed to downcast to AppSrc".into())
         })?;
 
-        // Set caps for NV12 input
+        // Set caps for RGBA input
         let caps = gstreamer::Caps::builder("video/x-raw")
-            .field("format", "NV12")
+            .field("format", "RGBA")
             .field("width", width as i32)
             .field("height", height as i32)
             .field("framerate", gstreamer::Fraction::new(30, 1))
@@ -84,10 +85,13 @@ impl VirtualCameraPipeline {
         appsrc.set_format(gstreamer::Format::Time);
         appsrc.set_is_live(true);
         appsrc.set_do_timestamp(true);
+        // Disable blocking to prevent stalls
+        appsrc.set_property("block", false);
+        // Set stream type to stream for live data
+        appsrc.set_property_from_str("stream-type", "stream");
 
         // Configure pipewiresink for virtual camera mode
         // "provide" mode creates a video source that other applications can use
-        // The node name will appear as the camera device name
         pipewiresink.set_property_from_str("mode", "provide");
 
         // Create stream properties as a GstStructure
@@ -108,13 +112,15 @@ impl VirtualCameraPipeline {
             })?;
 
         // Link elements: appsrc -> videoconvert -> pipewiresink
-        gstreamer::Element::link_many([appsrc.upcast_ref(), &videoconvert, &pipewiresink])
-            .map_err(|e| {
-                BackendError::InitializationFailed(format!("Failed to link elements: {}", e))
-            })?;
+        appsrc.link(&videoconvert).map_err(|e| {
+            BackendError::InitializationFailed(format!("Failed to link appsrc to videoconvert: {}", e))
+        })?;
+        videoconvert.link(&pipewiresink).map_err(|e| {
+            BackendError::InitializationFailed(format!("Failed to link videoconvert to pipewiresink: {}", e))
+        })?;
 
         info!(
-            "Virtual camera pipeline created successfully (NV12 -> videoconvert -> pipewiresink)"
+            "Virtual camera pipeline created successfully (appsrc -> videoconvert -> pipewiresink)"
         );
 
         Ok(Self {
@@ -165,11 +171,19 @@ impl VirtualCameraPipeline {
         Ok(())
     }
 
-    /// Push an NV12 frame to the virtual camera
+    /// Push an RGBA frame to the virtual camera
     ///
-    /// The frame data must be in NV12 format with the correct dimensions.
-    /// NV12 format: Y plane (width * height bytes) followed by UV plane (width * height / 2 bytes)
-    pub fn push_frame_nv12(&self, nv12_data: &[u8], width: u32, height: u32) -> BackendResult<()> {
+    /// The frame data must be in RGBA format with the correct dimensions.
+    /// RGBA format: 4 bytes per pixel (width * height * 4 bytes total)
+    ///
+    /// This method accepts owned data to enable zero-copy buffer passing to GStreamer.
+    /// The data is wrapped directly without copying.
+    pub fn push_frame_rgba<T: AsRef<[u8]> + Send + 'static>(
+        &self,
+        rgba_data: T,
+        width: u32,
+        height: u32,
+    ) -> BackendResult<()> {
         // Validate dimensions match
         if width != self.width || height != self.height {
             return Err(BackendError::FormatNotSupported(format!(
@@ -178,40 +192,29 @@ impl VirtualCameraPipeline {
             )));
         }
 
-        // Validate data size (NV12 = 1.5 bytes per pixel)
-        let expected_size = (width * height * 3 / 2) as usize;
-        if nv12_data.len() != expected_size {
+        // Validate data size (RGBA = 4 bytes per pixel)
+        let expected_size = (width * height * 4) as usize;
+        let data_ref = rgba_data.as_ref();
+        if data_ref.len() != expected_size {
             return Err(BackendError::FormatNotSupported(format!(
-                "Frame data size {} doesn't match expected {} for {}x{} NV12",
-                nv12_data.len(),
+                "Frame data size {} doesn't match expected {} for {}x{} RGBA",
+                data_ref.len(),
                 expected_size,
                 width,
                 height
             )));
         }
 
-        // Create buffer from data
-        let mut buffer = gstreamer::Buffer::with_size(expected_size)
-            .map_err(|e| BackendError::Other(format!("Failed to create buffer: {}", e)))?;
-
-        {
-            let buffer_ref = buffer.get_mut().ok_or_else(|| {
-                BackendError::Other("Failed to get mutable buffer reference".into())
-            })?;
-
-            let mut map = buffer_ref
-                .map_writable()
-                .map_err(|e| BackendError::Other(format!("Failed to map buffer: {}", e)))?;
-
-            map.copy_from_slice(nv12_data);
-        }
+        // Create buffer from owned data - zero-copy wrapping
+        // GStreamer will manage the memory and free it when done
+        let buffer = gstreamer::Buffer::from_slice(rgba_data);
 
         // Push buffer to appsrc
         match self.appsrc.push_buffer(buffer) {
             Ok(_) => {
                 let count = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
                 if count % 100 == 0 {
-                    debug!(frame = count, "Virtual camera frames pushed (NV12)");
+                    debug!(frame = count, "Virtual camera frames pushed (RGBA zero-copy)");
                 }
                 Ok(())
             }

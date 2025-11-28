@@ -113,11 +113,9 @@ mod tests {
         let frame = CameraFrame {
             width: 1920,
             height: 1080,
-            data: Arc::from(vec![0u8; 1920 * 1080 * 3 / 2]), // NV12 size
-            format: PixelFormat::NV12,
-            stride_y: 1920,
-            stride_uv: 1920,
-            offset_uv: 1920 * 1080,
+            data: Arc::from(vec![0u8; 1920 * 1080 * 4]), // RGBA size (4 bytes per pixel)
+            format: PixelFormat::RGBA,
+            stride: 1920 * 4, // RGBA stride
             captured_at: std::time::Instant::now(),
         };
 

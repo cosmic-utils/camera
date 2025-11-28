@@ -59,15 +59,15 @@ impl AppModel {
             // Create preview thumbnail with camera frame and filter applied
             let thumbnail: Element<'_, Message> = if let Some(frame) = &self.current_frame {
                 // Use video widget with the specific filter type
-                // Use unique video_id based on filter type to avoid conflicts (100+ range for filter previews)
-                let video_id = 100 + filter_type as u64;
+                // All filter previews use video_id = 99 (shared source texture)
+                // The filter_type parameter controls which filter shader is applied
                 let video_elem = video_widget::video_widget(
                     Arc::clone(frame),
-                    video_id,
-                    VideoContentFit::Cover, // Same zoom-in logic as gallery button
+                    99, // Shared source texture ID for all filter previews
+                    VideoContentFit::Cover,
                     filter_type,
-                    8.0,                        // Rounded corners like gallery button
-                    self.config.mirror_preview, // Match main preview mirror setting
+                    8.0,
+                    self.config.mirror_preview,
                 );
 
                 // Wrap in fixed-size container

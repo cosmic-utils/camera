@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
-
-//! GPU-accelerated filter processing for virtual camera
+//! GPU-accelerated filter pipeline for images
 //!
-//! This module applies filters directly on RGBA textures using compute shaders:
-//!
-//! 1. Upload RGBA frame as texture
-//! 2. Apply filter compute shader in RGBA space
-//! 3. Read back filtered RGBA buffer for PipeWire output
+//! This module provides a unified GPU filter pipeline used by both photo capture
+//! and virtual camera for consistent filter application.
+//! It uses wgpu with software rendering fallback for systems without GPU support.
 
 use crate::app::FilterType;
-use crate::backends::camera::types::{BackendError, BackendResult, CameraFrame, PixelFormat};
 use cosmic::iced_wgpu::wgpu;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
-/// Uniform data for the filter shader
+/// Filter parameters uniform
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct FilterParams {
@@ -23,37 +19,31 @@ struct FilterParams {
     _padding: u32,
 }
 
-/// GPU filter renderer for virtual camera output
-///
-/// Applies filters directly on RGBA textures for maximum simplicity and efficiency.
-pub struct GpuFilterRenderer {
+/// GPU filter pipeline for images
+pub struct GpuFilterPipeline {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    // RGBA input texture
-    texture_rgba: Option<wgpu::Texture>,
-    // RGBA output buffer (storage buffer for compute shader output)
-    output_buffer: Option<wgpu::Buffer>,
-    // Staging buffer for CPU readback
-    staging_buffer: Option<wgpu::Buffer>,
-    // Compute pipeline
     pipeline: wgpu::ComputePipeline,
-    // Bind group layout
     bind_group_layout: wgpu::BindGroupLayout,
-    // Sampler
     sampler: wgpu::Sampler,
-    // Uniform buffer
     uniform_buffer: wgpu::Buffer,
-    // Current dimensions
-    width: u32,
-    height: u32,
+    // Cached resources for current dimensions
+    cached_width: u32,
+    cached_height: u32,
+    input_texture: Option<wgpu::Texture>,
+    output_buffer: Option<wgpu::Buffer>,
+    staging_buffer: Option<wgpu::Buffer>,
 }
 
-impl GpuFilterRenderer {
-    /// Create a new GPU filter renderer
-    pub async fn new() -> BackendResult<Self> {
-        info!("Initializing GPU filter renderer (RGBA mode)");
+impl GpuFilterPipeline {
+    /// Create a new GPU filter pipeline
+    ///
+    /// This will attempt to use hardware GPU acceleration, falling back to
+    /// software rendering (llvmpipe/SwiftShader) if no GPU is available.
+    pub async fn new() -> Result<Self, String> {
+        info!("Initializing GPU filter pipeline");
 
-        // Request adapter
+        // Request adapter - will use software rendering if no hardware GPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -66,23 +56,20 @@ impl GpuFilterRenderer {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or_else(|| {
-                BackendError::InitializationFailed(
-                    "Failed to find suitable GPU adapter".to_string(),
-                )
-            })?;
+            .ok_or("Failed to find suitable GPU adapter")?;
 
         let adapter_info = adapter.get_info();
         info!(
-            name = %adapter_info.name,
-            backend = ?adapter_info.backend,
-            "Selected GPU adapter for virtual camera"
+            adapter_name = %adapter_info.name,
+            adapter_backend = ?adapter_info.backend,
+            "Selected GPU adapter for filter pipeline"
         );
 
+        // Request device
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    label: Some("virtual_camera_gpu"),
+                    label: Some("filter_pipeline_gpu"),
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
@@ -90,26 +77,24 @@ impl GpuFilterRenderer {
                 None,
             )
             .await
-            .map_err(|e| {
-                BackendError::InitializationFailed(format!("Failed to get GPU device: {}", e))
-            })?;
+            .map_err(|e| format!("Failed to get GPU device: {}", e))?;
 
         // Create shader with shared filter functions
         let shader_source = format!(
             "{}\n{}",
-            include_str!("../../shaders/filters.wgsl"),
-            include_str!("../../shaders/filter_compute.wgsl")
+            super::FILTER_FUNCTIONS,
+            include_str!("filter_compute.wgsl")
         );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("vcam_filter_shader"),
+            label: Some("filter_compute_shader"),
             source: wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
 
         // Create bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("vcam_filter_bind_group_layout"),
+            label: Some("filter_bind_group_layout"),
             entries: &[
-                // Input RGBA texture
+                // Input texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -120,7 +105,7 @@ impl GpuFilterRenderer {
                     },
                     count: None,
                 },
-                // Output RGBA buffer
+                // Output storage buffer
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -154,14 +139,14 @@ impl GpuFilterRenderer {
 
         // Create pipeline layout
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("vcam_filter_pipeline_layout"),
+            label: Some("filter_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
 
         // Create compute pipeline
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("vcam_filter_pipeline"),
+            label: Some("filter_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: "main",
@@ -171,7 +156,7 @@ impl GpuFilterRenderer {
 
         // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("vcam_filter_sampler"),
+            label: Some("filter_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -183,7 +168,7 @@ impl GpuFilterRenderer {
 
         // Create uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("vcam_filter_uniform"),
+            label: Some("filter_uniform_buffer"),
             size: std::mem::size_of::<FilterParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -192,31 +177,31 @@ impl GpuFilterRenderer {
         Ok(Self {
             device,
             queue,
-            texture_rgba: None,
-            output_buffer: None,
-            staging_buffer: None,
             pipeline,
             bind_group_layout,
             sampler,
             uniform_buffer,
-            width: 0,
-            height: 0,
+            cached_width: 0,
+            cached_height: 0,
+            input_texture: None,
+            output_buffer: None,
+            staging_buffer: None,
         })
     }
 
-    /// Ensure GPU resources are allocated for the given dimensions
+    /// Ensure resources are allocated for the given dimensions
     fn ensure_resources(&mut self, width: u32, height: u32) {
-        if self.width == width && self.height == height {
+        if self.cached_width == width && self.cached_height == height {
             return;
         }
 
-        debug!(width, height, "Allocating RGBA filter resources");
+        debug!(width, height, "Allocating filter pipeline resources");
 
-        let rgba_size = (width * height * 4) as u64;
+        let buffer_size = (width * height * 4) as u64;
 
-        // Create RGBA texture
-        self.texture_rgba = Some(self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("input_rgba_texture"),
+        // Create input texture
+        self.input_texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("filter_input_texture"),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -230,92 +215,102 @@ impl GpuFilterRenderer {
             view_formats: &[],
         }));
 
-        // Output buffer (storage buffer, one u32 per pixel)
+        // Create output storage buffer
         self.output_buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("output_rgba_buffer"),
-            size: rgba_size,
+            label: Some("filter_output_buffer"),
+            size: buffer_size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         }));
 
-        // Staging buffer for readback
+        // Create staging buffer for CPU readback
         self.staging_buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("staging_rgba_buffer"),
-            size: rgba_size,
+            label: Some("filter_staging_buffer"),
+            size: buffer_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         }));
 
-        self.width = width;
-        self.height = height;
+        self.cached_width = width;
+        self.cached_height = height;
     }
 
-    /// Apply filter to frame and return RGBA output
-    pub fn apply_filter(
+    /// Apply a filter to RGBA data
+    ///
+    /// Takes RGBA pixel data (width * height * 4 bytes) and returns filtered RGBA data.
+    /// This runs on the GPU with software rendering fallback.
+    pub async fn apply_filter_rgba(
         &mut self,
-        frame: &CameraFrame,
+        rgba_data: &[u8],
+        width: u32,
+        height: u32,
         filter: FilterType,
-    ) -> BackendResult<Vec<u8>> {
-        if frame.format != PixelFormat::RGBA {
-            return Err(BackendError::FormatNotSupported(
-                "Only RGBA input is supported".into(),
-            ));
-        }
-
-        // For standard filter, just copy the data (handle stride)
+    ) -> Result<Vec<u8>, String> {
         if filter == FilterType::Standard {
-            return self.passthrough_frame(frame);
+            // No filter needed, return as-is
+            return Ok(rgba_data.to_vec());
         }
 
-        self.ensure_resources(frame.width, frame.height);
+        self.ensure_resources(width, height);
 
-        let texture_rgba = self.texture_rgba.as_ref().unwrap();
+        let input_texture = self
+            .input_texture
+            .as_ref()
+            .ok_or("Input texture not allocated")?;
+        let output_buffer = self
+            .output_buffer
+            .as_ref()
+            .ok_or("Output buffer not allocated")?;
+        let staging_buffer = self
+            .staging_buffer
+            .as_ref()
+            .ok_or("Staging buffer not allocated")?;
 
-        // Upload RGBA data
+        // Upload RGBA data to input texture
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
-                texture: texture_rgba,
+                texture: input_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &frame.data,
+            rgba_data,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(frame.stride),
-                rows_per_image: None,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
             },
             wgpu::Extent3d {
-                width: frame.width,
-                height: frame.height,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
         );
 
-        // Create texture view
-        let view = texture_rgba.create_view(&wgpu::TextureViewDescriptor::default());
-
         // Update uniform buffer
         let params = FilterParams {
-            width: frame.width,
-            height: frame.height,
+            width,
+            height,
             filter_mode: filter as u32,
             _padding: 0,
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
 
+        // Create bind group
+        let input_view = input_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("vcam_filter_bind_group"),
+            label: Some("filter_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&input_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: self.output_buffer.as_ref().unwrap().as_entire_binding(),
+                    resource: output_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -328,84 +323,97 @@ impl GpuFilterRenderer {
             ],
         });
 
-        // Create command encoder
+        // Create and submit command buffer
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("vcam_filter_encoder"),
+                label: Some("filter_encoder"),
             });
 
-        // Run compute pass
         {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("apply_filter_pass"),
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("filter_compute_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            let workgroups_x = (frame.width + 15) / 16;
-            let workgroups_y = (frame.height + 15) / 16;
-            pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+
+            compute_pass.set_pipeline(&self.pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch workgroups (16x16 threads per workgroup)
+            let workgroups_x = (width + 15) / 16;
+            let workgroups_y = (height + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
         }
 
-        // Copy to staging buffer
-        let buffer_size = (frame.width * frame.height * 4) as u64;
-        encoder.copy_buffer_to_buffer(
-            self.output_buffer.as_ref().unwrap(),
-            0,
-            self.staging_buffer.as_ref().unwrap(),
-            0,
-            buffer_size,
-        );
+        // Copy output buffer to staging buffer
+        let buffer_size = (width * height * 4) as u64;
+        encoder.copy_buffer_to_buffer(output_buffer, 0, staging_buffer, 0, buffer_size);
 
-        // Submit commands
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Read back results
-        let staging = self.staging_buffer.as_ref().unwrap();
-        let slice = staging.slice(..);
-
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
+        // Map staging buffer and read back result
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::MaintainBase::Wait);
+        self.device.poll(wgpu::Maintain::Wait);
 
-        rx.recv()
-            .map_err(|e| BackendError::Other(format!("Failed to map buffer: {}", e)))?
-            .map_err(|e| BackendError::Other(format!("Buffer map error: {:?}", e)))?;
+        receiver
+            .await
+            .map_err(|_| "Failed to receive buffer mapping result")?
+            .map_err(|e| format!("Failed to map buffer: {:?}", e))?;
 
-        let data = slice.get_mapped_range();
+        // Read RGBA data directly from buffer
+        let data = buffer_slice.get_mapped_range();
         let output = data.to_vec();
 
         drop(data);
-        staging.unmap();
+        staging_buffer.unmap();
 
         Ok(output)
     }
+}
 
-    /// Pass through frame without filtering (handle stride)
-    fn passthrough_frame(&self, frame: &CameraFrame) -> BackendResult<Vec<u8>> {
-        let width = frame.width as usize;
-        let height = frame.height as usize;
-        let stride = frame.stride as usize;
-        let row_bytes = width * 4;
+/// Cached GPU filter pipeline instance
+static GPU_FILTER_PIPELINE: std::sync::OnceLock<tokio::sync::Mutex<Option<GpuFilterPipeline>>> =
+    std::sync::OnceLock::new();
 
-        // If stride matches, return data directly
-        if stride == row_bytes {
-            return Ok(frame.data.to_vec());
+/// Get or create the shared GPU filter pipeline instance
+pub async fn get_gpu_filter_pipeline() -> Result<tokio::sync::MutexGuard<'static, Option<GpuFilterPipeline>>, String> {
+    let lock = GPU_FILTER_PIPELINE.get_or_init(|| tokio::sync::Mutex::new(None));
+    let mut guard = lock.lock().await;
+
+    if guard.is_none() {
+        match GpuFilterPipeline::new().await {
+            Ok(pipeline) => {
+                *guard = Some(pipeline);
+            }
+            Err(e) => {
+                warn!("Failed to initialize GPU filter pipeline: {}", e);
+                return Err(e);
+            }
         }
-
-        // Handle stride padding
-        let mut output = vec![0u8; row_bytes * height];
-        for y in 0..height {
-            let src_start = y * stride;
-            let dst_start = y * row_bytes;
-            output[dst_start..dst_start + row_bytes]
-                .copy_from_slice(&frame.data[src_start..src_start + row_bytes]);
-        }
-
-        Ok(output)
     }
+
+    Ok(guard)
+}
+
+/// Apply a filter to RGBA data using the shared GPU pipeline
+///
+/// This is the main entry point for applying filters. It uses GPU acceleration
+/// with software rendering fallback. Takes RGBA input and returns RGBA output.
+pub async fn apply_filter_gpu_rgba(
+    rgba_data: &[u8],
+    width: u32,
+    height: u32,
+    filter: FilterType,
+) -> Result<Vec<u8>, String> {
+    let mut guard = get_gpu_filter_pipeline().await?;
+    let pipeline = guard
+        .as_mut()
+        .ok_or("GPU filter pipeline not initialized")?;
+
+    pipeline.apply_filter_rgba(rgba_data, width, height, filter).await
 }
