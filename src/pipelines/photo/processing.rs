@@ -90,7 +90,9 @@ impl PostProcessor {
 
         // Step 1: Apply filter on RGBA data directly (more efficient - avoids RGB↔RGBA conversions)
         let filtered_rgba = if config.filter_type != FilterType::Standard {
-            match apply_filter_gpu_rgba(&frame.data, frame_width, frame_height, config.filter_type).await {
+            match apply_filter_gpu_rgba(&frame.data, frame_width, frame_height, config.filter_type)
+                .await
+            {
                 Ok(filtered_data) => {
                     debug!("Filter applied via GPU pipeline (RGBA-native)");
                     filtered_data

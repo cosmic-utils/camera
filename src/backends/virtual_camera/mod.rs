@@ -154,31 +154,27 @@ impl VirtualCameraManager {
                 if guard.is_none() {
                     // Create a runtime for initialization only
                     match tokio::runtime::Handle::try_current() {
-                        Ok(handle) => {
-                            match handle.block_on(GpuFilterRenderer::new()) {
-                                Ok(renderer) => {
-                                    info!("GPU filter renderer initialized for virtual camera");
-                                    *guard = Some(renderer);
-                                }
-                                Err(e) => {
-                                    warn!(error = %e, "Failed to initialize GPU filter renderer");
-                                }
+                        Ok(handle) => match handle.block_on(GpuFilterRenderer::new()) {
+                            Ok(renderer) => {
+                                info!("GPU filter renderer initialized for virtual camera");
+                                *guard = Some(renderer);
                             }
-                        }
+                            Err(e) => {
+                                warn!(error = %e, "Failed to initialize GPU filter renderer");
+                            }
+                        },
                         Err(_) => {
                             // No tokio runtime, try to create one temporarily
                             match tokio::runtime::Runtime::new() {
-                                Ok(rt) => {
-                                    match rt.block_on(GpuFilterRenderer::new()) {
-                                        Ok(renderer) => {
-                                            info!("GPU filter renderer initialized for virtual camera");
-                                            *guard = Some(renderer);
-                                        }
-                                        Err(e) => {
-                                            warn!(error = %e, "Failed to initialize GPU filter renderer");
-                                        }
+                                Ok(rt) => match rt.block_on(GpuFilterRenderer::new()) {
+                                    Ok(renderer) => {
+                                        info!("GPU filter renderer initialized for virtual camera");
+                                        *guard = Some(renderer);
                                     }
-                                }
+                                    Err(e) => {
+                                        warn!(error = %e, "Failed to initialize GPU filter renderer");
+                                    }
+                                },
                                 Err(e) => {
                                     warn!(error = %e, "Failed to create tokio runtime for GPU init");
                                 }

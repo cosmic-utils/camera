@@ -113,10 +113,16 @@ impl VirtualCameraPipeline {
 
         // Link elements: appsrc -> videoconvert -> pipewiresink
         appsrc.link(&videoconvert).map_err(|e| {
-            BackendError::InitializationFailed(format!("Failed to link appsrc to videoconvert: {}", e))
+            BackendError::InitializationFailed(format!(
+                "Failed to link appsrc to videoconvert: {}",
+                e
+            ))
         })?;
         videoconvert.link(&pipewiresink).map_err(|e| {
-            BackendError::InitializationFailed(format!("Failed to link videoconvert to pipewiresink: {}", e))
+            BackendError::InitializationFailed(format!(
+                "Failed to link videoconvert to pipewiresink: {}",
+                e
+            ))
         })?;
 
         info!(
@@ -214,7 +220,10 @@ impl VirtualCameraPipeline {
             Ok(_) => {
                 let count = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
                 if count % 100 == 0 {
-                    debug!(frame = count, "Virtual camera frames pushed (RGBA zero-copy)");
+                    debug!(
+                        frame = count,
+                        "Virtual camera frames pushed (RGBA zero-copy)"
+                    );
                 }
                 Ok(())
             }
