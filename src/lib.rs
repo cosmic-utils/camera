@@ -33,6 +33,7 @@ pub mod i18n;
 pub mod media;
 pub mod network_manager;
 pub mod pipelines;
+pub mod shaders;
 pub mod storage;
 
 // Re-export commonly used types

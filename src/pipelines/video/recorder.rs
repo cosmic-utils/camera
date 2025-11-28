@@ -313,9 +313,9 @@ impl VideoRecorder {
             .dynamic_cast::<gst_app::AppSink>()
             .map_err(|_| "Failed to cast to AppSink")?;
 
-        // Configure appsink for NV12 format
+        // Configure appsink for RGBA format
         let preview_caps = gst::Caps::builder("video/x-raw")
-            .field("format", "NV12")
+            .field("format", "RGBA")
             .build();
         appsink.set_caps(Some(&preview_caps));
         appsink.set_property("emit-signals", false);
@@ -514,19 +514,15 @@ impl VideoRecorder {
                                     use gstreamer_video::VideoInfo;
 
                                     if let Ok(video_info) = VideoInfo::from_caps(caps) {
-                                        let stride_y = video_info.stride()[0] as u32;
-                                        let stride_uv = video_info.stride()[1] as u32;
-                                        let offset_uv = video_info.offset()[1];
+                                        let stride = video_info.stride()[0] as u32;
 
                                         let frame = CameraFrame {
                                             data: map.as_slice().to_vec().into(),
                                             width: video_info.width(),
                                             height: video_info.height(),
                                             format:
-                                                crate::backends::camera::types::PixelFormat::NV12,
-                                            stride_y,
-                                            stride_uv,
-                                            offset_uv,
+                                                crate::backends::camera::types::PixelFormat::RGBA,
+                                            stride,
                                             captured_at: std::time::Instant::now(),
                                         };
 

@@ -117,7 +117,7 @@ pub trait CameraBackend: Send + Sync {
     ///
     /// This captures a single frame with the current camera settings.
     /// The frame data is copied immediately, so the camera preview is not blocked.
-    /// The frame is in NV12 format and must be converted/encoded by the photo pipeline.
+    /// The frame is in RGBA format and ready for processing by the photo pipeline.
     ///
     /// # Returns
     /// * `Ok(CameraFrame)` - Frame captured successfully
@@ -160,7 +160,7 @@ pub trait CameraBackend: Send + Sync {
     /// Get a receiver for preview frames
     ///
     /// The receiver will continuously receive frames while the backend is initialized.
-    /// Frames are in NV12 format and ready for display via the preview widget.
+    /// Frames are in RGBA format and ready for display via the preview widget.
     ///
     /// # Returns
     /// * `Some(FrameReceiver)` - Stream of preview frames

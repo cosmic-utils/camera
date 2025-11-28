@@ -58,9 +58,8 @@ impl std::fmt::Display for CameraFormat {
 /// Pixel format for camera frames
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
-    /// NV12 - 4:2:0 semi-planar YUV (1.5 bytes per pixel)
-    NV12,
     /// RGBA - 32-bit with alpha (4 bytes per pixel)
+    /// This is the native format used throughout the pipeline
     RGBA,
 }
 
@@ -69,11 +68,9 @@ pub enum PixelFormat {
 pub struct CameraFrame {
     pub width: u32,
     pub height: u32,
-    pub data: Arc<[u8]>,      // Zero-copy frame data
-    pub format: PixelFormat,  // Pixel format of the data
-    pub stride_y: u32,        // Row stride for Y plane (bytes per row, may include padding)
-    pub stride_uv: u32,       // Row stride for UV plane (bytes per row, may include padding)
-    pub offset_uv: usize,     // Byte offset where UV plane starts
+    pub data: Arc<[u8]>,      // Zero-copy frame data (RGBA format)
+    pub format: PixelFormat,  // Pixel format of the data (always RGBA)
+    pub stride: u32,          // Row stride (bytes per row, may include padding)
     pub captured_at: Instant, // Timestamp when frame was captured (for latency diagnostics)
 }
 

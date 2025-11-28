@@ -243,10 +243,8 @@ impl PipeWirePipeline {
                     let decode_time = frame_start.elapsed();
                     DECODE_TIME_US.store(decode_time.as_micros() as u64, Ordering::Relaxed);
 
-                    // Extract stride information for NV12 format
-                    let stride_y = video_info.stride()[0] as u32;
-                    let stride_uv = video_info.stride()[1] as u32;
-                    let offset_uv = video_info.offset()[1];
+                    // Extract stride information for RGBA format
+                    let stride = video_info.stride()[0] as u32;
 
                     // Log stride info every 60 frames for debugging
                     if frame_num % 60 == 0 {
@@ -254,9 +252,7 @@ impl PipeWirePipeline {
                             frame = frame_num,
                             width = video_info.width(),
                             height = video_info.height(),
-                            stride_y,
-                            stride_uv,
-                            offset_uv,
+                            stride,
                             "Frame stride information"
                         );
                     }
@@ -266,10 +262,8 @@ impl PipeWirePipeline {
                         width: video_info.width(),
                         height: video_info.height(),
                         data: Arc::from(map.as_slice()),
-                        format: PixelFormat::NV12,  // Pipeline outputs NV12
-                        stride_y,
-                        stride_uv,
-                        offset_uv,
+                        format: PixelFormat::RGBA,  // Pipeline outputs RGBA
+                        stride,
                         captured_at: frame_start, // Use frame_start as capture timestamp
                     };
 
