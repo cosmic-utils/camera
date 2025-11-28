@@ -82,6 +82,100 @@ impl Default for RecordingState {
     }
 }
 
+/// Virtual camera streaming state machine
+pub enum VirtualCameraState {
+    /// Not streaming
+    Idle,
+    /// Actively streaming to virtual camera
+    Streaming {
+        /// When streaming started
+        start_time: Instant,
+        /// Channel to signal stop
+        stop_sender: Option<tokio::sync::oneshot::Sender<()>>,
+        /// Channel to send frames to the virtual camera pipeline
+        frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
+        /// Channel to send filter updates to the virtual camera pipeline
+        filter_sender: tokio::sync::watch::Sender<FilterType>,
+    },
+}
+
+impl std::fmt::Debug for VirtualCameraState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VirtualCameraState::Idle => write!(f, "Idle"),
+            VirtualCameraState::Streaming { start_time, .. } => {
+                write!(f, "Streaming {{ elapsed: {:?} }}", start_time.elapsed())
+            }
+        }
+    }
+}
+
+impl VirtualCameraState {
+    /// Check if currently streaming
+    pub fn is_streaming(&self) -> bool {
+        matches!(self, VirtualCameraState::Streaming { .. })
+    }
+
+    /// Get the elapsed streaming duration
+    pub fn elapsed_duration(&self) -> u64 {
+        match self {
+            VirtualCameraState::Idle => 0,
+            VirtualCameraState::Streaming { start_time, .. } => start_time.elapsed().as_secs(),
+        }
+    }
+
+    /// Take the stop sender (consumes it)
+    pub fn take_stop_sender(&mut self) -> Option<tokio::sync::oneshot::Sender<()>> {
+        match self {
+            VirtualCameraState::Idle => None,
+            VirtualCameraState::Streaming { stop_sender, .. } => stop_sender.take(),
+        }
+    }
+
+    /// Send a frame to the virtual camera pipeline
+    pub fn send_frame(&self, frame: Arc<CameraFrame>) -> bool {
+        match self {
+            VirtualCameraState::Idle => false,
+            VirtualCameraState::Streaming { frame_sender, .. } => frame_sender.send(frame).is_ok(),
+        }
+    }
+
+    /// Start streaming
+    pub fn start(
+        stop_sender: tokio::sync::oneshot::Sender<()>,
+        frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
+        filter_sender: tokio::sync::watch::Sender<FilterType>,
+    ) -> Self {
+        VirtualCameraState::Streaming {
+            start_time: Instant::now(),
+            stop_sender: Some(stop_sender),
+            frame_sender,
+            filter_sender,
+        }
+    }
+
+    /// Update the filter for virtual camera streaming
+    pub fn set_filter(&self, filter: FilterType) -> bool {
+        match self {
+            VirtualCameraState::Idle => false,
+            VirtualCameraState::Streaming { filter_sender, .. } => {
+                filter_sender.send(filter).is_ok()
+            }
+        }
+    }
+
+    /// Stop streaming (returns Idle)
+    pub fn stop(&mut self) -> Self {
+        std::mem::replace(self, VirtualCameraState::Idle)
+    }
+}
+
+impl Default for VirtualCameraState {
+    fn default() -> Self {
+        VirtualCameraState::Idle
+    }
+}
+
 /// Theatre mode state
 ///
 /// Consolidates theatre mode UI visibility state.
@@ -160,6 +254,8 @@ pub struct AppModel {
     pub mode: CameraMode,
     /// Recording state (idle, recording, or paused)
     pub recording: RecordingState,
+    /// Virtual camera state (idle or streaming)
+    pub virtual_camera: VirtualCameraState,
     /// Whether a photo capture is in progress
     pub is_capturing: bool,
     /// Whether the format picker is visible (iOS-style popup)
@@ -252,6 +348,8 @@ pub struct TransitionState {
 pub enum CameraMode {
     Photo,
     Video,
+    /// Virtual camera mode - streams filtered video to a PipeWire virtual camera
+    Virtual,
 }
 
 /// Filter types for camera preview
@@ -399,6 +497,16 @@ pub enum Message {
     /// Start recording after camera is released
     StartRecordingAfterDelay,
 
+    // ===== Virtual Camera =====
+    /// Toggle virtual camera streaming (start/stop)
+    ToggleVirtualCamera,
+    /// Virtual camera streaming started successfully
+    VirtualCameraStarted,
+    /// Virtual camera streaming stopped
+    VirtualCameraStopped(Result<(), String>),
+    /// Update virtual camera streaming duration (every second)
+    UpdateVirtualCameraDuration,
+
     // ===== Gallery =====
     /// Open gallery in file manager
     OpenGallery,
@@ -418,6 +526,8 @@ pub enum Message {
     SelectAudioDevice(usize),
     /// Select video encoder
     SelectVideoEncoder(usize),
+    /// Toggle virtual camera feature enabled
+    ToggleVirtualCameraEnabled,
 
     // ===== System & Recovery =====
     /// Camera backend recovery started

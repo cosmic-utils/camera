@@ -67,11 +67,12 @@ impl AppModel {
                 VideoContentFit::Contain
             };
 
-            // Only apply filters in Photo mode
-            let filter_mode = if self.mode == crate::app::state::CameraMode::Photo {
-                self.selected_filter
-            } else {
-                crate::app::state::FilterType::Standard
+            // Apply filters in Photo and Virtual modes (not in Video mode)
+            let filter_mode = match self.mode {
+                crate::app::state::CameraMode::Photo | crate::app::state::CameraMode::Virtual => {
+                    self.selected_filter
+                }
+                crate::app::state::CameraMode::Video => crate::app::state::FilterType::Standard,
             };
             let video_elem = video_widget::video_widget(
                 frame.clone(),

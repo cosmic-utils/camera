@@ -69,7 +69,9 @@ impl AppModel {
                 .on_press(Message::TheatreShowUI)
                 .on_move(|_| Message::TheatreShowUI)
                 .into()
-        } else if self.filter_picker_visible && self.mode == CameraMode::Photo {
+        } else if self.filter_picker_visible
+            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
+        {
             // Close filter picker when clicking on the preview area
             widget::mouse_area(camera_preview)
                 .on_press(Message::CloseFilterPicker)
@@ -79,55 +81,62 @@ impl AppModel {
         };
 
         // Check if filter name label should be shown (only when filter picker is open)
-        let show_filter_label = self.mode == CameraMode::Photo && self.filter_picker_visible;
+        // Filters are available in Photo and Virtual modes
+        let show_filter_label = (self.mode == CameraMode::Photo
+            || self.mode == CameraMode::Virtual)
+            && self.filter_picker_visible;
 
-        // Capture button area - changes based on recording state
-        let capture_button_only = if self.recording.is_recording() {
-            // When recording: stop button centered, photo button to its right
-            let stop_button = self.build_capture_button();
-            let photo_button = self.build_photo_during_recording_button();
+        // Capture button area - changes based on recording/streaming state
+        let capture_button_only =
+            if self.recording.is_recording() || self.virtual_camera.is_streaming() {
+                // When recording/streaming: stop button centered, photo button to its right
+                let stop_button = self.build_capture_button();
+                let photo_button = self.build_photo_during_recording_button();
 
-            // Layout: [Fill] [Spacer=photo width] [Stop button] [Photo button] [Fill]
-            // The spacer on the left balances the photo button on the right,
-            // keeping the stop button perfectly centered
-            let photo_button_width = crate::constants::ui::CAPTURE_BUTTON_OUTER;
-            widget::row()
-                .push(widget::Space::new(Length::Fill, Length::Shrink))
-                .push(widget::Space::new(
-                    Length::Fixed(photo_button_width),
-                    Length::Shrink,
-                ))
-                .push(stop_button)
-                .push(photo_button)
-                .push(widget::Space::new(Length::Fill, Length::Shrink))
-                .align_y(Alignment::Center)
-                .width(Length::Fill)
-                .into()
-        } else {
-            // Normal single capture button
-            self.build_capture_button()
-        };
+                // Layout: [Fill] [Spacer=photo width] [Stop button] [Photo button] [Fill]
+                // The spacer on the left balances the photo button on the right,
+                // keeping the stop button perfectly centered
+                let photo_button_width = crate::constants::ui::CAPTURE_BUTTON_OUTER;
+                widget::row()
+                    .push(widget::Space::new(Length::Fill, Length::Shrink))
+                    .push(widget::Space::new(
+                        Length::Fixed(photo_button_width),
+                        Length::Shrink,
+                    ))
+                    .push(stop_button)
+                    .push(photo_button)
+                    .push(widget::Space::new(Length::Fill, Length::Shrink))
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .into()
+            } else {
+                // Normal single capture button
+                self.build_capture_button()
+            };
 
         // Capture button area (filter name label is now an overlay on the preview)
         // Wrap in mouse_area to close filter picker when clicking the empty space around the button
-        let capture_button_area: Element<'_, Message> =
-            if self.filter_picker_visible && self.mode == CameraMode::Photo {
-                widget::mouse_area(capture_button_only)
-                    .on_press(Message::CloseFilterPicker)
-                    .into()
-            } else {
-                capture_button_only
-            };
+        let capture_button_area: Element<'_, Message> = if self.filter_picker_visible
+            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
+        {
+            widget::mouse_area(capture_button_only)
+                .on_press(Message::CloseFilterPicker)
+                .into()
+        } else {
+            capture_button_only
+        };
 
         // Bottom area: either bottom bar or filter picker
-        let bottom_area: Element<'_, Message> =
-            if self.filter_picker_visible && self.mode == CameraMode::Photo {
-                // Show filter picker instead of bottom bar
-                self.build_filter_picker()
-            } else {
-                // Show normal bottom bar
-                self.build_bottom_bar()
-            };
+        // Filters are available in Photo and Virtual modes
+        let bottom_area: Element<'_, Message> = if self.filter_picker_visible
+            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
+        {
+            // Show filter picker instead of bottom bar
+            self.build_filter_picker()
+        } else {
+            // Show normal bottom bar
+            self.build_bottom_bar()
+        };
 
         // Build content based on theatre mode
         let content: Element<'_, Message> = if self.theatre.enabled {
@@ -253,10 +262,20 @@ impl AppModel {
             row = row.push(widget::horizontal_space().width(spacing.space_s));
         }
 
+        // Show streaming indicator when streaming virtual camera
+        if let Some(indicator) = self.build_streaming_indicator() {
+            row = row.push(indicator);
+            row = row.push(widget::horizontal_space().width(spacing.space_s));
+        }
+
         // Show format/resolution button in both photo and video modes
-        // Hide button when picker is visible and when recording (video mode only)
+        // Hide button when:
+        // - Format picker is visible
+        // - Recording in video mode
+        // - Streaming virtual camera (resolution cannot be changed during streaming)
         let show_format_button = !self.format_picker_visible
-            && (self.mode == CameraMode::Photo || !self.recording.is_recording());
+            && (self.mode == CameraMode::Photo || !self.recording.is_recording())
+            && !self.virtual_camera.is_streaming();
         if show_format_button {
             row = row.push(self.build_format_button());
         }
@@ -264,41 +283,43 @@ impl AppModel {
         // Right side buttons
         row = row.push(widget::Space::new(Length::Fill, Length::Shrink));
 
-        // Photo mode buttons: Flash and B&W filter (only in Photo mode)
-        if self.mode == CameraMode::Photo {
-            // Flash toggle button
-            let flash_icon_bytes = if self.flash_enabled {
-                FLASH_ICON
-            } else {
-                FLASH_OFF_ICON
-            };
-            let flash_icon = widget::icon::from_svg_bytes(flash_icon_bytes).symbolic(true);
+        // Photo and Virtual mode buttons: Flash and filter (filter for both, flash only for Photo)
+        if self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual {
+            // Flash toggle button (only in Photo mode)
+            if self.mode == CameraMode::Photo {
+                let flash_icon_bytes = if self.flash_enabled {
+                    FLASH_ICON
+                } else {
+                    FLASH_OFF_ICON
+                };
+                let flash_icon = widget::icon::from_svg_bytes(flash_icon_bytes).symbolic(true);
 
-            if is_disabled {
-                row = row.push(
-                    widget::container(widget::icon(flash_icon).size(20))
-                        .style(|_theme| widget::container::Style {
-                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                            ..Default::default()
-                        })
-                        .padding([4, 8]),
-                );
-            } else {
-                row = row.push(
-                    widget::button::icon(flash_icon)
-                        .on_press(Message::ToggleFlash)
-                        .class(if self.flash_enabled {
-                            cosmic::theme::Button::Suggested
-                        } else {
-                            cosmic::theme::Button::Standard
-                        }),
-                );
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(flash_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(
+                        widget::button::icon(flash_icon)
+                            .on_press(Message::ToggleFlash)
+                            .class(if self.flash_enabled {
+                                cosmic::theme::Button::Suggested
+                            } else {
+                                cosmic::theme::Button::Standard
+                            }),
+                    );
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
             }
 
-            // 5px spacing
-            row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
-
-            // Filter picker button
+            // Filter picker button (available in Photo and Virtual modes)
             if is_disabled {
                 let filter_button = widget::button::icon(icon::from_name("image-filter-symbolic"));
                 row = row.push(widget::container(filter_button).style(|_theme| {
