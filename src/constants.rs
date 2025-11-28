@@ -110,10 +110,9 @@ pub enum ResolutionTier {
 }
 
 impl ResolutionTier {
-    /// Get all tiers for UI iteration
-    pub const ALL: [ResolutionTier; 5] = [
+    /// Get all tiers for UI iteration (HD = 1080p, excludes 720p)
+    pub const ALL: [ResolutionTier; 4] = [
         ResolutionTier::SD,
-        ResolutionTier::HD,
         ResolutionTier::FullHD,
         ResolutionTier::TwoK,
         ResolutionTier::FourK,
@@ -123,8 +122,8 @@ impl ResolutionTier {
     pub fn display_name(&self) -> &'static str {
         match self {
             ResolutionTier::SD => "SD",
-            ResolutionTier::HD => "HD",
-            ResolutionTier::FullHD => "Full HD",
+            ResolutionTier::HD => "720p",
+            ResolutionTier::FullHD => "HD",
             ResolutionTier::TwoK => "2K",
             ResolutionTier::FourK => "4K",
         }
