@@ -48,8 +48,9 @@ impl AppModel {
         // Determine what format would be selected in the new mode
         // Note: We don't use current format as fallback to avoid cross-contamination
         let would_select_format = match new_mode {
-            CameraMode::Photo => {
-                // Photo mode: saved settings > max resolution
+            CameraMode::Photo | CameraMode::Virtual => {
+                // Photo/Virtual mode: saved settings > max resolution
+                // Virtual mode uses photo settings since it's similar behavior
                 check_saved_settings(&self.config.photo_settings).or_else(|| {
                     format_selection::select_max_resolution_format(&formats_for_new_mode)
                 })
@@ -107,12 +108,17 @@ impl AppModel {
         };
 
         // Store in per-camera settings based on current mode
+        // Virtual mode shares settings with Photo mode
         let mode_name = match self.mode {
-            CameraMode::Photo => {
+            CameraMode::Photo | CameraMode::Virtual => {
                 self.config
                     .photo_settings
                     .insert(camera.path.clone(), format_settings);
-                "Photo"
+                if self.mode == CameraMode::Photo {
+                    "Photo"
+                } else {
+                    "Virtual"
+                }
             }
             CameraMode::Video => {
                 self.config
@@ -234,8 +240,9 @@ impl AppModel {
         self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
 
         // Format selection logic: both modes use saved settings, current format, or defaults
+        // Virtual mode uses the same format selection as Photo mode
         self.active_format = match mode {
-            CameraMode::Photo => self.select_photo_format(&camera_path),
+            CameraMode::Photo | CameraMode::Virtual => self.select_photo_format(&camera_path),
             CameraMode::Video => self.select_video_format(&camera_path),
         };
 

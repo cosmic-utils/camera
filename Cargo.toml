@@ -27,7 +27,7 @@ gstreamer-app = "0.24.2"
 gstreamer-video = "0.24.3"
 image = "0.25.9"
 chrono = "0.4.42"
-bytemuck = "1.24.0"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 dirs = "6.0.0"
 rqrr = "0.10.0"
 zbus = "5.12.0"

@@ -23,7 +23,7 @@ finish-args:
   - --filesystem=xdg-videos:rw
   # PipeWire access for camera and audio
   # - Camera: pipewiresrc for video capture via Camera Portal
-  # - Audio: pipewiresrc for microphone input and audio sink (streaming)
+  # - Audio: pipewiresrc for microphone
   # This is the sandboxed approach - PipeWire handles all media access
   - --filesystem=xdg-run/pipewire-0:ro
   # D-Bus access for COSMIC config daemon (live theme/config updates)
