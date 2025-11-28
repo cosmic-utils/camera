@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Camera backend with trait-based abstraction for future multi-backend support
 #![allow(dead_code)]
 

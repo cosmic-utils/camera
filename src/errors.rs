@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 // Error types prepared for future unified error handling
 #![allow(dead_code)]
 

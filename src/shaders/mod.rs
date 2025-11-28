@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: GPL-3.0-only
 //! Shared shader definitions and GPU filter pipeline
 //!
 //! This module provides the single source of truth for filter implementations.
