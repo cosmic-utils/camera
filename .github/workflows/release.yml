@@ -213,83 +213,48 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          # Get the previous tag
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          CURRENT_TAG="${{ github.ref_name }}"
+          # Generate installation instructions to append to GitHub's auto-generated notes
+          cat << EOF > release_notes_footer.md
 
-          # Start building release notes
-          cat << 'HEADER' > release_notes.md
-          ## What's Changed
+          ## Installation
 
-          HEADER
+          ### Flatpak (Recommended)
+          \`\`\`bash
+          # Install from downloaded .flatpak file
+          flatpak install cosmic-camera-x86_64.flatpak
+          \`\`\`
 
-          if [ -n "$PREVIOUS_TAG" ]; then
-            echo "### Pull Requests" >> release_notes.md
-            echo "" >> release_notes.md
+          ### Binary
+          \`\`\`bash
+          # Extract and run
+          tar -xzf cosmic-camera-x86_64-linux.tar.gz
+          ./cosmic-camera
+          \`\`\`
 
-            # Get merged PRs between tags using GitHub API
-            gh pr list \
-              --state merged \
-              --search "merged:>=$(git log -1 --format=%ci $PREVIOUS_TAG | cut -d' ' -f1)" \
-              --json number,title,author,url \
-              --jq '.[] | "* \(.title) by @\(.author.login) in \(.url)"' >> release_notes.md || echo "* No pull requests in this release" >> release_notes.md
+          ## Assets
 
-            echo "" >> release_notes.md
-            echo "### Issues Closed" >> release_notes.md
-            echo "" >> release_notes.md
-
-            # Get closed issues between tags
-            gh issue list \
-              --state closed \
-              --search "closed:>=$(git log -1 --format=%ci $PREVIOUS_TAG | cut -d' ' -f1)" \
-              --json number,title,url \
-              --jq '.[] | "* \(.title) - \(.url)"' >> release_notes.md || echo "* No issues closed in this release" >> release_notes.md
-
-            echo "" >> release_notes.md
-            echo "### New Contributors" >> release_notes.md
-            echo "" >> release_notes.md
-
-            # Get new contributors (authors who made their first contribution in this release)
-            # This is a simplified version - GitHub's auto-generated notes do this better
-            echo "Thank you to all contributors who made this release possible! 🎉" >> release_notes.md
-            echo "" >> release_notes.md
-
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${CURRENT_TAG}" >> release_notes.md
-          else
-            echo "This is the first release! 🎉" >> release_notes.md
-          fi
-
-          echo "" >> release_notes.md
-          echo "## Installation" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### Flatpak (Recommended)" >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "# Install from downloaded .flatpak file" >> release_notes.md
-          echo "flatpak install cosmic-camera-x86_64.flatpak" >> release_notes.md
-          echo '```' >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### Binary" >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "# Extract and run" >> release_notes.md
-          echo "tar -xzf cosmic-camera-x86_64-linux.tar.gz" >> release_notes.md
-          echo "./cosmic-camera" >> release_notes.md
-          echo '```' >> release_notes.md
-          echo "" >> release_notes.md
-          echo "## Assets" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "| File | Description |" >> release_notes.md
-          echo "|------|-------------|" >> release_notes.md
-          echo "| \`cosmic-camera-x86_64.flatpak\` | Flatpak bundle for x86_64 |" >> release_notes.md
-          echo "| \`cosmic-camera-aarch64.flatpak\` | Flatpak bundle for ARM64 |" >> release_notes.md
-          echo "| \`cosmic-camera-x86_64-linux.tar.gz\` | Linux binary for x86_64 |" >> release_notes.md
-          echo "| \`cosmic-camera-aarch64-linux.tar.gz\` | Linux binary for ARM64 |" >> release_notes.md
-          echo "| \`cosmic-camera-riscv64-linux.tar.gz\` | Linux binary for RISC-V 64 |" >> release_notes.md
-          echo "| \`cosmic-camera-${{ github.ref_name }}-source.zip\` | Source code |" >> release_notes.md
+          | File | Description |
+          |------|-------------|
+          | \`cosmic-camera-x86_64.flatpak\` | Flatpak bundle for x86_64 |
+          | \`cosmic-camera-aarch64.flatpak\` | Flatpak bundle for ARM64 |
+          | \`cosmic-camera-x86_64-linux.tar.gz\` | Linux binary for x86_64 |
+          | \`cosmic-camera-aarch64-linux.tar.gz\` | Linux binary for ARM64 |
+          | \`cosmic-camera-riscv64-linux.tar.gz\` | Linux binary for RISC-V 64 |
+          | \`cosmic-camera-${{ github.ref_name }}-source.zip\` | Source code |
+          EOF
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Create GitHub Release
         run: |
+          # Use GitHub's auto-generated notes (properly tracks PRs between tags)
+          # then append our installation instructions
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="${{ github.ref_name }}" \
+            --jq '.body' > release_notes.md
+
+          cat release_notes_footer.md >> release_notes.md
+
           gh release create ${{ github.ref_name }} \
             --title "COSMIC Camera ${{ github.ref_name }}" \
             --notes-file release_notes.md \
