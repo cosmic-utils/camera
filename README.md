@@ -93,11 +93,15 @@ just flatpak-clean  # Remove build artifacts
 
 ## License
 
-This project is licensed under the [Mozilla Public License 2.0](LICENSE).
+Licensed under the [GNU Public License 3.0](https://choosealicense.com/licenses/gpl-3.0).
 
-## Contributing
+### Contribution
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Any contribution intentionally submitted for inclusion in the work by you shall be licensed under the GNU Public License 3.0 (GPL-3.0). Each source file should have a SPDX copyright notice at the top of the file:
+
+```
+// SPDX-License-Identifier: GPL-3.0-only
+```
 
 ### Reporting Bugs
 
