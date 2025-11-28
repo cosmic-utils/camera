@@ -285,11 +285,12 @@ impl PrimitiveTrait for VideoPrimitive {
                 if self.video_id == 1 {
                     // Blur video: use Contain mode with texture dimensions for Pass 1
                     // Apply mirror in first pass since this reads from source texture
+                    // Apply filter in first pass so the filter is visible during transition
                     if let VideoEntry::NV12 { width, height, .. } = entry {
                         let blur_uniform = ViewportUniform {
                             viewport_size: [*width as f32, *height as f32],
                             content_fit_mode: 0, // Contain mode - no Cover cropping in Pass 1
-                            filter_mode: 0,      // No filter during blur pass
+                            filter_mode,         // Apply filter during blur (visible in transition)
                             corner_radius: 0.0,  // No rounded corners for blur passes
                             mirror_horizontal: if self.mirror_horizontal { 1 } else { 0 },
                             _padding1: 0.0,
