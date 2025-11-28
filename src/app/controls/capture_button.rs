@@ -14,6 +14,7 @@ impl AppModel {
     /// The button changes appearance based on mode and state:
     /// - Photo mode: White circle (gray when capturing)
     /// - Video mode: Red circle (darker red when recording)
+    /// - Virtual mode: Blue circle (green when streaming)
     /// - Press animation: Slightly smaller when active
     /// - Disabled: Grayed out and non-interactive during transitions
     pub fn build_capture_button(&self) -> Element<'_, Message> {
@@ -23,36 +24,49 @@ impl AppModel {
         // Determine button color based on mode and state
         let capture_button_color = if is_disabled {
             Color::from_rgba(0.5, 0.5, 0.5, 0.3) // Grayed out with low opacity when disabled
-        } else if self.mode == CameraMode::Video {
-            if self.recording.is_recording() {
-                Color::from_rgb(0.6, 0.05, 0.05) // Darker red when recording
-            } else {
-                Color::from_rgb(0.9, 0.1, 0.1) // Red for video mode
-            }
         } else {
-            if self.is_capturing {
-                Color::from_rgb(0.7, 0.7, 0.7) // Gray when capturing
-            } else {
-                Color::WHITE // White for photo mode
+            match self.mode {
+                CameraMode::Video => {
+                    if self.recording.is_recording() {
+                        Color::from_rgb(0.6, 0.05, 0.05) // Darker red when recording
+                    } else {
+                        Color::from_rgb(0.9, 0.1, 0.1) // Red for video mode
+                    }
+                }
+                CameraMode::Virtual => {
+                    if self.virtual_camera.is_streaming() {
+                        Color::from_rgb(0.1, 0.7, 0.2) // Green when streaming
+                    } else {
+                        Color::from_rgb(0.2, 0.5, 0.9) // Blue for virtual mode
+                    }
+                }
+                CameraMode::Photo => {
+                    if self.is_capturing {
+                        Color::from_rgb(0.7, 0.7, 0.7) // Gray when capturing
+                    } else {
+                        Color::WHITE // White for photo mode
+                    }
+                }
             }
         };
 
         // Apply size changes based on state
-        // - Recording: 70% smaller and stays that size while recording
+        // - Recording/Streaming: 70% smaller and stays that size while active
         // - Capturing photo: 85% press down effect (brief)
-        let (inner_size, outer_size) = if self.recording.is_recording() {
-            (
-                ui::CAPTURE_BUTTON_INNER * 0.70, // 70% smaller during recording
-                ui::CAPTURE_BUTTON_OUTER * 0.70,
-            )
-        } else if self.is_capturing {
-            (
-                ui::CAPTURE_BUTTON_INNER * 0.85, // Press down effect for photo
-                ui::CAPTURE_BUTTON_OUTER * 0.85,
-            )
-        } else {
-            (ui::CAPTURE_BUTTON_INNER, ui::CAPTURE_BUTTON_OUTER)
-        };
+        let (inner_size, outer_size) =
+            if self.recording.is_recording() || self.virtual_camera.is_streaming() {
+                (
+                    ui::CAPTURE_BUTTON_INNER * 0.70, // 70% smaller during recording/streaming
+                    ui::CAPTURE_BUTTON_OUTER * 0.70,
+                )
+            } else if self.is_capturing {
+                (
+                    ui::CAPTURE_BUTTON_INNER * 0.85, // Press down effect for photo
+                    ui::CAPTURE_BUTTON_OUTER * 0.85,
+                )
+            } else {
+                (ui::CAPTURE_BUTTON_INNER, ui::CAPTURE_BUTTON_OUTER)
+            };
 
         let button_inner = widget::container(widget::Space::new(
             Length::Fixed(inner_size),
@@ -80,6 +94,7 @@ impl AppModel {
                 .on_press(match self.mode {
                     CameraMode::Photo => Message::Capture,
                     CameraMode::Video => Message::ToggleRecording,
+                    CameraMode::Virtual => Message::ToggleVirtualCamera,
                 })
                 .padding(0)
                 .width(Length::Fixed(outer_size))

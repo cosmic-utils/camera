@@ -18,8 +18,15 @@ impl AppModel {
     /// Shows a flip button if multiple cameras are available,
     /// otherwise shows an invisible placeholder to maintain consistent layout.
     /// Disabled and grayed out during transitions.
+    /// Hidden during virtual camera streaming (camera cannot be switched while streaming).
     pub fn build_camera_switcher(&self) -> Element<'_, Message> {
         let is_disabled = self.transition_state.ui_disabled;
+
+        // Hide camera switcher during virtual camera streaming
+        if self.virtual_camera.is_streaming() {
+            return widget::Space::new(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH), Length::Shrink)
+                .into();
+        }
 
         if self.available_cameras.len() > 1 {
             let switch_icon = widget::icon::from_svg_bytes(CAMERA_SWITCH_ICON).symbolic(true);

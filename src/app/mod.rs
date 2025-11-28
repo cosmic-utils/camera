@@ -55,6 +55,7 @@ use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
 pub use state::{
     AppModel, CameraMode, ContextPage, FilterType, Message, RecordingState, TheatreState,
+    VirtualCameraState,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -194,6 +195,7 @@ impl cosmic::Application for AppModel {
             config_handler,
             mode: CameraMode::Photo,
             recording: RecordingState::default(),
+            virtual_camera: VirtualCameraState::default(),
             is_capturing: false,
             format_picker_visible: false,
             theatre: TheatreState::default(),

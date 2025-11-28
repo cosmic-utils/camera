@@ -4,6 +4,7 @@
 
 use crate::app::state::{AppModel, Message};
 use crate::constants::{BitratePreset, ResolutionTier, app_info, format_bitrate};
+use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
 use cosmic::iced::Length;
@@ -101,6 +102,10 @@ impl AppModel {
         let mirror_toggle =
             widget::toggler(self.config.mirror_preview).on_toggle(|_| Message::ToggleMirrorPreview);
 
+        // Virtual camera toggle
+        let virtual_camera_toggle = widget::toggler(self.config.virtual_camera_enabled)
+            .on_toggle(|_| Message::ToggleVirtualCameraEnabled);
+
         // Version info string
         let version_info = if app_info::is_flatpak() {
             format!("Version {} (Flatpak)", app_info::version())
@@ -164,6 +169,24 @@ impl AppModel {
                     )
                     .push(widget::horizontal_space().width(cosmic::iced::Length::Fill))
                     .push(mirror_toggle)
+                    .align_y(cosmic::iced::Alignment::Center),
+            )
+            .push(widget::vertical_space().height(spacing.space_l))
+            .push(widget::divider::horizontal::default())
+            .push(widget::vertical_space().height(spacing.space_s))
+            .push(
+                widget::text(fl!("virtual-camera-title"))
+                    .size(16)
+                    .font(cosmic::font::bold()),
+            )
+            .push(widget::vertical_space().height(spacing.space_xxs))
+            .push(widget::text(fl!("virtual-camera-description")).size(12))
+            .push(widget::vertical_space().height(spacing.space_xs))
+            .push(
+                widget::row()
+                    .push(widget::text(fl!("virtual-camera-enable")).size(14))
+                    .push(widget::horizontal_space().width(cosmic::iced::Length::Fill))
+                    .push(virtual_camera_toggle)
                     .align_y(cosmic::iced::Alignment::Center),
             )
             .push(widget::vertical_space().height(spacing.space_l))

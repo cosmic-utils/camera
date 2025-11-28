@@ -17,12 +17,14 @@
 //! - **Settings**: Configuration, device selection
 //! - **System**: Bug reports, recovery
 
-use crate::app::state::{AppModel, CameraMode, FilterType, Message, RecordingState};
+use crate::app::state::{
+    AppModel, CameraMode, FilterType, Message, RecordingState, VirtualCameraState,
+};
 use crate::app::utils::{parse_codec, parse_resolution};
 use cosmic::Task;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 impl AppModel {
     /// Main message handler - routes messages to appropriate handler methods.
@@ -55,6 +57,7 @@ impl AppModel {
             Message::StartCameraTransition => self.handle_start_camera_transition(),
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
+            Message::ToggleVirtualCameraEnabled => self.handle_toggle_virtual_camera_enabled(),
 
             // ===== Format Selection =====
             Message::SetMode(mode) => self.handle_set_mode(mode),
@@ -78,6 +81,12 @@ impl AppModel {
             Message::RecordingStopped(result) => self.handle_recording_stopped(result),
             Message::UpdateRecordingDuration => self.handle_update_recording_duration(),
             Message::StartRecordingAfterDelay => self.handle_start_recording_after_delay(),
+
+            // ===== Virtual Camera =====
+            Message::ToggleVirtualCamera => self.handle_toggle_virtual_camera(),
+            Message::VirtualCameraStarted => self.handle_virtual_camera_started(),
+            Message::VirtualCameraStopped(result) => self.handle_virtual_camera_stopped(result),
+            Message::UpdateVirtualCameraDuration => self.handle_update_virtual_camera_duration(),
 
             // ===== Gallery =====
             Message::OpenGallery => self.handle_open_gallery(),
@@ -298,6 +307,13 @@ impl AppModel {
             );
         }
 
+        // Send frame to virtual camera if streaming
+        if self.virtual_camera.is_streaming() {
+            if !self.virtual_camera.send_frame(Arc::clone(&frame)) {
+                debug!("Failed to send frame to virtual camera (channel closed)");
+            }
+        }
+
         if let Some(task) = self.transition_state.on_frame_received() {
             self.current_frame = Some(frame);
             return task.map(cosmic::Action::App);
@@ -380,6 +396,15 @@ impl AppModel {
             .collect();
 
         if !current_camera_still_available {
+            // Stop virtual camera streaming if the camera used for streaming is disconnected
+            if self.virtual_camera.is_streaming() {
+                info!("Camera disconnected during virtual camera streaming, stopping stream");
+                if let Some(sender) = self.virtual_camera.take_stop_sender() {
+                    let _ = sender.send(());
+                }
+                self.virtual_camera = VirtualCameraState::Idle;
+            }
+
             if new_cameras.is_empty() {
                 error!("Current camera disconnected and no other cameras available");
                 self.current_camera_index = 0;
@@ -437,6 +462,33 @@ impl AppModel {
         if let Some(handler) = self.config_handler.as_ref() {
             if let Err(err) = self.config.write_entry(handler) {
                 error!(?err, "Failed to save mirror preview setting");
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_toggle_virtual_camera_enabled(&mut self) -> Task<cosmic::Action<Message>> {
+        self.config.virtual_camera_enabled = !self.config.virtual_camera_enabled;
+        info!(
+            virtual_camera_enabled = self.config.virtual_camera_enabled,
+            "Virtual camera feature toggled"
+        );
+
+        // If disabling while in Virtual mode, switch to Photo mode
+        if !self.config.virtual_camera_enabled && self.mode == CameraMode::Virtual {
+            // Stop virtual camera if streaming
+            if self.virtual_camera.is_streaming() {
+                if let Some(sender) = self.virtual_camera.take_stop_sender() {
+                    let _ = sender.send(());
+                }
+                self.virtual_camera = VirtualCameraState::Idle;
+            }
+            self.mode = CameraMode::Photo;
+        }
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save virtual camera setting");
             }
         }
         Task::none()
@@ -901,6 +953,176 @@ impl AppModel {
     }
 
     // =========================================================================
+    // Virtual Camera Handlers
+    // =========================================================================
+
+    fn handle_toggle_virtual_camera(&mut self) -> Task<cosmic::Action<Message>> {
+        if self.virtual_camera.is_streaming() {
+            info!("Stopping virtual camera streaming");
+            if let Some(sender) = self.virtual_camera.take_stop_sender() {
+                let _ = sender.send(());
+            }
+            self.virtual_camera = VirtualCameraState::Idle;
+            return Task::done(cosmic::Action::App(Message::VirtualCameraStopped(Ok(()))));
+        }
+
+        // Start virtual camera
+        let Some(format) = &self.active_format else {
+            error!("No active format for virtual camera");
+            return Task::none();
+        };
+
+        let width = format.width;
+        let height = format.height;
+        let filter_type = self.selected_filter;
+
+        info!(
+            width,
+            height,
+            ?filter_type,
+            "Starting virtual camera streaming"
+        );
+
+        let (stop_tx, _stop_rx) = tokio::sync::oneshot::channel();
+        let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (filter_tx, mut filter_rx) = tokio::sync::watch::channel(filter_type);
+        self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx);
+
+        // Start the virtual camera streaming on a DEDICATED THREAD
+        // This is critical: CPU filtering is blocking and must NOT run on the async executor
+        //
+        // Use a oneshot channel to communicate completion back to the async task
+        // This avoids blocking the executor with handle.join()
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+
+        // Spawn the dedicated thread immediately (fire-and-forget from thread perspective)
+        std::thread::spawn(move || {
+            use crate::backends::virtual_camera::VirtualCameraManager;
+
+            // Create and start the virtual camera on this dedicated thread
+            let mut manager = VirtualCameraManager::new();
+            manager.set_filter(filter_type);
+
+            let result = (|| {
+                if let Err(e) = manager.start(width, height) {
+                    return Err(format!("Failed to start virtual camera: {}", e));
+                }
+
+                info!("Virtual camera started on dedicated thread, processing frames");
+
+                // Process frames until channel closes
+                let mut frame_count = 0u64;
+                let mut dropped_count = 0u64;
+
+                loop {
+                    // Check for filter updates (non-blocking)
+                    if filter_rx.has_changed().unwrap_or(false) {
+                        let new_filter = *filter_rx.borrow_and_update();
+                        manager.set_filter(new_filter);
+                        info!(?new_filter, "Virtual camera filter updated");
+                    }
+
+                    // Wait for at least one frame (blocking is OK on dedicated thread)
+                    let first_frame = match frame_rx.blocking_recv() {
+                        Some(f) => f,
+                        None => {
+                            info!("Frame channel closed, stopping virtual camera");
+                            break;
+                        }
+                    };
+
+                    // Drain any additional frames, keeping only the latest
+                    let mut latest_frame = first_frame;
+                    while let Ok(newer_frame) = frame_rx.try_recv() {
+                        latest_frame = newer_frame;
+                        dropped_count += 1;
+                    }
+
+                    frame_count += 1;
+                    if frame_count % 30 == 0 {
+                        debug!(
+                            frame = frame_count,
+                            dropped = dropped_count,
+                            "Processing virtual camera frame"
+                        );
+                    }
+
+                    // CPU filtering happens here - blocking is fine on dedicated thread
+                    if let Err(e) = manager.push_frame(&latest_frame) {
+                        warn!(?e, "Failed to push frame to virtual camera");
+                    }
+                }
+
+                info!("Shutting down virtual camera");
+
+                if let Err(e) = manager.stop() {
+                    warn!(?e, "Error stopping virtual camera");
+                }
+
+                Ok(())
+            })();
+
+            // Signal completion to the async task (ignore if receiver dropped)
+            let _ = done_tx.send(result);
+        });
+
+        // Create async task that waits for thread completion WITHOUT blocking
+        let streaming_task = Task::perform(
+            async move {
+                // This awaits the oneshot channel - doesn't block the executor!
+                match done_rx.await {
+                    Ok(result) => result,
+                    Err(_) => Err("Virtual camera thread terminated unexpectedly".to_string()),
+                }
+            },
+            |result| cosmic::Action::App(Message::VirtualCameraStopped(result)),
+        );
+
+        let start_signal = Task::done(cosmic::Action::App(Message::VirtualCameraStarted));
+
+        Task::batch([start_signal, streaming_task])
+    }
+
+    fn handle_virtual_camera_started(&mut self) -> Task<cosmic::Action<Message>> {
+        info!("Virtual camera streaming started successfully");
+        Task::perform(
+            async {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            },
+            |_| cosmic::Action::App(Message::UpdateVirtualCameraDuration),
+        )
+    }
+
+    fn handle_virtual_camera_stopped(
+        &mut self,
+        result: Result<(), String>,
+    ) -> Task<cosmic::Action<Message>> {
+        self.virtual_camera = VirtualCameraState::Idle;
+
+        match result {
+            Ok(()) => {
+                info!("Virtual camera stopped successfully");
+            }
+            Err(err) => {
+                error!(error = %err, "Virtual camera error");
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_update_virtual_camera_duration(&mut self) -> Task<cosmic::Action<Message>> {
+        if self.virtual_camera.is_streaming() {
+            return Task::perform(
+                async {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                },
+                |_| cosmic::Action::App(Message::UpdateVirtualCameraDuration),
+            );
+        }
+        Task::none()
+    }
+
+    // =========================================================================
     // Gallery Handlers
     // =========================================================================
 
@@ -945,6 +1167,12 @@ impl AppModel {
     fn handle_select_filter(&mut self, filter: FilterType) -> Task<cosmic::Action<Message>> {
         self.selected_filter = filter;
         info!("Filter selected: {:?}", filter);
+
+        // Update virtual camera filter if streaming
+        if self.virtual_camera.is_streaming() {
+            self.virtual_camera.set_filter(filter);
+        }
+
         Task::none()
     }
 

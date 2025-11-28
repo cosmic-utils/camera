@@ -22,7 +22,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 4]
+#[version = 5]
 pub struct Config {
     /// Last used camera device path
     pub last_camera_path: Option<String>,
@@ -40,6 +40,8 @@ pub struct Config {
     pub mirror_preview: bool,
     /// Video encoder bitrate preset (Low, Medium, High)
     pub bitrate_preset: BitratePreset,
+    /// Virtual camera feature enabled (disabled by default)
+    pub virtual_camera_enabled: bool,
 }
 
 impl Default for Config {
@@ -53,6 +55,7 @@ impl Default for Config {
             bug_report_url: "https://github.com/FreddyFunk/cosmic-camera/issues/new?template=bug_report_from_app.yml".to_string(),
             mirror_preview: true, // Default to mirrored (selfie mode)
             bitrate_preset: BitratePreset::default(), // Default to Medium
+            virtual_camera_enabled: false, // Disabled by default
         }
     }
 }
