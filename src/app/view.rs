@@ -13,6 +13,7 @@ use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
 use crate::constants::{resolution_thresholds, ui};
+use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
@@ -389,13 +390,13 @@ impl AppModel {
         // Format iOS-style label with superscript-style RES and FPS
         let (res_label, fps_label) = if let Some(fmt) = &self.active_format {
             let res = if fmt.width >= resolution_thresholds::THRESHOLD_4K {
-                "4K"
+                fl!("indicator-4k")
             } else if fmt.width >= resolution_thresholds::THRESHOLD_HD {
-                "HD"
+                fl!("indicator-hd")
             } else if fmt.width >= resolution_thresholds::THRESHOLD_720P {
-                "720p"
+                fl!("indicator-720p")
             } else {
-                "SD"
+                fl!("indicator-sd")
             };
 
             let fps = if let Some(fps) = fmt.framerate {
@@ -406,15 +407,15 @@ impl AppModel {
 
             (res, fps)
         } else {
-            (ui::DEFAULT_RES_LABEL, ui::DEFAULT_FPS_DISPLAY.to_string())
+            (fl!("indicator-hd"), ui::DEFAULT_FPS_DISPLAY.to_string())
         };
 
         // Create button with resolution^RES framerate^FPS layout
         let res_superscript =
-            widget::container(widget::text("RES").size(ui::SUPERSCRIPT_TEXT_SIZE))
+            widget::container(widget::text(fl!("indicator-res")).size(ui::SUPERSCRIPT_TEXT_SIZE))
                 .padding(ui::SUPERSCRIPT_PADDING);
         let fps_superscript =
-            widget::container(widget::text("FPS").size(ui::SUPERSCRIPT_TEXT_SIZE))
+            widget::container(widget::text(fl!("indicator-fps")).size(ui::SUPERSCRIPT_TEXT_SIZE))
                 .padding(ui::SUPERSCRIPT_PADDING);
 
         let button_content = widget::row()

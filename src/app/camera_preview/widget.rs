@@ -4,6 +4,7 @@
 
 use crate::app::state::{AppModel, Message};
 use crate::app::video_widget::{self, VideoContentFit};
+use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Background, Color, Length};
 use cosmic::widget;
@@ -21,7 +22,7 @@ impl AppModel {
         if self.available_cameras.is_empty() {
             return widget::container(
                 widget::column()
-                    .push(widget::text("Initializing camera...").size(20))
+                    .push(widget::text(fl!("initializing-camera")).size(20))
                     .spacing(10)
                     .align_x(cosmic::iced::alignment::Horizontal::Center),
             )

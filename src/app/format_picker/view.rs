@@ -4,6 +4,7 @@
 
 use crate::app::state::{AppModel, Message};
 use crate::constants::{formats, ui};
+use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Border, Color, Length};
 use cosmic::widget;
@@ -32,7 +33,7 @@ impl AppModel {
             .spacing(spacing.space_xxs)
             .align_y(Alignment::Center)
             .push(
-                widget::text("Resolution:")
+                widget::text(fl!("format-resolution"))
                     .size(ui::PICKER_LABEL_TEXT_SIZE)
                     .width(Length::Fixed(ui::PICKER_LABEL_WIDTH)),
             );
@@ -61,7 +62,7 @@ impl AppModel {
             .spacing(spacing.space_xxs)
             .align_y(Alignment::Center)
             .push(
-                widget::text("Frame Rate:")
+                widget::text(fl!("format-framerate"))
                     .size(ui::PICKER_LABEL_TEXT_SIZE)
                     .width(Length::Fixed(ui::PICKER_LABEL_WIDTH)),
             );

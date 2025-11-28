@@ -81,13 +81,13 @@ impl AppModel {
         );
 
         // Bug report buttons
-        let bug_report_button =
-            widget::button::standard("Report a bug").on_press(Message::GenerateBugReport);
+        let bug_report_button = widget::button::standard(fl!("settings-report-bug"))
+            .on_press(Message::GenerateBugReport);
 
         // Show report button (only if a report was generated)
         let bug_report_row = if self.last_bug_report_path.is_some() {
-            let show_report_button =
-                widget::button::standard("Show Report").on_press(Message::ShowBugReport);
+            let show_report_button = widget::button::standard(fl!("settings-show-report"))
+                .on_press(Message::ShowBugReport);
 
             widget::row()
                 .push(bug_report_button)
@@ -108,19 +108,23 @@ impl AppModel {
 
         // Version info string
         let version_info = if app_info::is_flatpak() {
-            format!("Version {} (Flatpak)", app_info::version())
+            fl!("settings-version-flatpak", version = app_info::version())
         } else {
-            format!("Version {}", app_info::version())
+            fl!("settings-version", version = app_info::version())
         };
 
         // Build settings column
         let settings_column: Element<'_, Message> = widget::column()
-            .push(widget::text("Camera").size(16).font(cosmic::font::bold()))
+            .push(
+                widget::text(fl!("settings-camera"))
+                    .size(16)
+                    .font(cosmic::font::bold()),
+            )
             .push(widget::vertical_space().height(spacing.space_xxs))
             .push(camera_dropdown)
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Microphone")
+                widget::text(fl!("settings-microphone"))
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -128,7 +132,7 @@ impl AppModel {
             .push(audio_dropdown)
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Video encoder")
+                widget::text(fl!("settings-video-encoder"))
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -138,7 +142,7 @@ impl AppModel {
             .push(
                 widget::row()
                     .push(
-                        widget::text("Video quality")
+                        widget::text(fl!("settings-video-quality"))
                             .size(16)
                             .font(cosmic::font::bold()),
                     )
@@ -151,7 +155,7 @@ impl AppModel {
             .push(self.build_bitrate_info_matrix(spacing.space_xxs))
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Manual mode override")
+                widget::text(fl!("settings-manual-override"))
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -163,7 +167,7 @@ impl AppModel {
             .push(
                 widget::row()
                     .push(
-                        widget::text("Mirror preview")
+                        widget::text(fl!("settings-mirror-preview"))
                             .size(16)
                             .font(cosmic::font::bold()),
                     )
@@ -193,7 +197,7 @@ impl AppModel {
             .push(widget::divider::horizontal::default())
             .push(widget::vertical_space().height(spacing.space_s))
             .push(
-                widget::text("Bug reports")
+                widget::text(fl!("settings-bug-reports"))
                     .size(16)
                     .font(cosmic::font::bold()),
             )
@@ -214,7 +218,7 @@ impl AppModel {
             settings_column,
             Message::ToggleContextPage(crate::app::state::ContextPage::Settings),
         )
-        .title("Settings")
+        .title(fl!("settings-title"))
     }
 
     /// Build the bitrate info matrix table (shown when info button is toggled)
@@ -232,26 +236,38 @@ impl AppModel {
         let header_row = widget::row()
             .push(
                 widget::container(
-                    widget::text("Resolution")
+                    widget::text(fl!("settings-resolution"))
                         .size(12)
                         .font(cosmic::font::bold()),
                 )
                 .width(Length::Fixed(70.0)),
             )
             .push(
-                widget::container(widget::text("Low").size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-low"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .push(
-                widget::container(widget::text("Medium").size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-medium"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .push(
-                widget::container(widget::text("High").size(12).font(cosmic::font::bold()))
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
+                widget::container(
+                    widget::text(fl!("preset-high"))
+                        .size(12)
+                        .font(cosmic::font::bold()),
+                )
+                .width(Length::Fixed(65.0))
+                .center_x(65.0),
             )
             .spacing(4);
 

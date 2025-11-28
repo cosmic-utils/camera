@@ -5,6 +5,8 @@
 //! These types represent the output of frame analysis tasks and are used
 //! throughout the application for rendering overlays and handling user actions.
 
+use crate::fl;
+
 /// A rectangular region within a frame
 ///
 /// Coordinates are normalized (0.0 to 1.0) relative to the frame dimensions.
@@ -319,17 +321,17 @@ impl QrAction {
     }
 
     /// Get the primary action label for this QR code type
-    pub fn action_label(&self) -> &'static str {
+    pub fn action_label(&self) -> String {
         match self {
-            Self::Url(_) => "Open Link",
-            Self::Wifi { .. } => "Connect to WiFi",
-            Self::Text(_) => "Copy Text",
-            Self::Phone(_) => "Call",
-            Self::Email { .. } => "Send Email",
-            Self::Sms { .. } => "Send SMS",
-            Self::Location { .. } => "Open Map",
-            Self::Contact(_) => "Add Contact",
-            Self::Event(_) => "Add Event",
+            Self::Url(_) => fl!("qr-open-link"),
+            Self::Wifi { .. } => fl!("qr-connect-wifi"),
+            Self::Text(_) => fl!("qr-copy-text"),
+            Self::Phone(_) => fl!("qr-call"),
+            Self::Email { .. } => fl!("qr-send-email"),
+            Self::Sms { .. } => fl!("qr-send-sms"),
+            Self::Location { .. } => fl!("qr-open-map"),
+            Self::Contact(_) => fl!("qr-add-contact"),
+            Self::Event(_) => fl!("qr-add-event"),
         }
     }
 }

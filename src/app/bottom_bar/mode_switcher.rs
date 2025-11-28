@@ -18,16 +18,17 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
         let is_disabled = self.transition_state.ui_disabled;
 
+        let video_label = fl!("mode-video");
         let video_button = if is_disabled {
             // Disabled during transitions - no action
-            widget::button::text("VIDEO").class(if self.mode == CameraMode::Video {
+            widget::button::text(video_label).class(if self.mode == CameraMode::Video {
                 cosmic::theme::Button::Suggested
             } else {
                 cosmic::theme::Button::Text
             })
         } else {
             // Always has on_press, but SetMode handler checks if mode actually changes
-            widget::button::text("VIDEO")
+            widget::button::text(video_label)
                 .on_press(Message::SetMode(CameraMode::Video))
                 .class(if self.mode == CameraMode::Video {
                     cosmic::theme::Button::Suggested
@@ -36,16 +37,17 @@ impl AppModel {
                 })
         };
 
+        let photo_label = fl!("mode-photo");
         let photo_button = if is_disabled {
             // Disabled during transitions - no action
-            widget::button::text("PHOTO").class(if self.mode == CameraMode::Photo {
+            widget::button::text(photo_label).class(if self.mode == CameraMode::Photo {
                 cosmic::theme::Button::Suggested
             } else {
                 cosmic::theme::Button::Text
             })
         } else {
             // Always has on_press, but SetMode handler checks if mode actually changes
-            widget::button::text("PHOTO")
+            widget::button::text(photo_label)
                 .on_press(Message::SetMode(CameraMode::Photo))
                 .class(if self.mode == CameraMode::Photo {
                     cosmic::theme::Button::Suggested
