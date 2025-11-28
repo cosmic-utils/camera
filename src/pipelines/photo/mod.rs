@@ -79,7 +79,7 @@ impl PhotoPipeline {
     /// 4. Saves to disk
     ///
     /// # Arguments
-    /// * `frame` - Raw camera frame (NV12 format)
+    /// * `frame` - Raw camera frame (RGBA format)
     /// * `output_dir` - Directory to save the photo
     ///
     /// # Returns

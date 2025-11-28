@@ -4,9 +4,9 @@
 //!
 //! This widget achieves the same optimizations as iced_video_player:
 //! 1. Direct GPU texture updates (no Handle recreation)
-//! 2. GPU-side YUV→RGB conversion via WGSL shader
+//! 2. GPU-side filter processing via WGSL shaders
 //! 3. Persistent textures across frames
-//! 4. NV12 format for 60% memory bandwidth reduction
+//! 4. Native RGBA format for simplified processing
 
 use crate::app::state::FilterType;
 use crate::app::video_primitive::{VideoFrame, VideoPrimitive};
@@ -58,44 +58,21 @@ impl VideoWidget {
             16.0 / 9.0 // Default aspect ratio
         };
 
-        // Create VideoFrame based on pixel format
+        // Create VideoFrame for RGBA format
         // IMPORTANT: We share the Arc without copying to avoid ~3MB copy per frame
         if frame.width > 0 && frame.height > 0 {
-            let video_frame = match frame.format {
-                crate::backends::camera::types::PixelFormat::NV12 => {
-                    // NV12: Share the Arc directly, use offsets to access Y and UV planes
-                    VideoFrame {
-                        id: video_id,
-                        width: frame.width,
-                        height: frame.height,
-                        format: frame.format,
-                        data: Arc::clone(&frame.data), // No copy - just increment refcount
-                        stride_y: frame.stride_y,
-                        stride_uv: frame.stride_uv,
-                        offset_uv: frame.offset_uv,
-                        rgba_stride: 0,
-                    }
-                }
-                crate::backends::camera::types::PixelFormat::RGBA => {
-                    // RGBA: Share the Arc directly
-                    let rgba_stride = if frame.stride_y > 0 {
-                        frame.stride_y
-                    } else {
-                        frame.width * 4 // Fallback: 4 bytes per pixel (RGBA)
-                    };
+            let stride = if frame.stride > 0 {
+                frame.stride
+            } else {
+                frame.width * 4 // Fallback: 4 bytes per pixel (RGBA)
+            };
 
-                    VideoFrame {
-                        id: video_id,
-                        width: frame.width,
-                        height: frame.height,
-                        format: frame.format,
-                        data: Arc::clone(&frame.data), // No copy - just increment refcount
-                        stride_y: 0,
-                        stride_uv: 0,
-                        offset_uv: 0, // Not used for RGBA
-                        rgba_stride,
-                    }
-                }
+            let video_frame = VideoFrame {
+                id: video_id,
+                width: frame.width,
+                height: frame.height,
+                data: Arc::clone(&frame.data), // No copy - just increment refcount
+                stride,
             };
 
             primitive.update_frame(video_frame);

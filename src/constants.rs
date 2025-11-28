@@ -260,8 +260,8 @@ pub mod pipeline {
     }
 
     /// Output pixel format for appsink
-    /// NV12 uses 1.5 bytes/pixel vs RGBA's 4 bytes/pixel (~60% memory savings)
-    pub const OUTPUT_FORMAT: &str = "NV12";
+    /// RGBA uses 4 bytes/pixel - native RGB for simplified GPU processing
+    pub const OUTPUT_FORMAT: &str = "RGBA";
 }
 
 /// Timing constants
