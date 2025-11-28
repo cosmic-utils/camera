@@ -28,16 +28,9 @@ icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
 # Default recipe which runs `just build-release`
 default: build-release
 
-# Runs `cargo clean`
-clean:
-    cargo clean
-
-# Removes vendored dependencies
-clean-vendor:
-    rm -rf .cargo vendor vendor.tar
-
-# `cargo clean` and removes vendored dependencies
-clean-dist: clean clean-vendor
+# ============================================================================
+# Building
+# ============================================================================
 
 # Compiles with debug profile
 build-debug *args:
@@ -49,24 +42,39 @@ build-release *args: (build-debug '--release' args)
 # Compiles release profile with vendored dependencies
 build-vendored *args: vendor-extract (build-release '--frozen --offline' args)
 
+# ============================================================================
+# Code quality
+# ============================================================================
+
 # Runs cargo check
 cargo-check *args:
     cargo check --all-features {{args}}
 
-# Runs a clippy check
-check *args:
+# Runs clippy
+clippy *args:
     cargo clippy --all-features {{args}} -- -W clippy::pedantic
 
-# Runs a clippy check with JSON message format
-check-json: (check '--message-format=json')
+# Runs clippy with JSON message format
+clippy-json: (clippy '--message-format=json')
 
 # Format code
 fmt:
     cargo fmt
 
-# Check code formatting (for CI)
+# Check code formatting
 fmt-check:
     cargo fmt --check
+
+# Run tests
+test *args:
+    cargo test {{args}}
+
+# Run all checks (format, cargo check, test)
+check: fmt-check cargo-check test
+
+# ============================================================================
+# Development
+# ============================================================================
 
 # Developer target: format and run
 dev *args:
@@ -81,9 +89,20 @@ run *args:
 run-debug *args:
     env RUST_LOG=cosmic_camera=debug,info RUST_BACKTRACE=full cargo run --release {{args}}
 
-# Run tests
-test *args:
-    cargo test {{args}}
+# ============================================================================
+# Cleaning
+# ============================================================================
+
+# Runs `cargo clean`
+clean:
+    cargo clean
+
+# Removes vendored dependencies
+clean-vendor:
+    rm -rf .cargo vendor vendor.tar
+
+# `cargo clean` and removes vendored dependencies
+clean-dist: clean clean-vendor
 
 # Installs files
 install:
@@ -133,9 +152,7 @@ vendor-extract:
 # Get the current version from git tags
 get-version:
     #!/usr/bin/env bash
-    # Get version from git describe
     version=$(git describe --tags --always --match "v*" 2>/dev/null || echo "unknown")
-    # Strip 'v' prefix
     version="${version#v}"
     # Transform: 0.1.0-5-gabcdef1 -> 0.1.0-dirty-abcdef1
     if [[ "$version" == *-*-g* ]]; then
@@ -145,6 +162,11 @@ get-version:
     fi
     echo "$version"
 
+# Get runtime version from Flatpak manifest
+[private]
+flatpak-runtime-version:
+    @grep 'runtime-version:' {{APPID}}.yml | sed "s/.*runtime-version: *['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/"
+
 # ============================================================================
 # Flatpak recipes
 # ============================================================================
@@ -152,28 +174,18 @@ get-version:
 # Generate cargo-sources.json for Flatpak
 flatpak-cargo-sources:
     #!/usr/bin/env bash
-    echo "Generating cargo-sources.json for Flatpak..."
+    echo "Generating cargo-sources.json..."
     if ! command -v python3 &> /dev/null; then
         echo "Error: python3 not found!"
         exit 1
     fi
-    if [ ! -f flatpak-cargo-generator.py ]; then
-        echo "Downloading flatpak-cargo-generator.py..."
-        curl -sLo flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
-    fi
-    # Check if dependencies are available system-wide (for CI)
+    [ -f flatpak-cargo-generator.py ] || curl -sLo flatpak-cargo-generator.py \
+        https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
     if python3 -c "import aiohttp, toml" 2>/dev/null; then
-        echo "Using system Python packages..."
         python3 flatpak-cargo-generator.py ./Cargo.lock -o cargo-sources.json
     else
-        # Create virtual environment if it doesn't exist
-        if [ ! -d .flatpak-venv ]; then
-            echo "Creating virtual environment..."
-            python3 -m venv .flatpak-venv
-        fi
-        # Install dependencies in virtual environment
+        [ -d .flatpak-venv ] || python3 -m venv .flatpak-venv
         .flatpak-venv/bin/pip install --quiet aiohttp toml tomlkit
-        # Run the generator
         .flatpak-venv/bin/python flatpak-cargo-generator.py ./Cargo.lock -o cargo-sources.json
     fi
     echo "Generated cargo-sources.json"
@@ -182,23 +194,28 @@ flatpak-cargo-sources:
 flatpak-build: flatpak-cargo-sources
     #!/usr/bin/env bash
     echo "Building Flatpak..."
-    # Generate version file for flatpak build
     just get-version > .flatpak-version
     flatpak-builder --user --install --force-clean build-dir {{APPID}}.yml
     rm -f .flatpak-version
     echo "Flatpak built and installed!"
 
-# Build Flatpak bundle for distribution
-flatpak-bundle: flatpak-cargo-sources
+# Build Flatpak bundle for distribution (optionally specify arch)
+flatpak-bundle arch="": flatpak-cargo-sources
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Building Flatpak bundle..."
-    # Generate version file for flatpak build
+    arch="{{arch}}"
+    if [ -z "$arch" ]; then
+        arch=$(uname -m)
+        [ "$arch" = "x86_64" ] || [ "$arch" = "aarch64" ] || { echo "Unknown arch: $arch"; exit 1; }
+    fi
+    echo "Building Flatpak bundle for $arch..."
     just get-version > .flatpak-version
-    flatpak-builder --repo=repo --force-clean build-dir {{APPID}}.yml
-    flatpak build-bundle repo {{name}}.flatpak {{APPID}}
+    flatpak-builder --repo=repo --force-clean --arch=$arch build-dir {{APPID}}.yml
+    flatpak build-bundle repo {{name}}-$arch.flatpak {{APPID}} --arch=$arch
     rm -f .flatpak-version
-    echo "Flatpak bundle created: {{name}}.flatpak"
+    [ -f "{{name}}-$arch.flatpak" ] || { echo "Error: Flatpak bundle was not created!"; exit 1; }
+    echo "Flatpak bundle created: {{name}}-$arch.flatpak"
+    ls -la {{name}}-$arch.flatpak
 
 # Run the installed Flatpak
 flatpak-run:
@@ -218,76 +235,41 @@ flatpak-install:
     #!/usr/bin/env bash
     set -e
     echo "=== Full Flatpak Install ==="
-
-    # Uninstall any existing installation
     just flatpak-uninstall
-
-    # Extract runtime version from manifest
-    RUNTIME_VERSION=$(grep 'runtime-version:' {{APPID}}.yml | sed "s/.*runtime-version: *['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/")
-
-    # Check if all dependencies are installed
+    RUNTIME_VERSION=$(just flatpak-runtime-version)
     DEPS_MISSING=false
-    if ! flatpak info org.freedesktop.Sdk//${RUNTIME_VERSION} &>/dev/null; then
-        DEPS_MISSING=true
-    fi
-    if ! flatpak info org.freedesktop.Platform//${RUNTIME_VERSION} &>/dev/null; then
-        DEPS_MISSING=true
-    fi
-    if ! flatpak info com.system76.Cosmic.BaseApp//stable &>/dev/null; then
-        DEPS_MISSING=true
-    fi
-
+    flatpak info org.freedesktop.Sdk//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
+    flatpak info org.freedesktop.Platform//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
+    flatpak info com.system76.Cosmic.BaseApp//stable &>/dev/null || DEPS_MISSING=true
     if [ "$DEPS_MISSING" = true ]; then
-        echo "Flatpak dependencies missing for runtime ${RUNTIME_VERSION}, installing..."
+        echo "Flatpak dependencies missing, installing..."
         just flatpak-deps
     else
-        echo "Flatpak dependencies already installed for runtime ${RUNTIME_VERSION}."
+        echo "Flatpak dependencies already installed."
     fi
-
-    # Build and install
     just flatpak-build
-
     echo "=== Flatpak installation complete! ==="
     echo "Run with: just flatpak-run"
 
 # Clean Flatpak build artifacts
 flatpak-clean:
-    rm -rf build-dir .flatpak-builder repo cargo-sources.json {{name}}.flatpak flatpak-cargo-generator.py .flatpak-venv
+    rm -rf build-dir .flatpak-builder repo cargo-sources.json {{name}}-*.flatpak flatpak-cargo-generator.py .flatpak-venv .flatpak-version
 
 # Install Flatpak dependencies (runtime and SDK)
-flatpak-deps:
+flatpak-deps arch="":
     #!/usr/bin/env bash
     echo "Installing Flatpak dependencies..."
-    if ! command -v flatpak &> /dev/null; then
-        echo "Error: flatpak not found! Please install flatpak first."
-        exit 1
-    fi
-    # Extract runtime version from manifest
-    RUNTIME_VERSION=$(grep 'runtime-version:' {{APPID}}.yml | sed "s/.*runtime-version: *['\"]\\?\\([^'\"]*\\)['\"]\\?/\\1/")
-    echo "Using runtime version: $RUNTIME_VERSION"
+    command -v flatpak &> /dev/null || { echo "Error: flatpak not found!"; exit 1; }
+    RUNTIME_VERSION=$(just flatpak-runtime-version)
+    ARCH_FLAG=""
+    [ -n "{{arch}}" ] && ARCH_FLAG="--arch={{arch}}"
+    echo "Runtime version: $RUNTIME_VERSION"
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-    flatpak install -y flathub org.freedesktop.Platform//${RUNTIME_VERSION}
-    flatpak install -y flathub org.freedesktop.Sdk//${RUNTIME_VERSION}
-    flatpak install -y flathub com.system76.Cosmic.BaseApp//stable
+    sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//${RUNTIME_VERSION} $ARCH_FLAG
+    sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//${RUNTIME_VERSION} $ARCH_FLAG
+    sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//${RUNTIME_VERSION} $ARCH_FLAG
+    sudo flatpak install -y --noninteractive flathub com.system76.Cosmic.BaseApp//stable $ARCH_FLAG
     echo "Flatpak dependencies installed!"
 
 # Full clean (cargo + vendor + flatpak)
 clean-all: clean clean-vendor flatpak-clean
-
-# Build Flatpak bundle for a specific architecture (for CI)
-flatpak-bundle-arch arch: flatpak-cargo-sources
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Building Flatpak bundle for {{arch}}..."
-    # Generate version file for flatpak build
-    just get-version > .flatpak-version
-    flatpak-builder --repo=repo --force-clean --arch={{arch}} build-dir {{APPID}}.yml
-    flatpak build-bundle repo {{name}}-{{arch}}.flatpak {{APPID}} --arch={{arch}}
-    rm -f .flatpak-version
-    # Verify the bundle was created
-    if [ ! -f "{{name}}-{{arch}}.flatpak" ]; then
-        echo "Error: Flatpak bundle was not created!"
-        exit 1
-    fi
-    echo "Flatpak bundle created: {{name}}-{{arch}}.flatpak"
-    ls -la {{name}}-{{arch}}.flatpak

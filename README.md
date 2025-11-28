@@ -69,7 +69,13 @@ just run-debug
 # Format code
 just fmt
 
-# Run tests
+# Run all checks (format, cargo check, tests)
+just check
+
+# Run clippy lints
+just clippy
+
+# Run tests only
 just test
 ```
 
