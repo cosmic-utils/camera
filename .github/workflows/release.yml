@@ -280,6 +280,8 @@ jobs:
         id: get_sha
         run: |
           cd source
+          # The tag already points to the commit with updated metainfo.xml
+          # (created by the create-release workflow)
           COMMIT_SHA=$(git rev-parse ${{ github.ref_name }})
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
 
@@ -292,124 +294,6 @@ jobs:
         if: steps.check_token.outputs.skip != 'true'
         run: python3 flatpak-cargo-generator.py source/Cargo.lock -o flathub/cargo-sources.json
 
-      - name: Fetch release notes and update metainfo.xml in source repo
-        if: steps.check_token.outputs.skip != 'true'
-        id: update_metainfo
-        run: |
-          cd source
-
-          # Get the release body (the "What's Changed" section)
-          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" --json body --jq '.body' > release_body.txt
-
-          # Update metainfo.xml with version and release notes
-          python3 << 'METAINFO_EOF'
-          import xml.etree.ElementTree as ET
-          from datetime import date
-          import re
-
-          tag = "${{ github.ref_name }}"
-          # Remove 'v' prefix for version number
-          version = tag.lstrip('v')
-          today = date.today().isoformat()
-
-          # Read and parse release notes from GitHub release body
-          with open("release_body.txt", "r") as f:
-              body = f.read()
-
-          # Find the "What's Changed" section
-          notes = []
-          match = re.search(r"## What's Changed\n(.*?)(?=\n\*\*Full Changelog\*\*|\n## Installation|\Z)", body, re.DOTALL)
-          if match:
-              changes = match.group(1).strip()
-              # Convert markdown PR links to plain text for metainfo.xml
-              # "* description by @user in URL" -> "description"
-              for line in changes.split('\n'):
-                  # Extract the description part before "by @"
-                  pr_match = re.match(r'\* (.+?) by @', line)
-                  if pr_match:
-                      notes.append(pr_match.group(1).strip())
-
-          # Parse the metainfo.xml
-          metainfo_path = "resources/io.github.freddyfunk.cosmic-camera.metainfo.xml"
-          tree = ET.parse(metainfo_path)
-          root = tree.getroot()
-
-          # Find or create the releases element
-          releases = root.find("releases")
-          if releases is None:
-              releases = ET.SubElement(root, "releases")
-
-          # Check if this version already exists
-          existing_release = None
-          for release in releases.findall("release"):
-              if release.get("version") == version:
-                  existing_release = release
-                  break
-
-          if existing_release is not None:
-              # Update existing release
-              release_elem = existing_release
-              # Clear existing description
-              desc = release_elem.find("description")
-              if desc is not None:
-                  release_elem.remove(desc)
-          else:
-              # Create new release element and insert at the beginning
-              release_elem = ET.Element("release")
-              release_elem.set("version", version)
-              release_elem.set("date", today)
-              releases.insert(0, release_elem)
-
-          # Add description with release notes
-          desc = ET.SubElement(release_elem, "description")
-          if notes:
-              # Add an intro paragraph
-              p = ET.SubElement(desc, "p")
-              p.text = f"Release {version} includes the following changes:"
-
-              # Add the changes as a list
-              ul = ET.SubElement(desc, "ul")
-              for note in notes:
-                  if note.strip():
-                      li = ET.SubElement(ul, "li")
-                      li.text = note.strip()
-          else:
-              p = ET.SubElement(desc, "p")
-              p.text = "Bug fixes and improvements."
-
-          # Write back with proper formatting
-          ET.indent(tree, space="  ")
-          tree.write(metainfo_path, encoding="UTF-8", xml_declaration=True)
-
-          print(f"Updated metainfo.xml to version {version}")
-          METAINFO_EOF
-
-          rm release_body.txt
-
-          # Commit the updated metainfo.xml
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add resources/io.github.freddyfunk.cosmic-camera.metainfo.xml
-
-          if git diff --staged --quiet; then
-              echo "No changes to metainfo.xml"
-              echo "new_sha=${{ steps.get_sha.outputs.sha }}" >> $GITHUB_OUTPUT
-          else
-              git commit -m "Update metainfo.xml for ${{ github.ref_name }}"
-
-              # Update the tag to point to the new commit
-              git tag -f "${{ github.ref_name }}"
-              git push origin main
-              git push origin "${{ github.ref_name }}" --force
-
-              # Get the new commit SHA
-              NEW_SHA=$(git rev-parse HEAD)
-              echo "new_sha=$NEW_SHA" >> $GITHUB_OUTPUT
-              echo "Updated tag ${{ github.ref_name }} to commit $NEW_SHA"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
-
       - name: Update Flathub manifest
         if: steps.check_token.outputs.skip != 'true'
         run: |
@@ -418,7 +302,7 @@ jobs:
           import yaml
 
           tag = "${{ github.ref_name }}"
-          commit = "${{ steps.update_metainfo.outputs.new_sha }}"
+          commit = "${{ steps.get_sha.outputs.sha }}"
           repo_url = "https://github.com/${{ github.repository }}.git"
 
           with open("io.github.freddyfunk.cosmic-camera.yml", "r") as f:
