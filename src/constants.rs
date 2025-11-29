@@ -186,6 +186,9 @@ pub mod ui {
     /// Placeholder button width when camera switch is hidden
     pub const PLACEHOLDER_BUTTON_WIDTH: f32 = 40.0;
 
+    /// Standard icon button width (for layout balancing)
+    pub const ICON_BUTTON_WIDTH: f32 = 44.0;
+
     /// Picker label text size
     pub const PICKER_LABEL_TEXT_SIZE: u16 = 12;
 
@@ -311,6 +314,48 @@ pub fn get_resolution_label(width: u32) -> Option<&'static str> {
         w if w >= 640 => Some("SD"),  // 640x480
         _ => None,
     }
+}
+
+/// Supported file formats for virtual camera file source
+pub mod file_formats {
+    /// Supported image file extensions
+    pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+
+    /// Supported video file extensions
+    pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mkv", "webm", "avi", "mov"];
+
+    /// Check if a file extension is a supported image format
+    pub fn is_image_extension(ext: &str) -> bool {
+        IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+    }
+
+    /// Check if a file extension is a supported video format
+    pub fn is_video_extension(ext: &str) -> bool {
+        VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+    }
+}
+
+/// Virtual camera timing constants
+pub mod virtual_camera {
+    use super::Duration;
+
+    /// Progress update interval for video playback
+    pub const PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_millis(250);
+
+    /// Frame rate for image streaming (~30fps)
+    pub const IMAGE_STREAM_FRAME_DURATION: Duration = Duration::from_millis(33);
+
+    /// Pause check interval when video is paused
+    pub const PAUSE_CHECK_INTERVAL: Duration = Duration::from_millis(50);
+
+    /// Audio pipeline startup wait time
+    pub const AUDIO_PIPELINE_STARTUP_DELAY: Duration = Duration::from_millis(500);
+
+    /// GStreamer pipeline timeout for video frame extraction
+    pub const VIDEO_FRAME_TIMEOUT_SECS: u64 = 5;
+
+    /// GStreamer pipeline timeout for duration query
+    pub const DURATION_QUERY_TIMEOUT_SECS: u64 = 5;
 }
 
 /// Application information utilities

@@ -196,6 +196,15 @@ impl cosmic::Application for AppModel {
             mode: CameraMode::Photo,
             recording: RecordingState::default(),
             virtual_camera: VirtualCameraState::default(),
+            virtual_camera_file_source: None,
+            current_frame_is_file_source: false,
+            video_file_progress: None,
+            video_preview_seek_position: 0.0,
+            video_file_paused: false,
+            video_playback_control_tx: None,
+            video_preview_control_tx: None,
+            video_preview_stop_tx: None,
+            file_source_preview_receiver: None,
             is_capturing: false,
             format_picker_visible: false,
             theatre: TheatreState::default(),
@@ -233,7 +242,7 @@ impl cosmic::Application for AppModel {
                 .collect(),
             bitrate_info_visible: false,
             filter_picker_scroll_offset: 0.0,
-            transition_state: crate::app::state::TransitionState::new(),
+            transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
             qr_detection_enabled: true,
             qr_detections: Vec::new(),
@@ -387,234 +396,246 @@ impl cosmic::Application for AppModel {
         // This ensures the subscription restarts when cameras become available
         let cameras_initialized = !self.available_cameras.is_empty();
 
-        let camera_sub = Subscription::run_with_id(
-            (
-                "camera",
-                camera_index,
-                format_id,
-                // NOTE: is_recording is NOT included here!
-                // This allows preview to continue during recording (PipeWire multi-consumer)
-                // NOTE: mode is NOT included here!
-                // Camera only needs to restart when actual format changes, not on mode switch
-                cameras_initialized,
-            ), // Camera restarts only when format_id or camera_index changes
-            cosmic::iced::stream::channel(100, move |mut output| async move {
-                info!(camera_index, "Camera subscription started (PipeWire)");
+        // Check if file source is active in Virtual mode - if so, don't run camera subscription
+        let file_source_active =
+            self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
 
-                // No artificial delay needed - PipelineManager serializes all operations
-                // and ensures proper cleanup before creating new pipelines
+        let camera_sub = if file_source_active {
+            // No camera subscription when file source is active (file source handles preview)
+            Subscription::none()
+        } else {
+            Subscription::run_with_id(
+                (
+                    "camera",
+                    camera_index,
+                    format_id,
+                    // NOTE: is_recording is NOT included here!
+                    // This allows preview to continue during recording (PipeWire multi-consumer)
+                    // NOTE: mode is NOT included here!
+                    // Camera only needs to restart when actual format changes, not on mode switch
+                    cameras_initialized,
+                ), // Camera restarts only when format_id or camera_index changes
+                cosmic::iced::stream::channel(100, move |mut output| async move {
+                    info!(camera_index, "Camera subscription started (PipeWire)");
 
-                let mut frame_count = 0u64;
-                loop {
-                    // Check cancel flag at the start of each loop iteration
-                    // This prevents creating new pipelines after mode switch
-                    if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                        info!("Cancel flag set - subscription loop exiting");
-                        break;
-                    }
+                    // No artificial delay needed - PipelineManager serializes all operations
+                    // and ensures proper cleanup before creating new pipelines
 
-                    // If no camera available yet (cameras not initialized), just exit the subscription
-                    // The subscription will restart when cameras become available (cameras_initialized flag changes)
-                    if current_camera.is_none() {
-                        info!(
-                            "No camera available - subscription will restart when cameras are initialized"
-                        );
-                        break;
-                    }
-
-                    let device_path = current_camera.as_ref().and_then(|cam| {
-                        if cam.path.is_empty() {
-                            None
-                        } else {
-                            Some(cam.path.as_str())
-                        }
-                    });
-
-                    // Extract format parameters
-                    let (width, height, framerate, pixel_format) =
-                        if let Some(fmt) = &current_format {
-                            (
-                                Some(fmt.width),
-                                Some(fmt.height),
-                                fmt.framerate,
-                                Some(fmt.pixel_format.as_str()),
-                            )
-                        } else {
-                            (None, None, None, None)
-                        };
-
-                    if let Some(cam) = &current_camera {
-                        info!(name = %cam.name, path = %cam.path, "Creating camera");
-                    } else {
-                        info!("Creating default camera...");
-                    }
-
-                    if let Some(fmt) = &current_format {
-                        info!(format = %fmt, "Using format");
-                    }
-
-                    // PipeWire backend for any mode (Photo or Video)
-                    {
-                        // Check cancel flag before creating pipeline
+                    let mut frame_count = 0u64;
+                    loop {
+                        // Check cancel flag at the start of each loop iteration
+                        // This prevents creating new pipelines after mode switch
                         if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                            info!("Cancel flag set before pipeline creation - skipping");
+                            info!("Cancel flag set - subscription loop exiting");
                             break;
                         }
 
-                        // Note: Preview continues during recording since VideoRecorder has its own pipeline
-                        // Both can access the same PipeWire node simultaneously
-
-                        // Give previous pipeline time to clean up (50ms should be enough)
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-                        // Check cancel flag again after brief wait
-                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                            info!("Cancel flag set after cleanup wait - skipping");
+                        // If no camera available yet (cameras not initialized), just exit the subscription
+                        // The subscription will restart when cameras become available (cameras_initialized flag changes)
+                        if current_camera.is_none() {
+                            info!(
+                                "No camera available - subscription will restart when cameras are initialized"
+                            );
                             break;
                         }
 
-                        // Create camera pipeline using PipeWire backend
-                        use crate::backends::camera::pipewire::PipeWirePipeline;
-                        use crate::backends::camera::types::{CameraDevice, CameraFormat};
-
-                        let (sender, mut receiver) =
-                            cosmic::iced::futures::channel::mpsc::channel(100);
-
-                        // Build device and format objects for backend
-                        let device = CameraDevice {
-                            name: current_camera
-                                .as_ref()
-                                .map(|c| c.name.clone())
-                                .unwrap_or_else(|| "Default Camera".to_string()),
-                            path: device_path.unwrap_or("").to_string(),
-                            metadata_path: current_camera
-                                .as_ref()
-                                .and_then(|c| c.metadata_path.clone()),
-                        };
-
-                        let format = CameraFormat {
-                            width: width.unwrap_or(640),
-                            height: height.unwrap_or(480),
-                            framerate: framerate,
-                            hardware_accelerated: true, // Assume HW acceleration available
-                            pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
-                        };
-
-                        let pipeline_opt = match PipeWirePipeline::new(&device, &format, sender) {
-                            Ok(pipeline) => {
-                                info!("Pipeline created successfully");
-                                Some(pipeline)
-                            }
-                            Err(e) => {
-                                error!(error = %e, "Failed to initialize pipeline");
+                        let device_path = current_camera.as_ref().and_then(|cam| {
+                            if cam.path.is_empty() {
                                 None
+                            } else {
+                                Some(cam.path.as_str())
                             }
-                        };
+                        });
 
-                        if let Some(pipeline) = pipeline_opt {
-                            info!("Waiting for frames from pipeline...");
-                            // Keep pipeline alive and forward frames
-                            loop {
-                                // Check cancel flag first (set when switching cameras/modes)
-                                if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                                    info!(
-                                        "Cancel flag set - PipeWire subscription being cancelled"
-                                    );
-                                    break;
-                                }
-
-                                // Check if subscription is still active before processing next frame
-                                if output.is_closed() {
-                                    info!(
-                                        "Output channel closed - PipeWire subscription being cancelled"
-                                    );
-                                    break;
-                                }
-
-                                // Wait for next frame with a timeout to periodically check cancellation
-                                // Use 16ms timeout (~60fps) to reduce frame delivery jitter
-                                match tokio::time::timeout(
-                                    tokio::time::Duration::from_millis(16),
-                                    receiver.next(),
+                        // Extract format parameters
+                        let (width, height, framerate, pixel_format) =
+                            if let Some(fmt) = &current_format {
+                                (
+                                    Some(fmt.width),
+                                    Some(fmt.height),
+                                    fmt.framerate,
+                                    Some(fmt.pixel_format.as_str()),
                                 )
-                                .await
-                                {
-                                    Ok(Some(frame)) => {
-                                        frame_count += 1;
-                                        // Calculate frame latency (time from capture to subscription delivery)
-                                        let latency_us = frame.captured_at.elapsed().as_micros();
+                            } else {
+                                (None, None, None, None)
+                            };
 
-                                        if frame_count % 30 == 0 {
-                                            info!(
-                                                frame = frame_count,
-                                                width = frame.width,
-                                                height = frame.height,
-                                                latency_ms = latency_us as f64 / 1000.0,
-                                                "Received frame from pipeline"
-                                            );
-                                        }
+                        if let Some(cam) = &current_camera {
+                            info!(name = %cam.name, path = %cam.path, "Creating camera");
+                        } else {
+                            info!("Creating default camera...");
+                        }
 
-                                        // Warn if latency exceeds 2 frame periods (>33ms at 60fps)
-                                        if latency_us > 33_000 {
-                                            tracing::warn!(
-                                                frame = frame_count,
-                                                latency_ms = latency_us as f64 / 1000.0,
-                                                "High frame latency detected - possible stuttering"
-                                            );
-                                        }
+                        if let Some(fmt) = &current_format {
+                            info!(format = %fmt, "Using format");
+                        }
 
-                                        // Use try_send to avoid blocking the subscription when UI is busy
-                                        // Dropping frames is fine for live preview - we want the latest frame
-                                        match output.try_send(Message::CameraFrame(Arc::new(frame)))
-                                        {
-                                            Ok(_) => {
-                                                if frame_count % 30 == 0 {
-                                                    info!(
-                                                        frame = frame_count,
-                                                        "Frame forwarded to UI"
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                // Always log dropped frames for diagnostics
-                                                tracing::warn!(
-                                                    frame = frame_count,
-                                                    error = ?e,
-                                                    "Frame dropped (UI channel full) - stuttering likely"
-                                                );
-                                                // Check if channel is closed (subscription cancelled)
-                                                if e.is_disconnected() {
-                                                    info!(
-                                                        "Output channel disconnected - PipeWire subscription being cancelled"
-                                                    );
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        info!("PipeWire pipeline frame stream ended");
+                        // PipeWire backend for any mode (Photo or Video)
+                        {
+                            // Check cancel flag before creating pipeline
+                            if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                info!("Cancel flag set before pipeline creation - skipping");
+                                break;
+                            }
+
+                            // Note: Preview continues during recording since VideoRecorder has its own pipeline
+                            // Both can access the same PipeWire node simultaneously
+
+                            // Give previous pipeline time to clean up (50ms should be enough)
+                            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+                            // Check cancel flag again after brief wait
+                            if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                info!("Cancel flag set after cleanup wait - skipping");
+                                break;
+                            }
+
+                            // Create camera pipeline using PipeWire backend
+                            use crate::backends::camera::pipewire::PipeWirePipeline;
+                            use crate::backends::camera::types::{CameraDevice, CameraFormat};
+
+                            let (sender, mut receiver) =
+                                cosmic::iced::futures::channel::mpsc::channel(100);
+
+                            // Build device and format objects for backend
+                            let device = CameraDevice {
+                                name: current_camera
+                                    .as_ref()
+                                    .map(|c| c.name.clone())
+                                    .unwrap_or_else(|| "Default Camera".to_string()),
+                                path: device_path.unwrap_or("").to_string(),
+                                metadata_path: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.metadata_path.clone()),
+                            };
+
+                            let format = CameraFormat {
+                                width: width.unwrap_or(640),
+                                height: height.unwrap_or(480),
+                                framerate: framerate,
+                                hardware_accelerated: true, // Assume HW acceleration available
+                                pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
+                            };
+
+                            let pipeline_opt = match PipeWirePipeline::new(&device, &format, sender)
+                            {
+                                Ok(pipeline) => {
+                                    info!("Pipeline created successfully");
+                                    Some(pipeline)
+                                }
+                                Err(e) => {
+                                    error!(error = %e, "Failed to initialize pipeline");
+                                    None
+                                }
+                            };
+
+                            if let Some(pipeline) = pipeline_opt {
+                                info!("Waiting for frames from pipeline...");
+                                // Keep pipeline alive and forward frames
+                                loop {
+                                    // Check cancel flag first (set when switching cameras/modes)
+                                    if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                        info!(
+                                            "Cancel flag set - PipeWire subscription being cancelled"
+                                        );
                                         break;
                                     }
-                                    Err(_) => {
-                                        // Timeout - continue loop to check if channel is closed
-                                        continue;
+
+                                    // Check if subscription is still active before processing next frame
+                                    if output.is_closed() {
+                                        info!(
+                                            "Output channel closed - PipeWire subscription being cancelled"
+                                        );
+                                        break;
+                                    }
+
+                                    // Wait for next frame with a timeout to periodically check cancellation
+                                    // Use 16ms timeout (~60fps) to reduce frame delivery jitter
+                                    match tokio::time::timeout(
+                                        tokio::time::Duration::from_millis(16),
+                                        receiver.next(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Some(frame)) => {
+                                            frame_count += 1;
+                                            // Calculate frame latency (time from capture to subscription delivery)
+                                            let latency_us =
+                                                frame.captured_at.elapsed().as_micros();
+
+                                            if frame_count % 30 == 0 {
+                                                info!(
+                                                    frame = frame_count,
+                                                    width = frame.width,
+                                                    height = frame.height,
+                                                    latency_ms = latency_us as f64 / 1000.0,
+                                                    "Received frame from pipeline"
+                                                );
+                                            }
+
+                                            // Warn if latency exceeds 2 frame periods (>33ms at 60fps)
+                                            if latency_us > 33_000 {
+                                                tracing::warn!(
+                                                    frame = frame_count,
+                                                    latency_ms = latency_us as f64 / 1000.0,
+                                                    "High frame latency detected - possible stuttering"
+                                                );
+                                            }
+
+                                            // Use try_send to avoid blocking the subscription when UI is busy
+                                            // Dropping frames is fine for live preview - we want the latest frame
+                                            match output
+                                                .try_send(Message::CameraFrame(Arc::new(frame)))
+                                            {
+                                                Ok(_) => {
+                                                    if frame_count % 30 == 0 {
+                                                        info!(
+                                                            frame = frame_count,
+                                                            "Frame forwarded to UI"
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    // Always log dropped frames for diagnostics
+                                                    tracing::warn!(
+                                                        frame = frame_count,
+                                                        error = ?e,
+                                                        "Frame dropped (UI channel full) - stuttering likely"
+                                                    );
+                                                    // Check if channel is closed (subscription cancelled)
+                                                    if e.is_disconnected() {
+                                                        info!(
+                                                            "Output channel disconnected - PipeWire subscription being cancelled"
+                                                        );
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            info!("PipeWire pipeline frame stream ended");
+                                            break;
+                                        }
+                                        Err(_) => {
+                                            // Timeout - continue loop to check if channel is closed
+                                            continue;
+                                        }
                                     }
                                 }
+                                info!("Cleaning up PipeWire pipeline");
+                                // Pipeline will be dropped here, stopping the camera
+                                drop(pipeline);
+                            } else {
+                                error!("Failed to initialize pipeline");
+                                info!("Waiting 5 seconds before retry...");
+                                // Wait a bit before retrying
+                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                             }
-                            info!("Cleaning up PipeWire pipeline");
-                            // Pipeline will be dropped here, stopping the camera
-                            drop(pipeline);
-                        } else {
-                            error!("Failed to initialize pipeline");
-                            info!("Waiting 5 seconds before retry...");
-                            // Wait a bit before retrying
-                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                         }
                     }
-                }
-            }),
-        );
+                }),
+            )
+        }; // End of camera_sub if/else
 
         // Camera hotplug monitoring subscription
         let backend_manager = self.backend_manager.clone();
@@ -713,7 +734,59 @@ impl cosmic::Application for AppModel {
             _ => Subscription::none(),
         };
 
-        Subscription::batch([config_sub, camera_sub, hotplug_sub, qr_detection_sub])
+        // File source preview subscription - receives frames from file streaming thread
+        let file_source_preview_sub = if let Some(ref receiver) = self.file_source_preview_receiver
+        {
+            let receiver = receiver.clone();
+            Subscription::run_with_id(
+                "file_source_preview",
+                cosmic::iced::stream::channel(10, move |mut output| async move {
+                    loop {
+                        // Try to lock and receive a frame
+                        let frame = {
+                            let mut guard = receiver.lock().await;
+                            guard.recv().await
+                        };
+
+                        match frame {
+                            Some(frame) => {
+                                // Drain any extra frames to get the latest
+                                let mut latest = frame;
+                                loop {
+                                    let next = {
+                                        let mut guard = receiver.lock().await;
+                                        guard.try_recv().ok()
+                                    };
+                                    match next {
+                                        Some(newer) => latest = newer,
+                                        None => break,
+                                    }
+                                }
+
+                                // Send the latest frame to UI
+                                if output.send(Message::CameraFrame(latest)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            None => {
+                                // Channel closed, exit subscription
+                                break;
+                            }
+                        }
+                    }
+                }),
+            )
+        } else {
+            Subscription::none()
+        };
+
+        Subscription::batch([
+            config_sub,
+            camera_sub,
+            hotplug_sub,
+            qr_detection_sub,
+            file_source_preview_sub,
+        ])
     }
 
     /// Handles messages emitted by the application and its widgets.

@@ -16,9 +16,10 @@ use std::time::Instant;
 /// Recording state machine
 ///
 /// Simple two-state design: either recording or not.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum RecordingState {
     /// Not recording
+    #[default]
     Idle,
     /// Actively recording
     Recording {
@@ -76,15 +77,11 @@ impl RecordingState {
     }
 }
 
-impl Default for RecordingState {
-    fn default() -> Self {
-        RecordingState::Idle
-    }
-}
-
 /// Virtual camera streaming state machine
+#[derive(Default)]
 pub enum VirtualCameraState {
     /// Not streaming
+    #[default]
     Idle,
     /// Actively streaming to virtual camera
     Streaming {
@@ -96,6 +93,8 @@ pub enum VirtualCameraState {
         frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
         /// Channel to send filter updates to the virtual camera pipeline
         filter_sender: tokio::sync::watch::Sender<FilterType>,
+        /// Whether streaming from a file source (image/video)
+        is_file_source: bool,
     },
 }
 
@@ -140,7 +139,7 @@ impl VirtualCameraState {
         }
     }
 
-    /// Start streaming
+    /// Start streaming from camera
     pub fn start(
         stop_sender: tokio::sync::oneshot::Sender<()>,
         frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
@@ -151,6 +150,30 @@ impl VirtualCameraState {
             stop_sender: Some(stop_sender),
             frame_sender,
             filter_sender,
+            is_file_source: false,
+        }
+    }
+
+    /// Start streaming from file source
+    pub fn start_file_source(
+        stop_sender: tokio::sync::oneshot::Sender<()>,
+        frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
+        filter_sender: tokio::sync::watch::Sender<FilterType>,
+    ) -> Self {
+        VirtualCameraState::Streaming {
+            start_time: Instant::now(),
+            stop_sender: Some(stop_sender),
+            frame_sender,
+            filter_sender,
+            is_file_source: true,
+        }
+    }
+
+    /// Check if streaming from a file source
+    pub fn is_file_source(&self) -> bool {
+        match self {
+            VirtualCameraState::Idle => false,
+            VirtualCameraState::Streaming { is_file_source, .. } => *is_file_source,
         }
     }
 
@@ -167,12 +190,6 @@ impl VirtualCameraState {
     /// Stop streaming (returns Idle)
     pub fn stop(&mut self) -> Self {
         std::mem::replace(self, VirtualCameraState::Idle)
-    }
-}
-
-impl Default for VirtualCameraState {
-    fn default() -> Self {
-        VirtualCameraState::Idle
     }
 }
 
@@ -256,6 +273,26 @@ pub struct AppModel {
     pub recording: RecordingState,
     /// Virtual camera state (idle or streaming)
     pub virtual_camera: VirtualCameraState,
+    /// File source for virtual camera (image or video to stream instead of camera)
+    pub virtual_camera_file_source: Option<FileSource>,
+    /// Whether the current frame is from a file source (vs camera)
+    pub current_frame_is_file_source: bool,
+    /// Video file playback progress (position_secs, duration_secs, progress 0.0-1.0)
+    pub video_file_progress: Option<(f64, f64, f64)>,
+    /// Video preview seek position (used when not streaming to store desired start position)
+    pub video_preview_seek_position: f64,
+    /// Whether video file playback is paused
+    pub video_file_paused: bool,
+    /// Channel to send playback control commands to the streaming thread
+    pub video_playback_control_tx: Option<tokio::sync::mpsc::UnboundedSender<VideoPlaybackCommand>>,
+    /// Channel to send playback control commands to the preview thread (when not streaming)
+    pub video_preview_control_tx: Option<tokio::sync::mpsc::UnboundedSender<VideoPlaybackCommand>>,
+    /// Stop sender for preview playback thread
+    pub video_preview_stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Receiver for preview frames from file source streaming
+    pub file_source_preview_receiver: Option<
+        std::sync::Arc<tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Arc<CameraFrame>>>>,
+    >,
     /// Whether a photo capture is in progress
     pub is_capturing: bool,
     /// Whether the format picker is visible (iOS-style popup)
@@ -331,7 +368,7 @@ pub struct AppModel {
 }
 
 /// State for smooth blur transitions when changing camera settings
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TransitionState {
     /// Whether we're currently in a transition (blur is active)
     pub in_transition: bool,
@@ -350,6 +387,28 @@ pub enum CameraMode {
     Video,
     /// Virtual camera mode - streams filtered video to a PipeWire virtual camera
     Virtual,
+}
+
+/// File source for virtual camera streaming
+///
+/// When set, the virtual camera streams from this file instead of the camera.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileSource {
+    /// Stream from an image file (static frame)
+    Image(std::path::PathBuf),
+    /// Stream from a video file (loops automatically, no audio)
+    Video(std::path::PathBuf),
+}
+
+/// Commands for controlling video file playback
+#[derive(Debug, Clone)]
+pub enum VideoPlaybackCommand {
+    /// Seek to a specific position in seconds
+    Seek(f64),
+    /// Toggle play/pause
+    TogglePause,
+    /// Set paused state explicitly
+    SetPaused(bool),
 }
 
 /// Filter types for camera preview
@@ -506,6 +565,29 @@ pub enum Message {
     VirtualCameraStopped(Result<(), String>),
     /// Update virtual camera streaming duration (every second)
     UpdateVirtualCameraDuration,
+    /// Open file picker to select image/video for virtual camera
+    OpenVirtualCameraFile,
+    /// File selected for virtual camera streaming
+    VirtualCameraFileSelected(Option<FileSource>),
+    /// Clear the virtual camera file source (use camera instead)
+    ClearVirtualCameraFile,
+    /// File source preview frame loaded (for displaying before streaming starts)
+    /// For videos, includes optional duration in seconds
+    FileSourcePreviewLoaded(Option<Arc<CameraFrame>>, Option<f64>),
+    /// Video file source playback progress update (position_secs, duration_secs, progress 0.0-1.0)
+    VideoFileProgress(f64, f64, f64),
+    /// Seek video file to a specific position in seconds
+    VideoFileSeek(f64),
+    /// Preview frame loaded after seeking while not streaming
+    VideoSeekPreviewLoaded(Option<Arc<CameraFrame>>),
+    /// Preview playback frame update (frame and progress info)
+    VideoPreviewPlaybackUpdate(Arc<CameraFrame>, f64, f64, f64),
+    /// Preview playback stopped (thread finished)
+    VideoPreviewPlaybackStopped,
+    /// Toggle video file play/pause
+    ToggleVideoPlayPause,
+    /// Start video preview playback (triggered after streaming stops)
+    StartVideoPreviewPlayback,
 
     // ===== Gallery =====
     /// Open gallery in file manager
@@ -570,15 +652,6 @@ pub enum Message {
 }
 
 impl TransitionState {
-    pub fn new() -> Self {
-        Self {
-            in_transition: false,
-            transition_start_time: None,
-            first_frame_time: None,
-            ui_disabled: false,
-        }
-    }
-
     /// Start a transition - enable blur, disable UI, and wait for first frame
     pub fn start(&mut self) -> cosmic::Task<Message> {
         self.in_transition = true;

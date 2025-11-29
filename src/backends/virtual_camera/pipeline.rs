@@ -147,13 +147,10 @@ impl VirtualCameraPipeline {
                 BackendError::InitializationFailed(format!("Failed to start pipeline: {}", e))
             })?;
 
-        // Wait for state change to complete
-        let (result, _state, _pending) = self.pipeline.state(gstreamer::ClockTime::from_seconds(5));
-        if result.is_err() {
-            return Err(BackendError::InitializationFailed(
-                "Pipeline failed to reach Playing state".into(),
-            ));
-        }
+        // For live pipelines with appsrc, we don't need to wait for the state
+        // change to complete - we can start pushing frames immediately and
+        // GStreamer will buffer them while the pipeline finishes transitioning.
+        // This avoids blocking for up to 5 seconds while PipeWire negotiates.
 
         info!("Virtual camera pipeline started");
         Ok(())

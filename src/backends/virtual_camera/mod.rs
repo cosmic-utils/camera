@@ -27,9 +27,14 @@
 //!   Video Apps (Zoom, Teams, etc.)
 //! ```
 
+mod file_source;
 mod gpu_filter;
 mod pipeline;
 
+pub use file_source::{
+    VideoDecoder, get_video_duration, load_image_as_frame, load_preview_frame,
+    load_video_frame_at_position,
+};
 pub use gpu_filter::GpuFilterRenderer;
 pub use pipeline::VirtualCameraPipeline;
 
@@ -59,6 +64,8 @@ pub struct VirtualCameraManager {
     output_size: (u32, u32),
     /// Whether GPU acceleration is available
     gpu_available: bool,
+    /// Whether to horizontally flip output (for file sources, to counteract app auto-mirroring)
+    flip_horizontal: bool,
 }
 
 impl VirtualCameraManager {
@@ -70,7 +77,17 @@ impl VirtualCameraManager {
             streaming: false,
             output_size: (1280, 720),
             gpu_available: false,
+            flip_horizontal: false,
         }
+    }
+
+    /// Set whether to horizontally flip the output
+    ///
+    /// This should be enabled for file sources to counteract the automatic
+    /// mirroring that many video conferencing apps apply to camera sources.
+    pub fn set_flip_horizontal(&mut self, flip: bool) {
+        self.flip_horizontal = flip;
+        debug!(flip, "Virtual camera horizontal flip changed");
     }
 
     /// Start streaming to virtual camera
@@ -186,8 +203,16 @@ impl VirtualCameraManager {
                 // Apply filter if renderer is available
                 if let Some(renderer) = guard.as_mut() {
                     match renderer.apply_filter(frame, self.current_filter) {
-                        Ok(rgba_data) => {
+                        Ok(mut rgba_data) => {
                             self.gpu_available = true;
+                            // Apply horizontal flip if needed (for file sources)
+                            if self.flip_horizontal {
+                                Self::flip_horizontal_rgba(
+                                    &mut rgba_data,
+                                    frame.width as usize,
+                                    frame.height as usize,
+                                );
+                            }
                             // Pass owned Vec directly - zero-copy to GStreamer
                             return pipeline.push_frame_rgba(rgba_data, frame.width, frame.height);
                         }
@@ -220,23 +245,51 @@ impl VirtualCameraManager {
         let stride = frame.stride as usize;
         let row_bytes = width * 4; // RGBA = 4 bytes per pixel
 
-        // If stride matches expected row size, use data directly
-        // Clone the Arc - cheap refcount increment, no data copy
-        if stride == row_bytes {
+        // If stride matches expected row size and no flip needed, use data directly
+        if stride == row_bytes && !self.flip_horizontal {
             return pipeline.push_frame_rgba(Arc::clone(&frame.data), frame.width, frame.height);
         }
 
-        // Handle stride padding by copying row by row
+        // Copy data (and apply horizontal flip if needed)
         let mut rgba_data = vec![0u8; row_bytes * height];
         for y in 0..height {
             let src_start = y * stride;
             let dst_start = y * row_bytes;
-            rgba_data[dst_start..dst_start + row_bytes]
-                .copy_from_slice(&frame.data[src_start..src_start + row_bytes]);
+
+            if self.flip_horizontal {
+                // Copy row with horizontal flip (reverse pixel order)
+                for x in 0..width {
+                    let src_pixel = src_start + x * 4;
+                    let dst_pixel = dst_start + (width - 1 - x) * 4;
+                    rgba_data[dst_pixel..dst_pixel + 4]
+                        .copy_from_slice(&frame.data[src_pixel..src_pixel + 4]);
+                }
+            } else {
+                // Copy row without flip
+                rgba_data[dst_start..dst_start + row_bytes]
+                    .copy_from_slice(&frame.data[src_start..src_start + row_bytes]);
+            }
         }
 
         // Pass owned Vec - zero-copy to GStreamer
         pipeline.push_frame_rgba(rgba_data, frame.width, frame.height)
+    }
+
+    /// Flip RGBA data horizontally in place
+    fn flip_horizontal_rgba(data: &mut [u8], width: usize, height: usize) {
+        let row_bytes = width * 4;
+        for y in 0..height {
+            let row_start = y * row_bytes;
+            // Swap pixels from left and right sides
+            for x in 0..width / 2 {
+                let left_pixel = row_start + x * 4;
+                let right_pixel = row_start + (width - 1 - x) * 4;
+                // Swap 4 bytes (RGBA)
+                for i in 0..4 {
+                    data.swap(left_pixel + i, right_pixel + i);
+                }
+            }
+        }
     }
 
     /// Get the current filter

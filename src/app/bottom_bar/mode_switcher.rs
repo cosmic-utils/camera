@@ -12,11 +12,14 @@ impl AppModel {
     ///
     /// Shows buttons for Photo, Video, and optionally Virtual modes.
     /// The active mode is highlighted with a suggested button style.
-    /// Disabled and grayed out during transitions.
+    /// Disabled and grayed out during transitions, recording, or streaming.
     /// Virtual mode button is only shown when virtual_camera_enabled is true.
     pub fn build_mode_switcher(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
-        let is_disabled = self.transition_state.ui_disabled;
+        // Disable mode switching during transitions, recording, or streaming
+        let is_disabled = self.transition_state.ui_disabled
+            || self.recording.is_recording()
+            || self.virtual_camera.is_streaming();
 
         let video_label = fl!("mode-video");
         let video_button = if is_disabled {

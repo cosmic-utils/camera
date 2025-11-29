@@ -75,13 +75,17 @@ impl AppModel {
                 }
                 crate::app::state::CameraMode::Video => crate::app::state::FilterType::Standard,
             };
+            // File sources should never be mirrored - they display content as-is
+            // Use the flag that tracks if the current frame is actually from a file source
+            let should_mirror = self.config.mirror_preview && !self.current_frame_is_file_source;
+
             let video_elem = video_widget::video_widget(
                 frame.clone(),
                 video_id,
                 content_fit,
                 filter_mode,
                 0.0,
-                self.config.mirror_preview,
+                should_mirror,
             );
 
             widget::container(video_elem)

@@ -16,6 +16,8 @@ virtual-camera-title = Virtual camera (experimental)
 virtual-camera-description = Stream your camera feed to other applications via a virtual camera device. Requires PipeWire.
 virtual-camera-enable = Enable virtual camera
 streaming-live = LIVE
+virtual-camera-open-file = Open file
+virtual-camera-file-filter-name = Images and Videos
 
 # Settings
 settings-title = Settings

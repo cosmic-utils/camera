@@ -25,6 +25,11 @@ const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg
 const FLASH_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash-off.svg");
 
 impl AppModel {
+    /// Check if filters are available in the current mode (Photo or Virtual)
+    fn filters_available(&self) -> bool {
+        self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual
+    }
+
     /// Build the main application view
     ///
     /// Composes all UI components into a layered layout with overlays.
@@ -70,9 +75,7 @@ impl AppModel {
                 .on_press(Message::TheatreShowUI)
                 .on_move(|_| Message::TheatreShowUI)
                 .into()
-        } else if self.filter_picker_visible
-            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
-        {
+        } else if self.filter_picker_visible && self.filters_available() {
             // Close filter picker when clicking on the preview area
             widget::mouse_area(camera_preview)
                 .on_press(Message::CloseFilterPicker)
@@ -82,34 +85,78 @@ impl AppModel {
         };
 
         // Check if filter name label should be shown (only when filter picker is open)
-        // Filters are available in Photo and Virtual modes
-        let show_filter_label = (self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Virtual)
-            && self.filter_picker_visible;
+        let show_filter_label = self.filters_available() && self.filter_picker_visible;
 
-        // Capture button area - changes based on recording/streaming state
+        // Capture button area - changes based on recording/streaming state and video file selection
+        // Check if we have video file controls (play/pause button for video file sources)
+        let has_video_controls = self.build_video_play_pause_button().is_some();
+
         let capture_button_only =
             if self.recording.is_recording() || self.virtual_camera.is_streaming() {
                 // When recording/streaming: stop button centered, photo button to its right
+                // For video file sources: also show play/pause button to the left
                 let stop_button = self.build_capture_button();
                 let photo_button = self.build_photo_during_recording_button();
+                let play_pause_button = self.build_video_play_pause_button();
 
-                // Layout: [Fill] [Spacer=photo width] [Stop button] [Photo button] [Fill]
-                // The spacer on the left balances the photo button on the right,
-                // keeping the stop button perfectly centered
-                let photo_button_width = crate::constants::ui::CAPTURE_BUTTON_OUTER;
-                widget::row()
-                    .push(widget::Space::new(Length::Fill, Length::Shrink))
-                    .push(widget::Space::new(
-                        Length::Fixed(photo_button_width),
+                // Calculate button width for layout balancing
+                let button_width = crate::constants::ui::CAPTURE_BUTTON_OUTER;
+
+                // Layout depends on whether we have a play/pause button
+                // With play/pause: [Fill] [Play/Pause] [Stop] [Photo] [Fill]
+                // Without: [Fill] [Spacer] [Stop] [Photo] [Fill]
+                let mut row = widget::row().push(widget::Space::new(Length::Fill, Length::Shrink));
+
+                if let Some(pp_button) = play_pause_button {
+                    // Add play/pause button to the left of stop button
+                    row = row.push(pp_button);
+                } else {
+                    // Add spacer to balance the photo button on the right
+                    row = row.push(widget::Space::new(
+                        Length::Fixed(button_width),
                         Length::Shrink,
-                    ))
+                    ));
+                }
+
+                row = row
                     .push(stop_button)
                     .push(photo_button)
                     .push(widget::Space::new(Length::Fill, Length::Shrink))
                     .align_y(Alignment::Center)
-                    .width(Length::Fill)
-                    .into()
+                    .width(Length::Fill);
+
+                row.into()
+            } else if has_video_controls {
+                // Video file selected but not streaming: show play button + capture button
+                let capture_button = self.build_capture_button();
+                let play_pause_button = self.build_video_play_pause_button();
+                let icon_button_width = crate::constants::ui::ICON_BUTTON_WIDTH;
+
+                // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
+                // Use fixed-width container for play button to ensure centering
+                let mut row = widget::row().push(widget::Space::new(Length::Fill, Length::Shrink));
+
+                if let Some(pp_button) = play_pause_button {
+                    // Wrap play/pause button in fixed-width container for consistent centering
+                    row = row.push(
+                        widget::container(pp_button)
+                            .width(Length::Fixed(icon_button_width))
+                            .align_x(cosmic::iced::alignment::Horizontal::Center),
+                    );
+                }
+
+                row = row
+                    .push(capture_button)
+                    // Spacer matches play/pause button width for centering
+                    .push(widget::Space::new(
+                        Length::Fixed(icon_button_width),
+                        Length::Shrink,
+                    ))
+                    .push(widget::Space::new(Length::Fill, Length::Shrink))
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill);
+
+                row.into()
             } else {
                 // Normal single capture button
                 self.build_capture_button()
@@ -117,27 +164,22 @@ impl AppModel {
 
         // Capture button area (filter name label is now an overlay on the preview)
         // Wrap in mouse_area to close filter picker when clicking the empty space around the button
-        let capture_button_area: Element<'_, Message> = if self.filter_picker_visible
-            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
-        {
-            widget::mouse_area(capture_button_only)
-                .on_press(Message::CloseFilterPicker)
-                .into()
-        } else {
-            capture_button_only
-        };
+        let capture_button_area: Element<'_, Message> =
+            if self.filter_picker_visible && self.filters_available() {
+                widget::mouse_area(capture_button_only)
+                    .on_press(Message::CloseFilterPicker)
+                    .into()
+            } else {
+                capture_button_only
+            };
 
         // Bottom area: either bottom bar or filter picker
-        // Filters are available in Photo and Virtual modes
-        let bottom_area: Element<'_, Message> = if self.filter_picker_visible
-            && (self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual)
-        {
-            // Show filter picker instead of bottom bar
-            self.build_filter_picker()
-        } else {
-            // Show normal bottom bar
-            self.build_bottom_bar()
-        };
+        let bottom_area: Element<'_, Message> =
+            if self.filter_picker_visible && self.filters_available() {
+                self.build_filter_picker()
+            } else {
+                self.build_bottom_bar()
+            };
 
         // Build content based on theatre mode
         let content: Element<'_, Message> = if self.theatre.enabled {
@@ -163,6 +205,11 @@ impl AppModel {
                             .center_x(Length::Fill)
                             .padding([0, 0, 8, 0]),
                     );
+                }
+
+                // Add video progress bar between preview and capture button (if streaming video)
+                if let Some(progress_bar) = self.build_video_progress_bar() {
+                    bottom_controls = bottom_controls.push(progress_bar);
                 }
 
                 bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
@@ -219,14 +266,20 @@ impl AppModel {
 
             let preview_with_overlays = preview_stack.width(Length::Fill).height(Length::Fill);
 
-            // Column layout: preview with overlays, capture button area, bottom area
-            widget::column()
+            // Column layout: preview with overlays, optional progress bar, capture button area, bottom area
+            let mut main_column = widget::column()
                 .push(preview_with_overlays)
-                .push(capture_button_area)
-                .push(bottom_area)
                 .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                .height(Length::Fill);
+
+            // Add video progress bar between preview and capture button (if streaming video)
+            if let Some(progress_bar) = self.build_video_progress_bar() {
+                main_column = main_column.push(progress_bar);
+            }
+
+            main_column = main_column.push(capture_button_area).push(bottom_area);
+
+            main_column.into()
         };
 
         // Wrap content in a stack so we can overlay the picker
@@ -274,18 +327,26 @@ impl AppModel {
         // - Format picker is visible
         // - Recording in video mode
         // - Streaming virtual camera (resolution cannot be changed during streaming)
+        // - File source is set in Virtual mode (show file resolution instead)
+        let has_file_source =
+            self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
         let show_format_button = !self.format_picker_visible
             && (self.mode == CameraMode::Photo || !self.recording.is_recording())
-            && !self.virtual_camera.is_streaming();
+            && !self.virtual_camera.is_streaming()
+            && !has_file_source;
+
         if show_format_button {
             row = row.push(self.build_format_button());
+        } else if has_file_source {
+            // Show file source resolution (non-clickable)
+            row = row.push(self.build_file_source_resolution_label());
         }
 
         // Right side buttons
         row = row.push(widget::Space::new(Length::Fill, Length::Shrink));
 
         // Photo and Virtual mode buttons: Flash and filter (filter for both, flash only for Photo)
-        if self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual {
+        if self.filters_available() {
             // Flash toggle button (only in Photo mode)
             if self.mode == CameraMode::Photo {
                 let flash_icon_bytes = if self.flash_enabled {
@@ -309,6 +370,42 @@ impl AppModel {
                         widget::button::icon(flash_icon)
                             .on_press(Message::ToggleFlash)
                             .class(if self.flash_enabled {
+                                cosmic::theme::Button::Suggested
+                            } else {
+                                cosmic::theme::Button::Standard
+                            }),
+                    );
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+            }
+
+            // File open button (only in Virtual mode, hidden when streaming)
+            // - When no file is selected: opens file picker
+            // - When file is selected: clears file source and switches back to camera
+            if self.mode == CameraMode::Virtual && !self.virtual_camera.is_streaming() {
+                let has_file = self.virtual_camera_file_source.is_some();
+                if is_disabled {
+                    let file_button =
+                        widget::button::icon(icon::from_name("document-open-symbolic"));
+                    row = row.push(widget::container(file_button).style(|_theme| {
+                        widget::container::Style {
+                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                            ..Default::default()
+                        }
+                    }));
+                } else {
+                    // Toggle behavior: open file picker or clear file source
+                    let message = if has_file {
+                        Message::ClearVirtualCameraFile
+                    } else {
+                        Message::OpenVirtualCameraFile
+                    };
+                    row = row.push(
+                        widget::button::icon(icon::from_name("document-open-symbolic"))
+                            .on_press(message)
+                            .class(if has_file {
                                 cosmic::theme::Button::Suggested
                             } else {
                                 cosmic::theme::Button::Standard
@@ -445,6 +542,37 @@ impl AppModel {
         } else {
             button.into()
         }
+    }
+
+    /// Build file source resolution label (non-clickable)
+    ///
+    /// Shows the resolution of the selected file source (image or video).
+    /// Displayed instead of the format picker when a file source is selected.
+    fn build_file_source_resolution_label(&self) -> Element<'_, Message> {
+        // Get resolution from current_frame (which contains the file preview)
+        let (width, height) = if let Some(ref frame) = self.current_frame {
+            (frame.width, frame.height)
+        } else {
+            (0, 0)
+        };
+
+        // Show actual resolution (e.g., "1280×720")
+        let dimensions = if width > 0 && height > 0 {
+            format!("{}×{}", width, height)
+        } else {
+            "---".to_string()
+        };
+
+        let label_content = widget::row()
+            .push(
+                widget::text(dimensions)
+                    .size(ui::RES_LABEL_TEXT_SIZE)
+                    .class(cosmic::theme::style::Text::Accent),
+            )
+            .align_y(Alignment::Center);
+
+        // Non-clickable container with same styling as format button
+        widget::container(label_content).padding([4, 8]).into()
     }
 
     /// Build filter name label styled like the mode buttons

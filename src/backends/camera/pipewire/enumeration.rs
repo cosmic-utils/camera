@@ -80,18 +80,23 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
             // Save previous camera if valid
             if is_video_source {
                 if let (Some(id), Some(name)) = (current_id.as_ref(), current_name.as_ref()) {
-                    // Priority: use object.serial for target-object, fallback to node ID
-                    let path = if let Some(serial) = current_serial.as_ref() {
-                        format!("pipewire-serial-{}", serial)
+                    // Skip our own virtual camera output to avoid self-detection
+                    if name.contains("COSMIC Camera (Virtual)") {
+                        debug!(name = %name, "Skipping self (virtual camera output)");
                     } else {
-                        format!("pipewire-{}", id)
-                    };
-                    debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera");
-                    cameras.push(CameraDevice {
-                        name: name.clone(),
-                        path,
-                        metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
-                    });
+                        // Priority: use object.serial for target-object, fallback to node ID
+                        let path = if let Some(serial) = current_serial.as_ref() {
+                            format!("pipewire-serial-{}", serial)
+                        } else {
+                            format!("pipewire-{}", id)
+                        };
+                        debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera");
+                        cameras.push(CameraDevice {
+                            name: name.clone(),
+                            path,
+                            metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                        });
+                    }
                 }
             }
 
@@ -141,17 +146,22 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
     // Don't forget the last camera
     if is_video_source {
         if let (Some(id), Some(name)) = (current_id.as_ref(), current_name.as_ref()) {
-            let path = if let Some(serial) = current_serial.as_ref() {
-                format!("pipewire-serial-{}", serial)
+            // Skip our own virtual camera output to avoid self-detection
+            if name.contains("COSMIC Camera (Virtual)") {
+                debug!(name = %name, "Skipping self (virtual camera output)");
             } else {
-                format!("pipewire-{}", id)
-            };
-            debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera (last)");
-            cameras.push(CameraDevice {
-                name: name.clone(),
-                path,
-                metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
-            });
+                let path = if let Some(serial) = current_serial.as_ref() {
+                    format!("pipewire-serial-{}", serial)
+                } else {
+                    format!("pipewire-{}", id)
+                };
+                debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera (last)");
+                cameras.push(CameraDevice {
+                    name: name.clone(),
+                    path,
+                    metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                });
+            }
         }
     }
 
