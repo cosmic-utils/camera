@@ -1,5 +1,9 @@
 # COSMIC Camera
 
+[![Flathub](https://img.shields.io/flathub/v/io.github.freddyfunk.cosmic-camera?logo=flathub&logoColor=white)](https://flathub.org/apps/io.github.freddyfunk.cosmic-camera)
+[![CI](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/ci.yml/badge.svg)](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/ci.yml)
+[![Release](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/release.yml/badge.svg)](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/release.yml)
+
 A camera application for the [COSMIC](https://github.com/pop-os/cosmic-epoch) desktop environment.
 
 ![COSMIC Camera Preview](preview/preview-001.png)
