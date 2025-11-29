@@ -1,11 +1,10 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='UTF-8'?>
 <component type="desktop-application">
   <id>io.github.freddyfunk.cosmic-camera</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>COSMIC Camera</name>
   <summary>Capture photos and videos</summary>
-
   <description>
     <p>
       COSMIC Camera is a modern, easy-to-use camera application designed for the COSMIC desktop.
@@ -27,28 +26,21 @@
       <li>Multi-camera support: easily switch between cameras and microphones</li>
     </ul>
   </description>
-
   <launchable type="desktop-id">io.github.freddyfunk.cosmic-camera.desktop</launchable>
-
   <provides>
     <binary>cosmic-camera</binary>
   </provides>
-
   <url type="homepage">https://github.com/FreddyFunk/cosmic-camera</url>
   <url type="bugtracker">https://github.com/FreddyFunk/cosmic-camera/issues</url>
   <url type="vcs-browser">https://github.com/FreddyFunk/cosmic-camera</url>
-
   <developer id="io.github.freddyfunk">
     <name>Frederic Laing</name>
   </developer>
-
   <content_rating type="oars-1.1" />
-
   <branding>
     <color type="primary" scheme_preference="light">#62a0ea</color>
     <color type="primary" scheme_preference="dark">#1a5fb4</color>
   </branding>
-
   <screenshots>
     <screenshot type="default">
       <caption>Photo mode with live camera preview</caption>
@@ -71,22 +63,31 @@
       <image>https://raw.githubusercontent.com/FreddyFunk/cosmic-camera/main/preview/preview-006.png</image>
     </screenshot>
   </screenshots>
-
   <releases>
+    <release version="0.1.7" date="2025-11-29">
+      <description>
+        <p>Release 0.1.7 includes the following changes:</p>
+        <ul>
+          <li>automatically open a PR to the flathub repo when a new release tag is pushed</li>
+          <li>better app description</li>
+          <li>add banners to readme</li>
+          <li>auto update release notes in metainfo for flathub</li>
+          <li>disable arm64 flatpak build for github releases (flathub will still build arm64)</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2025-01-21">
       <description>
         <p>Initial release of COSMIC Camera.</p>
       </description>
     </release>
   </releases>
-
   <categories>
     <category>AudioVideo</category>
     <category>Video</category>
     <category>Recorder</category>
     <category>Photography</category>
   </categories>
-
   <keywords>
     <keyword>camera</keyword>
     <keyword>webcam</keyword>
@@ -96,11 +97,9 @@
     <keyword>capture</keyword>
     <keyword>cosmic</keyword>
   </keywords>
-
   <requires>
     <display_length compare="ge">360</display_length>
   </requires>
-
   <supports>
     <control>pointing</control>
     <control>keyboard</control>
