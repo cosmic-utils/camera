@@ -1,0 +1,96 @@
+name: Update Flatpak Runtime
+
+on:
+  schedule:
+    # Run nightly at 3:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-runtime-update:
+    name: Check for Flatpak Runtime Updates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Check for runtime updates
+        id: check
+        run: |
+          # Get current runtime version from manifest
+          CURRENT_VERSION=$(grep -oP "runtime-version:\s*'\K[^']+" io.github.freddyfunk.cosmic-camera.yml)
+          echo "Current runtime version: $CURRENT_VERSION"
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          # Query Flathub for available Freedesktop Platform versions
+          # Get list of available runtime versions
+          AVAILABLE_VERSIONS=$(flatpak remote-ls --user flathub --columns=application,branch \
+            | grep "org.freedesktop.Platform" \
+            | grep -v "Locale\|Debug\|Docs\|GL\|Compat\|ffmpeg\|openh264" \
+            | awk '{print $2}' \
+            | grep -E "^[0-9]+\.[0-9]+$" \
+            | sort -t. -k1,1n -k2,2n \
+            | tail -5)
+
+          echo "Available versions:"
+          echo "$AVAILABLE_VERSIONS"
+
+          # Get the latest stable version (highest version number)
+          LATEST_VERSION=$(echo "$AVAILABLE_VERSIONS" | tail -1)
+          echo "Latest runtime version: $LATEST_VERSION"
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+          # Compare versions
+          if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+            echo "Update available: $CURRENT_VERSION -> $LATEST_VERSION"
+            echo "update_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "Already on latest version"
+            echo "update_available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update manifest
+        if: steps.check.outputs.update_available == 'true'
+        run: |
+          CURRENT="${{ steps.check.outputs.current }}"
+          LATEST="${{ steps.check.outputs.latest }}"
+
+          # Update runtime-version in the manifest
+          sed -i "s/runtime-version: '$CURRENT'/runtime-version: '$LATEST'/" io.github.freddyfunk.cosmic-camera.yml
+
+          echo "Updated manifest:"
+          grep "runtime-version" io.github.freddyfunk.cosmic-camera.yml
+
+      - name: Create Pull Request
+        if: steps.check.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "deps(flatpak): update runtime to ${{ steps.check.outputs.latest }}"
+          title: "deps(flatpak): update Freedesktop runtime to ${{ steps.check.outputs.latest }}"
+          body: |
+            ## Flatpak Runtime Update
+
+            Updates `org.freedesktop.Platform` and `org.freedesktop.Sdk` from `${{ steps.check.outputs.current }}` to `${{ steps.check.outputs.latest }}`.
+
+            ### Changes
+            - Updated `runtime-version` in `io.github.freddyfunk.cosmic-camera.yml`
+
+            ### Testing
+            - [ ] Build Flatpak locally with `just flatpak-install`
+            - [ ] Verify app runs correctly
+
+            ---
+            *This PR was automatically created by the Update Flatpak Runtime workflow.*
+          branch: deps/flatpak-runtime-${{ steps.check.outputs.latest }}
+          delete-branch: true
+          labels: dependencies
