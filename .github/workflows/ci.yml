@@ -176,8 +176,8 @@ jobs:
     name: Flatpak (aarch64)
     runs-on: ubuntu-latest
     needs: check
-    # Only run on push to main or manual trigger with build_aarch64_flatpak=true
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_aarch64_flatpak)
+    # Only run on manual trigger with build_aarch64_flatpak=true
+    if: github.event_name == 'workflow_dispatch' && inputs.build_aarch64_flatpak
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
