@@ -238,16 +238,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # Publish to Flathub by updating the Flathub repository
+  # Publish to Flathub by creating a PR in the Flathub repository
+  # Flathub uses protected branches, so all updates must go through pull requests
+  # See: https://docs.flathub.org/docs/for-app-authors/maintenance
   publish-flathub:
     name: Publish to Flathub
     runs-on: ubuntu-latest
     needs: create-release
+    env:
+      GH_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
     steps:
       - name: Check for Flathub token
         id: check_token
         run: |
-          if [ -z "${{ secrets.FLATHUB_TOKEN }}" ]; then
+          if [ -z "$GH_TOKEN" ]; then
             echo "FLATHUB_TOKEN secret is not set. Skipping Flathub publish."
             echo "skip=true" >> $GITHUB_OUTPUT
           else
@@ -268,6 +272,7 @@ jobs:
         with:
           repository: ${{ env.FLATHUB_REPO }}
           token: ${{ secrets.FLATHUB_TOKEN }}
+          ref: master
           path: flathub
 
       - name: Install Python dependencies
@@ -294,7 +299,6 @@ jobs:
       - name: Update Flathub manifest
         if: steps.check_token.outputs.skip != 'true'
         run: |
-          cd flathub
           python3 << 'EOF'
           import yaml
 
@@ -302,34 +306,67 @@ jobs:
           commit = "${{ steps.get_sha.outputs.sha }}"
           repo_url = "https://github.com/${{ github.repository }}.git"
 
-          with open("io.github.freddyfunk.cosmic-camera.yml", "r") as f:
+          # Read the source manifest from the app repo (this is the source of truth)
+          with open("source/io.github.freddyfunk.cosmic-camera.yml", "r") as f:
               manifest = yaml.safe_load(f)
 
+          # Update only the sources section for the cosmic-camera module
+          # Everything else is copied as-is from the app repo
           for module in manifest.get("modules", []):
               if module.get("name") == "cosmic-camera":
+                  # Replace local dir source with git source for Flathub
                   module["sources"] = [
                       {"type": "git", "url": repo_url, "tag": tag, "commit": commit},
                       "cargo-sources.json"
                   ]
                   break
 
-          with open("io.github.freddyfunk.cosmic-camera.yml", "w") as f:
+          # Write the updated manifest to the Flathub repo
+          with open("flathub/io.github.freddyfunk.cosmic-camera.yml", "w") as f:
               yaml.dump(manifest, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-          print(f"Updated manifest to use tag {tag} (commit {commit})")
+          print(f"Updated Flathub manifest from source repo")
+          print(f"  - Copied all settings from app repo manifest")
+          print(f"  - Updated sources to use tag {tag} (commit {commit})")
           EOF
 
-      - name: Commit and push to Flathub
+      - name: Create Flathub pull request
         if: steps.check_token.outputs.skip != 'true'
         run: |
           cd flathub
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are any changes
           git add io.github.freddyfunk.cosmic-camera.yml cargo-sources.json
           if git diff --staged --quiet; then
             echo "No changes to commit"
             exit 0
           fi
+
+          # Create a new branch for the update
+          BRANCH_NAME="update-${{ github.ref_name }}"
+          git checkout -b "$BRANCH_NAME"
           git commit -m "Update to ${{ github.ref_name }}"
-          git push origin main
-          echo "Successfully pushed update to Flathub!"
+          git push origin "$BRANCH_NAME"
+
+          # Create a pull request using GitHub CLI
+          PR_URL=$(gh pr create \
+            --repo "${{ env.FLATHUB_REPO }}" \
+            --base master \
+            --head "$BRANCH_NAME" \
+            --title "Update to ${{ github.ref_name }}" \
+            --body "$(cat <<'EOF'
+          Automated update from upstream release.
+
+          **Release:** ${{ github.ref_name }}
+          **Commit:** ${{ steps.get_sha.outputs.sha }}
+          **Source:** https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+
+          This PR was automatically created by the release workflow.
+          EOF
+          )")
+
+          echo "Created Flathub PR: $PR_URL"
+          echo "The Flathub build bot will automatically test this PR."
+          echo "Once the test build succeeds, merge the PR to publish to Flathub."
