@@ -185,7 +185,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
 
       - name: Install Python dependencies
-        run: pip install aiohttp toml
+        run: pip install aiohttp toml tomlkit
 
       - name: Generate cargo-sources.json for Flathub
         run: |
