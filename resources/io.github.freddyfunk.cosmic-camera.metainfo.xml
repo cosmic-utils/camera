@@ -9,23 +9,22 @@
   <description>
     <p>
       COSMIC Camera is a modern, easy-to-use camera application designed for the COSMIC desktop.
-      Whether you need to snap a quick photo or record a video, COSMIC Camera provides a clean
-      and intuitive interface that stays out of your way.
+      Whether you need to snap a quick photo, record a video, or scan a QR code, COSMIC Camera
+      provides a clean and intuitive interface that stays out of your way.
     </p>
     <p>
-      Built with simplicity in mind, the app automatically detects your cameras and microphones
-      via PipeWire, letting you start capturing moments right away. When you need more control,
-      the settings panel gives you access to resolution, frame rate, and encoding options.
+      Just open the app and start capturing moments.
+      Add fun filters to your photos, scan QR codes to open links or connect to WiFi,
+      or use virtual camera mode to look great in video calls with your favorite filter applied.
     </p>
     <p>Key features:</p>
     <ul>
-      <li>Take photos and record videos with audio</li>
-      <li>Real-time preview filters to add creative effects</li>
-      <li>Hardware-accelerated video encoding (VA-API, NVENC, QuickSync)</li>
-      <li>Support for multiple cameras and audio devices</li>
-      <li>Adjustable resolution, frame rate, and bitrate quality</li>
-      <li>Theatre mode for distraction-free fullscreen preview</li>
-      <li>Built-in gallery to quickly view your captures</li>
+      <li>Photo and video capture: high quality and hardware accelerated</li>
+      <li>QR code scanner: open links, connect to WiFi, and more</li>
+      <li>15 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more</li>
+      <li>Virtual camera: use your filtered camera feed in video calls and other apps</li>
+      <li>Theatre mode: fullscreen, distraction-free preview</li>
+      <li>Multi-camera support: easily switch between cameras and microphones</li>
     </ul>
   </description>
 
