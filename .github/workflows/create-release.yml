@@ -1,0 +1,224 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.1.7). Leave empty to auto-increment patch version.'
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Get the latest tag and increment patch version
+            LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            if [ -z "$LATEST_TAG" ]; then
+              VERSION="0.1.0"
+            else
+              # Remove 'v' prefix and split version
+              CURRENT="${LATEST_TAG#v}"
+              MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+              MINOR=$(echo "$CURRENT" | cut -d. -f2)
+              PATCH=$(echo "$CURRENT" | cut -d. -f3)
+              # Increment patch
+              PATCH=$((PATCH + 1))
+              VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            fi
+          fi
+
+          # Ensure version doesn't have 'v' prefix for consistency
+          VERSION="${VERSION#v}"
+          TAG="v${VERSION}"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "📦 Creating release: $TAG"
+
+      - name: Check if tag already exists
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "❌ Error: Tag ${{ steps.version.outputs.tag }} already exists!"
+            exit 1
+          fi
+          echo "✅ Tag ${{ steps.version.outputs.tag }} is available"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+
+          echo "Generating notes from $PREVIOUS_TAG to HEAD for tag $TAG"
+
+          # Use GitHub API to generate release notes
+          if [ -n "$PREVIOUS_TAG" ]; then
+            NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="$TAG" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              -f target_commitish="${{ github.sha }}" \
+              --jq '.body' 2>/dev/null || echo "")
+          else
+            NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="$TAG" \
+              -f target_commitish="${{ github.sha }}" \
+              --jq '.body' 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$NOTES" ]; then
+            echo "No release notes generated, using fallback"
+            NOTES="Bug fixes and improvements."
+          fi
+
+          # Save to file for the next step
+          echo "$NOTES" > release_notes.txt
+          echo "📝 Release notes generated"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Update metainfo.xml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          python3 << 'EOF'
+          import xml.etree.ElementTree as ET
+          from datetime import date
+          import re
+          import os
+
+          version = os.environ.get("VERSION", "${{ steps.version.outputs.version }}")
+          today = date.today().isoformat()
+
+          # Read release notes
+          with open("release_notes.txt", "r") as f:
+              body = f.read()
+
+          # Parse the "What's Changed" section
+          notes = []
+          match = re.search(r"## What's Changed\n(.*?)(?=\n\*\*Full Changelog\*\*|\n## New Contributors|\n## Installation|\Z)", body, re.DOTALL)
+          if match:
+              changes = match.group(1).strip()
+              for line in changes.split('\n'):
+                  # Extract description from "* description by @user in URL"
+                  pr_match = re.match(r'\* (.+?) by @', line)
+                  if pr_match:
+                      notes.append(pr_match.group(1).strip())
+
+          # Parse metainfo.xml
+          metainfo_path = "resources/io.github.freddyfunk.cosmic-camera.metainfo.xml"
+
+          # Register namespace to avoid ns0 prefix
+          ET.register_namespace('', '')
+
+          tree = ET.parse(metainfo_path)
+          root = tree.getroot()
+
+          # Find releases element
+          releases = root.find("releases")
+          if releases is None:
+              releases = ET.SubElement(root, "releases")
+
+          # Check if version already exists
+          existing_release = None
+          for release in releases.findall("release"):
+              if release.get("version") == version:
+                  existing_release = release
+                  break
+
+          if existing_release is not None:
+              release_elem = existing_release
+              desc = release_elem.find("description")
+              if desc is not None:
+                  release_elem.remove(desc)
+          else:
+              release_elem = ET.Element("release")
+              release_elem.set("version", version)
+              release_elem.set("date", today)
+              releases.insert(0, release_elem)
+
+          # Add description
+          desc = ET.SubElement(release_elem, "description")
+          if notes:
+              p = ET.SubElement(desc, "p")
+              p.text = f"Release {version} includes the following changes:"
+              ul = ET.SubElement(desc, "ul")
+              for note in notes:
+                  if note.strip():
+                      li = ET.SubElement(ul, "li")
+                      li.text = note.strip()
+          else:
+              p = ET.SubElement(desc, "p")
+              p.text = "Bug fixes and improvements."
+
+          # Write back
+          ET.indent(tree, space="  ")
+          tree.write(metainfo_path, encoding="UTF-8", xml_declaration=True)
+
+          print(f"✅ Updated metainfo.xml with version {version}")
+          EOF
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Commit metainfo changes
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add resources/io.github.freddyfunk.cosmic-camera.metainfo.xml
+
+          if git diff --staged --quiet; then
+            echo "No changes to metainfo.xml"
+            COMMIT_SHA="${{ github.sha }}"
+          else
+            git commit -m "Release ${{ steps.version.outputs.tag }}: update metainfo.xml"
+            git push origin ${{ github.ref_name }}
+            COMMIT_SHA=$(git rev-parse HEAD)
+            echo "📝 Committed metainfo changes: $COMMIT_SHA"
+          fi
+
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          COMMIT="${{ steps.commit.outputs.sha }}"
+
+          git tag -a "$TAG" "$COMMIT" -m "Release $TAG"
+          git push origin "$TAG"
+
+          echo "🏷️ Created tag $TAG pointing to $COMMIT"
+          echo ""
+          echo "🚀 The Release workflow will now be triggered automatically!"
+
+      - name: Summary
+        run: |
+          echo "## Release Created 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ steps.commit.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The [Release workflow](${{ github.server_url }}/${{ github.repository }}/actions/workflows/release.yml) will now build and publish the release." >> $GITHUB_STEP_SUMMARY

@@ -265,6 +265,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           path: source
+          token: ${{ secrets.FLATHUB_TOKEN }}
 
       - name: Checkout Flathub repository
         if: steps.check_token.outputs.skip != 'true'
@@ -284,6 +285,8 @@ jobs:
         id: get_sha
         run: |
           cd source
+          # The tag already points to the commit with updated metainfo.xml
+          # (created by the create-release workflow)
           COMMIT_SHA=$(git rev-parse ${{ github.ref_name }})
           echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
 
