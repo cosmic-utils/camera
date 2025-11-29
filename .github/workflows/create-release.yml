@@ -26,6 +26,9 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # Use PAT to allow tag push to trigger release workflow
+          # (default GITHUB_TOKEN doesn't trigger other workflows)
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Determine version
         id: version
