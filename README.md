@@ -10,16 +10,6 @@ A camera application for the [COSMIC](https://github.com/pop-os/cosmic-epoch) de
 
 This is a personal project by [Frederic Laing](https://github.com/FreddyFunk). It is not affiliated with or endorsed by System76. The application may be contributed to System76 or the COSMIC project in the future if there is interest.
 
-## Features
-
-- Take high-quality photos
-- Record videos with audio
-- Support for multiple cameras via PipeWire
-- Various resolution and format options
-- Theatre mode for fullscreen preview
-- Hardware-accelerated video encoding (VA-API, NVENC, QuickSync)
-- Gallery view for captured media
-
 ## Installation
 
 ### Flatpak (Recommended)
