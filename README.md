@@ -61,7 +61,7 @@ Ever wanted to see your face rendered in glorious Unicode? Wonder what you'd loo
 cosmic-camera --terminal
 ```
 
-<video src="https://github.com/FreddyFunk/cosmic-camera/raw/refs/heads/main/preview/preview-terminal-demo.mp4" controls width="100%"></video>
+![Terminal Mode Demo](preview/preview-terminal-demo.gif)
 
 **Controls:**
 - `s` - Switch camera (cycle through available cameras)
