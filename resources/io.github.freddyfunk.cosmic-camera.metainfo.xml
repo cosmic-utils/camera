@@ -64,6 +64,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.11" date="2025-11-30">
+      <description>
+        <p>Release 0.1.11 includes the following changes:</p>
+        <ul>
+          <li>update cargo version when creating a new release</li>
+          <li>Feature/terminal webcam</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.10" date="2025-11-29">
       <description>
         <p>Release 0.1.10 includes the following changes:</p>
