@@ -101,6 +101,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Update Cargo.toml version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          echo "✅ Updated Cargo.toml to version $VERSION"
+
       - name: Update metainfo.xml
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -200,6 +206,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          git add Cargo.toml
           git add resources/io.github.freddyfunk.cosmic-camera.metainfo.xml
           git add cargo-sources.json
 
@@ -207,7 +214,7 @@ jobs:
             echo "No changes to commit"
             COMMIT_SHA="${{ github.sha }}"
           else
-            git commit -m "Release ${{ steps.version.outputs.tag }}: update metainfo.xml"
+            git commit -m "Release ${{ steps.version.outputs.tag }}: update version and metainfo"
             git push origin ${{ github.ref_name }}
             COMMIT_SHA=$(git rev-parse HEAD)
             echo "📝 Committed release changes: $COMMIT_SHA"
