@@ -22,11 +22,17 @@ virtual-camera-file-filter-name = Images and Videos
 # Settings
 settings-title = Settings
 settings-camera = Camera
+settings-video = Video
+settings-device = Device
+settings-format = Format
 settings-microphone = Microphone
+settings-encoder = Encoder
+settings-quality = Quality
 settings-video-encoder = Video encoder
 settings-video-quality = Video quality
 settings-manual-override = Manual mode override
 settings-mirror-preview = Mirror preview
+settings-mirror-preview-description = Flip the camera preview horizontally
 settings-bug-reports = Bug reports
 settings-report-bug = Report a bug
 settings-show-report = Show Report
