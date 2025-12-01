@@ -214,7 +214,6 @@ impl cosmic::Application for AppModel {
             is_capturing: false,
             format_picker_visible: false,
             theatre: TheatreState::default(),
-            filter_picker_visible: false,
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
@@ -247,7 +246,6 @@ impl cosmic::Application for AppModel {
                 .map(|p| p.display_name().to_string())
                 .collect(),
             bitrate_info_visible: false,
-            filter_picker_scroll_offset: 0.0,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
             qr_detection_enabled: true,
@@ -377,6 +375,7 @@ impl cosmic::Application for AppModel {
                 Message::ToggleContextPage(ContextPage::About),
             ),
             ContextPage::Settings => self.settings_view(),
+            ContextPage::Filters => self.filters_view(),
         })
     }
 

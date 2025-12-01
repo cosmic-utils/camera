@@ -19,6 +19,9 @@ streaming-live = LIVE
 virtual-camera-open-file = Open file
 virtual-camera-file-filter-name = Images and Videos
 
+# Filters
+filters-title = Filters
+
 # Settings
 settings-title = Settings
 settings-camera = Camera

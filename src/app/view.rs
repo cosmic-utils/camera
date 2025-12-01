@@ -66,26 +66,20 @@ impl AppModel {
         // Build top bar
         let top_bar = self.build_top_bar();
 
-        // Wrap preview in mouse area for interactions:
-        // - Theatre mode: show UI on click or mouse movement
-        // - Filter picker: close on click outside the picker
+        // Wrap preview in mouse area for theatre mode interactions
         let camera_preview = if self.theatre.enabled {
             // In theatre mode, show UI on click or mouse movement
             widget::mouse_area(camera_preview)
                 .on_press(Message::TheatreShowUI)
                 .on_move(|_| Message::TheatreShowUI)
                 .into()
-        } else if self.filter_picker_visible && self.filters_available() {
-            // Close filter picker when clicking on the preview area
-            widget::mouse_area(camera_preview)
-                .on_press(Message::CloseFilterPicker)
-                .into()
         } else {
             camera_preview
         };
 
-        // Check if filter name label should be shown (only when filter picker is open)
-        let show_filter_label = self.filters_available() && self.filter_picker_visible;
+        // Check if filter name label should be shown (only when a non-standard filter is selected)
+        let show_filter_label =
+            self.filters_available() && self.selected_filter != FilterType::Standard;
 
         // Capture button area - changes based on recording/streaming state and video file selection
         // Check if we have video file controls (play/pause button for video file sources)
@@ -163,23 +157,10 @@ impl AppModel {
             };
 
         // Capture button area (filter name label is now an overlay on the preview)
-        // Wrap in mouse_area to close filter picker when clicking the empty space around the button
-        let capture_button_area: Element<'_, Message> =
-            if self.filter_picker_visible && self.filters_available() {
-                widget::mouse_area(capture_button_only)
-                    .on_press(Message::CloseFilterPicker)
-                    .into()
-            } else {
-                capture_button_only
-            };
+        let capture_button_area: Element<'_, Message> = capture_button_only;
 
-        // Bottom area: either bottom bar or filter picker
-        let bottom_area: Element<'_, Message> =
-            if self.filter_picker_visible && self.filters_available() {
-                self.build_filter_picker()
-            } else {
-                self.build_bottom_bar()
-            };
+        // Bottom area: always show bottom bar (filter picker is now a sidebar overlay)
+        let bottom_area: Element<'_, Message> = self.build_bottom_bar();
 
         // Build content based on theatre mode
         let content: Element<'_, Message> = if self.theatre.enabled {
@@ -427,11 +408,13 @@ impl AppModel {
                     }
                 }));
             } else {
-                // Highlight only when a non-standard filter is active (not when picker is open)
+                // Highlight only when a non-standard filter is active
                 let is_highlighted = self.selected_filter != FilterType::Standard;
                 row = row.push(
                     widget::button::icon(icon::from_name("image-filter-symbolic"))
-                        .on_press(Message::ToggleFilterPicker)
+                        .on_press(Message::ToggleContextPage(
+                            crate::app::state::ContextPage::Filters,
+                        ))
                         .class(if is_highlighted {
                             cosmic::theme::Button::Suggested
                         } else {

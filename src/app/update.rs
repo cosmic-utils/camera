@@ -39,13 +39,10 @@ impl AppModel {
             Message::ToggleContextPage(page) => self.handle_toggle_context_page(page),
             Message::ToggleFormatPicker => self.handle_toggle_format_picker(),
             Message::CloseFormatPicker => self.handle_close_format_picker(),
-            Message::ToggleFilterPicker => self.handle_toggle_filter_picker(),
-            Message::CloseFilterPicker => self.handle_close_filter_picker(),
             Message::ToggleTheatreMode => self.handle_toggle_theatre_mode(),
             Message::TheatreShowUI => self.handle_theatre_show_ui(),
             Message::TheatreHideUI => self.handle_theatre_hide_ui(),
             Message::ToggleBitrateInfo => self.handle_toggle_bitrate_info(),
-            Message::FilterPickerScroll(delta) => self.handle_filter_picker_scroll(delta),
 
             // ===== Camera Control =====
             Message::SwitchCamera => self.handle_switch_camera(),
@@ -195,18 +192,6 @@ impl AppModel {
         Task::none()
     }
 
-    fn handle_toggle_filter_picker(&mut self) -> Task<cosmic::Action<Message>> {
-        self.filter_picker_visible = !self.filter_picker_visible;
-        info!("Filter picker toggled: {}", self.filter_picker_visible);
-        Task::none()
-    }
-
-    fn handle_close_filter_picker(&mut self) -> Task<cosmic::Action<Message>> {
-        self.filter_picker_visible = false;
-        info!("Filter picker closed");
-        Task::none()
-    }
-
     fn handle_toggle_theatre_mode(&mut self) -> Task<cosmic::Action<Message>> {
         if self.theatre.enabled {
             info!("Exiting theatre mode");
@@ -251,19 +236,6 @@ impl AppModel {
         self.bitrate_info_visible = !self.bitrate_info_visible;
         info!(visible = self.bitrate_info_visible, "Bitrate info toggled");
         Task::none()
-    }
-
-    fn handle_filter_picker_scroll(&mut self, delta: f32) -> Task<cosmic::Action<Message>> {
-        self.filter_picker_scroll_offset -= delta;
-        if self.filter_picker_scroll_offset < 0.0 {
-            self.filter_picker_scroll_offset = 0.0;
-        }
-
-        let offset = cosmic::iced_widget::scrollable::AbsoluteOffset {
-            x: self.filter_picker_scroll_offset,
-            y: 0.0,
-        };
-        cosmic::iced_widget::scrollable::scroll_to(Self::filter_picker_scrollable_id(), offset)
     }
 
     // =========================================================================

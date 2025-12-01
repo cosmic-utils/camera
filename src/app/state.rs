@@ -299,8 +299,6 @@ pub struct AppModel {
     pub format_picker_visible: bool,
     /// Theatre mode state (enabled, UI visibility, auto-hide)
     pub theatre: TheatreState,
-    /// Filter picker visible
-    pub filter_picker_visible: bool,
     /// Currently selected filter
     pub selected_filter: FilterType,
     /// Flash enabled for photo capture
@@ -352,8 +350,6 @@ pub struct AppModel {
     pub bitrate_preset_dropdown_options: Vec<String>,
     /// Whether the bitrate info matrix is visible
     pub bitrate_info_visible: bool,
-    /// Filter picker scroll offset (for programmatic scrolling)
-    pub filter_picker_scroll_offset: f32,
 
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
@@ -453,6 +449,7 @@ pub enum ContextPage {
     #[default]
     About,
     Settings,
+    Filters,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -477,10 +474,6 @@ pub enum Message {
     ToggleFormatPicker,
     /// Close format picker
     CloseFormatPicker,
-    /// Toggle filter picker visibility
-    ToggleFilterPicker,
-    /// Close filter picker
-    CloseFilterPicker,
     /// Toggle theatre mode
     ToggleTheatreMode,
     /// Show UI in theatre mode (after user interaction)
@@ -489,8 +482,6 @@ pub enum Message {
     TheatreHideUI,
     /// Toggle bitrate info matrix visibility
     ToggleBitrateInfo,
-    /// Scroll filter picker (horizontal scroll from any scroll input)
-    FilterPickerScroll(f32),
 
     // ===== Camera Control =====
     /// Switch to next camera
