@@ -77,9 +77,6 @@ fn ensure_photo_directory() -> Result<std::path::PathBuf, std::io::Error> {
 }
 
 const REPOSITORY: &str = "https://github.com/FreddyFunk/cosmic-camera";
-const APP_ICON: &[u8] = include_bytes!(
-    "../../resources/icons/hicolor/scalable/apps/io.github.freddyfunk.cosmic-camera.svg"
-);
 
 impl cosmic::Application for AppModel {
     /// The async executor that will be used to run your application's commands.
@@ -110,7 +107,7 @@ impl cosmic::Application for AppModel {
         // Create the about widget
         let about = About::default()
             .name(fl!("app-title"))
-            .icon(widget::icon::from_svg_bytes(APP_ICON))
+            .icon(widget::icon::from_name(Self::APP_ID))
             .version(env!("GIT_VERSION"))
             .author("Frederic Laing")
             .license("GPL-3.0-only")
