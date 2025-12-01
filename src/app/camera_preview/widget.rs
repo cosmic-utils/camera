@@ -6,7 +6,7 @@ use crate::app::state::{AppModel, Message};
 use crate::app::video_widget::{self, VideoContentFit};
 use crate::fl;
 use cosmic::Element;
-use cosmic::iced::{Background, Color, Length};
+use cosmic::iced::{Background, Length};
 use cosmic::widget;
 use tracing::info;
 
@@ -30,9 +30,9 @@ impl AppModel {
             .height(Length::Fill)
             .align_x(cosmic::iced::alignment::Horizontal::Center)
             .align_y(cosmic::iced::alignment::Vertical::Center)
-            .style(|_theme| widget::container::Style {
-                background: Some(Background::Color(Color::BLACK)),
-                text_color: Some(Color::WHITE),
+            .style(|theme| widget::container::Style {
+                background: Some(Background::Color(theme.cosmic().bg_color().into())),
+                text_color: Some(theme.cosmic().on_bg_color().into()),
                 ..Default::default()
             })
             .into();
@@ -102,12 +102,12 @@ impl AppModel {
                 info!(render_count = count, "No frame available in view");
             }
 
-            // Black canvas placeholder when no camera frame
+            // Themed canvas placeholder when no camera frame
             widget::container(widget::Space::new(Length::Fill, Length::Fill))
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|_theme| widget::container::Style {
-                    background: Some(Background::Color(Color::BLACK)),
+                .style(|theme: &cosmic::Theme| widget::container::Style {
+                    background: Some(Background::Color(theme.cosmic().bg_color().into())),
                     ..Default::default()
                 })
                 .into()

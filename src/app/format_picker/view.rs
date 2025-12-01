@@ -113,7 +113,7 @@ impl AppModel {
             }
         }
 
-        // Build picker panel with semi-transparent background
+        // Build picker panel with semi-transparent themed background
         let picker_panel = widget::container(
             widget::column()
                 .push(res_row)
@@ -121,13 +121,17 @@ impl AppModel {
                 .push(fps_row)
                 .padding(spacing.space_xs),
         )
-        .style(|_theme| widget::container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))),
-            border: Border {
-                radius: [ui::PICKER_BORDER_RADIUS; 4].into(),
+        .style(|theme: &cosmic::Theme| {
+            let mut bg: Color = theme.cosmic().bg_color().into();
+            bg.a = 0.85; // Semi-transparent
+            widget::container::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: [ui::PICKER_BORDER_RADIUS; 4].into(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
+            }
         });
 
         // Position picker and add click-outside-to-close

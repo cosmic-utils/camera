@@ -56,8 +56,8 @@ impl AppModel {
             )
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|_theme| widget::container::Style {
-                background: Some(Background::Color(Color::BLACK)),
+            .style(|theme| widget::container::Style {
+                background: Some(Background::Color(theme.cosmic().bg_color().into())),
                 ..Default::default()
             })
             .into();
@@ -271,12 +271,12 @@ impl AppModel {
             main_stack = main_stack.push(self.build_format_picker());
         }
 
-        // Wrap everything in a black background container
+        // Wrap everything in a themed background container
         widget::container(main_stack)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(|_theme| widget::container::Style {
-                background: Some(Background::Color(Color::BLACK)),
+            .style(|theme| widget::container::Style {
+                background: Some(Background::Color(theme.cosmic().bg_color().into())),
                 ..Default::default()
             })
             .into()
