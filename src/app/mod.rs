@@ -89,7 +89,7 @@ impl cosmic::Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "io.github.freddyfunk.cosmic-camera";
+    const APP_ID: &'static str = "io.github.cosmicutils.camera";
 
     fn core(&self) -> &cosmic::Core {
         &self.core

@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <component type="desktop-application">
-  <id>io.github.freddyfunk.cosmic-camera</id>
+  <id>io.github.cosmicutils.camera</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>COSMIC Camera</name>
@@ -26,14 +26,14 @@
       <li>Multi-camera support: easily switch between cameras and microphones</li>
     </ul>
   </description>
-  <launchable type="desktop-id">io.github.freddyfunk.cosmic-camera.desktop</launchable>
+  <launchable type="desktop-id">io.github.cosmicutils.camera.desktop</launchable>
   <provides>
     <binary>cosmic-camera</binary>
   </provides>
   <url type="homepage">https://github.com/FreddyFunk/cosmic-camera</url>
   <url type="bugtracker">https://github.com/FreddyFunk/cosmic-camera/issues</url>
   <url type="vcs-browser">https://github.com/FreddyFunk/cosmic-camera</url>
-  <developer id="io.github.freddyfunk">
+  <developer id="io.github.cosmicutils">
     <name>Frederic Laing</name>
   </developer>
   <content_rating type="oars-1.1" />

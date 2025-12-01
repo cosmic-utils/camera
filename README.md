@@ -1,6 +1,6 @@
 # COSMIC Camera
 
-[![Flathub](https://img.shields.io/flathub/v/io.github.freddyfunk.cosmic-camera?logo=flathub&logoColor=white)](https://flathub.org/apps/io.github.freddyfunk.cosmic-camera)
+[![Flathub](https://img.shields.io/flathub/v/io.github.cosmicutils.camera?logo=flathub&logoColor=white)](https://flathub.org/apps/io.github.cosmicutils.camera)
 [![CI](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/ci.yml/badge.svg)](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/ci.yml)
 [![Release](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/release.yml/badge.svg)](https://github.com/FreddyFunk/cosmic-camera/actions/workflows/release.yml)
 
@@ -18,11 +18,11 @@ This is a personal project by [Frederic Laing](https://github.com/FreddyFunk). I
 
 ### Flatpak (Recommended)
 
-<a href='https://flathub.org/apps/io.github.freddyfunk.cosmic-camera'><img width='240' alt='Get it on Flathub' src='https://flathub.org/api/badge?svg&locale=en'/></a>
+<a href='https://flathub.org/apps/io.github.cosmicutils.camera'><img width='240' alt='Get it on Flathub' src='https://flathub.org/api/badge?svg&locale=en'/></a>
 
 ```bash
 # Install from Flathub
-flatpak install flathub io.github.freddyfunk.cosmic-camera
+flatpak install flathub io.github.cosmicutils.camera
 
 # Or install from a downloaded .flatpak bundle
 flatpak install cosmic-camera-x86_64.flatpak
