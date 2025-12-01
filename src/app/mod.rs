@@ -335,8 +335,7 @@ impl cosmic::Application for AppModel {
 
         if is_disabled {
             // Disabled buttons during transitions
-            let about_button =
-                widget::button::icon(widget::icon::from_name("help-about-symbolic"));
+            let about_button = widget::button::icon(widget::icon::from_name("help-about-symbolic"));
             let settings_button =
                 widget::button::icon(widget::icon::from_name("preferences-system-symbolic"));
             vec![
