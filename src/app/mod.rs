@@ -271,6 +271,11 @@ impl cosmic::Application for AppModel {
                 .iter()
                 .map(|p| p.display_name().to_string())
                 .collect(),
+            theme_dropdown_options: vec![
+                fl!("match-desktop"),
+                fl!("dark"),
+                fl!("light"),
+            ],
             bitrate_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default

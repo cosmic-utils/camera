@@ -348,6 +348,8 @@ pub struct AppModel {
     pub codec_dropdown_options: Vec<String>,
     /// Bitrate preset dropdown options
     pub bitrate_preset_dropdown_options: Vec<String>,
+    /// Theme dropdown options (Match Desktop, Dark, Light)
+    pub theme_dropdown_options: Vec<String>,
     /// Whether the bitrate info matrix is visible
     pub bitrate_info_visible: bool,
 
@@ -605,6 +607,8 @@ pub enum Message {
     // ===== Settings & Device Selection =====
     /// Configuration updated
     UpdateConfig(Config),
+    /// Set application theme (System, Dark, Light)
+    SetAppTheme(usize),
     /// Select audio input device
     SelectAudioDevice(usize),
     /// Select video encoder

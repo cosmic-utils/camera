@@ -24,6 +24,11 @@ filters-title = Filters
 
 # Settings
 settings-title = Settings
+settings-appearance = Appearance
+settings-theme = Theme
+match-desktop = Match Desktop
+dark = Dark
+light = Light
 settings-camera = Camera
 settings-video = Video
 settings-device = Device

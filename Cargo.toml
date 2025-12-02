@@ -60,6 +60,8 @@ features = [
     "wayland",
     # GPU-accelerated rendering
     "wgpu",
+    # XDG portal integration for Flatpak theme detection
+    "xdg-portal",
 ]
 
 # Uncomment to test a locally-cloned libcosmic

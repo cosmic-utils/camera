@@ -2,8 +2,40 @@
 
 use crate::constants::BitratePreset;
 use cosmic::cosmic_config::{self, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
+use cosmic::{Theme, theme};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Application theme preference
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AppTheme {
+    /// Follow system theme (dark or light based on system setting)
+    #[default]
+    System,
+    /// Always use dark theme
+    Dark,
+    /// Always use light theme
+    Light,
+}
+
+impl AppTheme {
+    /// Get the COSMIC theme for this app theme preference
+    pub fn theme(&self) -> Theme {
+        match self {
+            Self::Dark => {
+                let mut theme = theme::system_dark();
+                theme.theme_type.prefer_dark(Some(true));
+                theme
+            }
+            Self::Light => {
+                let mut theme = theme::system_light();
+                theme.theme_type.prefer_dark(Some(false));
+                theme
+            }
+            Self::System => theme::system_preference(),
+        }
+    }
+}
 
 /// Camera format settings for a specific camera (used for both photo and video modes)
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Default, Serialize, Deserialize)]
@@ -22,8 +54,10 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 5]
+#[version = 6]
 pub struct Config {
+    /// Application theme preference (System, Dark, Light)
+    pub app_theme: AppTheme,
     /// Last used camera device path
     pub last_camera_path: Option<String>,
     /// Video mode settings per camera (key = camera device path)
@@ -47,6 +81,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            app_theme: AppTheme::default(), // Default to System theme
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),

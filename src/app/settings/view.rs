@@ -3,6 +3,7 @@
 //! Settings drawer view
 
 use crate::app::state::{AppModel, Message};
+use crate::config::AppTheme;
 use crate::constants::{BitratePreset, ResolutionTier, format_bitrate};
 use crate::fl;
 use cosmic::Element;
@@ -32,6 +33,24 @@ impl AppModel {
             .iter()
             .position(|p| *p == self.config.bitrate_preset)
             .unwrap_or(1); // Default to Medium (index 1)
+
+        // Theme index (System = 0, Dark = 1, Light = 2)
+        let current_theme_index = match self.config.app_theme {
+            AppTheme::System => 0,
+            AppTheme::Dark => 1,
+            AppTheme::Light => 2,
+        };
+
+        // Appearance section
+        let appearance_section = widget::settings::section()
+            .title(fl!("settings-appearance"))
+            .add(
+                widget::settings::item::builder(fl!("settings-theme")).control(widget::dropdown(
+                    &self.theme_dropdown_options,
+                    Some(current_theme_index),
+                    Message::SetAppTheme,
+                )),
+            );
 
         // Camera section
         let camera_section = widget::settings::section()
@@ -117,6 +136,7 @@ impl AppModel {
 
         // Combine all sections
         let settings_content: Element<'_, Message> = widget::settings::view_column(vec![
+            appearance_section.into(),
             camera_section.into(),
             video_section.into(),
             mirror_section.into(),

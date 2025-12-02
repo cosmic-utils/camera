@@ -115,6 +115,7 @@ impl AppModel {
 
             // ===== Settings =====
             Message::UpdateConfig(config) => self.handle_update_config(config),
+            Message::SetAppTheme(index) => self.handle_set_app_theme(index),
             Message::SelectAudioDevice(index) => self.handle_select_audio_device(index),
             Message::SelectVideoEncoder(index) => self.handle_select_video_encoder(index),
 
@@ -2108,6 +2109,28 @@ impl AppModel {
         info!("UpdateConfig received");
         self.config = config;
         Task::none()
+    }
+
+    fn handle_set_app_theme(&mut self, index: usize) -> Task<cosmic::Action<Message>> {
+        use crate::config::AppTheme;
+
+        let app_theme = match index {
+            0 => AppTheme::System,
+            1 => AppTheme::Dark,
+            2 => AppTheme::Light,
+            _ => return Task::none(),
+        };
+
+        info!(?app_theme, "Setting application theme");
+        self.config.app_theme = app_theme;
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save app theme setting");
+            }
+        }
+
+        cosmic::command::set_theme(app_theme.theme())
     }
 
     fn handle_select_audio_device(&mut self, index: usize) -> Task<cosmic::Action<Message>> {
