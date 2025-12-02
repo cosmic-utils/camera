@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Camera backend type (PipeWire only)
+/// Camera backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CameraBackendType {
-    /// PipeWire backend (modern Linux standard)
+    /// PipeWire backend (modern Linux desktop standard)
     PipeWire,
+    /// Libcamera backend (for mobile Linux devices)
+    Libcamera,
 }
 
 impl Default for CameraBackendType {
@@ -23,7 +25,10 @@ impl Default for CameraBackendType {
 
 impl std::fmt::Display for CameraBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PipeWire")
+        match self {
+            Self::PipeWire => write!(f, "PipeWire"),
+            Self::Libcamera => write!(f, "libcamera"),
+        }
     }
 }
 

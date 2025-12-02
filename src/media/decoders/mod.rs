@@ -16,12 +16,16 @@ pub use pipeline::try_create_pipeline;
 pub enum PipelineBackend {
     /// PipeWire backend (allows simultaneous preview + recording)
     PipeWire,
+    /// Libcamera backend (for mobile Linux devices)
+    Libcamera,
 }
 
-// Conversion from CameraBackendType (for backward compatibility)
+// Conversion from CameraBackendType
 impl From<crate::backends::camera::CameraBackendType> for PipelineBackend {
-    fn from(_backend: crate::backends::camera::CameraBackendType) -> Self {
-        // Only PipeWire is supported
-        PipelineBackend::PipeWire
+    fn from(backend: crate::backends::camera::CameraBackendType) -> Self {
+        match backend {
+            crate::backends::camera::CameraBackendType::PipeWire => PipelineBackend::PipeWire,
+            crate::backends::camera::CameraBackendType::Libcamera => PipelineBackend::Libcamera,
+        }
     }
 }
