@@ -18,6 +18,7 @@ pub struct GalleryPrimitive {
     pub rgba_data: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
+    pub corner_radius: f32,
 }
 
 impl GalleryPrimitive {
@@ -26,12 +27,14 @@ impl GalleryPrimitive {
         rgba_data: Arc<Vec<u8>>,
         width: u32,
         height: u32,
+        corner_radius: f32,
     ) -> Self {
         Self {
             image_handle,
             rgba_data,
             width,
             height,
+            corner_radius,
         }
     }
 }
@@ -77,8 +80,14 @@ impl PrimitiveTrait for GalleryPrimitive {
                 self.height,
             );
 
-            // Update viewport size for this image
-            pipeline.update_viewport(queue, &self.image_handle, bounds.width, bounds.height);
+            // Update viewport size and corner radius for this image
+            pipeline.update_viewport(
+                queue,
+                &self.image_handle,
+                bounds.width,
+                bounds.height,
+                self.corner_radius,
+            );
         }
     }
 
@@ -276,17 +285,17 @@ impl GalleryPipeline {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Create viewport size buffer (will be updated during render)
-        // Start with 40x40 as default button size
+        // Create viewport params buffer (will be updated during render)
+        // Contains: size (2 floats), corner_radius (1 float), padding (1 float)
         let viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gallery viewport buffer"),
-            size: std::mem::size_of::<[f32; 2]>() as u64,
+            size: std::mem::size_of::<[f32; 4]>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        // Initialize with default 40x40 size
-        let viewport_data = [40.0f32, 40.0f32];
+        // Initialize with default 40x40 size and 8.0 corner radius
+        let viewport_data = [40.0f32, 40.0f32, 8.0f32, 0.0f32];
         queue.write_buffer(&viewport_buffer, 0, bytemuck::cast_slice(&viewport_data));
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -323,11 +332,13 @@ impl GalleryPipeline {
         image_handle: &cosmic::widget::image::Handle,
         width: f32,
         height: f32,
+        corner_radius: f32,
     ) {
         let image_id = image_handle.id();
 
         if let Some(gallery_texture) = self.texture_cache.get(&image_id) {
-            let viewport_data = [width, height];
+            // Pack viewport params: size (2 floats), corner_radius (1 float), padding (1 float)
+            let viewport_data = [width, height, corner_radius, 0.0f32];
             queue.write_buffer(
                 &gallery_texture.viewport_buffer,
                 0,

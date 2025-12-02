@@ -10,7 +10,7 @@ use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
 use cosmic::iced::{Alignment, Background, Border, Color, Length};
-use cosmic::widget;
+use cosmic::widget::{self, button};
 use std::sync::Arc;
 
 /// Spacing between filter thumbnails in grid
@@ -59,6 +59,10 @@ impl AppModel {
 
         let inner_size = FILTER_THUMBNAIL_SIZE - FILTER_BORDER_WIDTH * 2.0;
 
+        // Get corner radius from theme for consistent styling
+        let theme = cosmic::theme::active();
+        let corner_radius = theme.cosmic().corner_radii.radius_s[0];
+
         for filter_type in filters {
             let is_selected = self.selected_filter == filter_type;
 
@@ -70,7 +74,7 @@ impl AppModel {
                     99, // Shared source texture ID for all filter previews
                     VideoContentFit::Cover,
                     filter_type,
-                    8.0,
+                    corner_radius,
                     self.config.mirror_preview,
                 );
 
@@ -85,10 +89,10 @@ impl AppModel {
                     Length::Fixed(inner_size),
                     Length::Fixed(inner_size),
                 ))
-                .style(move |_theme| widget::container::Style {
+                .style(move |theme: &cosmic::Theme| widget::container::Style {
                     background: Some(Background::Color(color)),
                     border: Border {
-                        radius: [8.0; 4].into(),
+                        radius: theme.cosmic().corner_radii.radius_s.into(),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -96,34 +100,19 @@ impl AppModel {
                 .into()
             };
 
-            // Wrap thumbnail in container with selection border
-            let bordered_thumbnail = widget::container(thumbnail)
+            // Center the thumbnail in a container
+            let centered_thumbnail = widget::container(thumbnail)
                 .width(Length::Fixed(FILTER_THUMBNAIL_SIZE))
                 .height(Length::Fixed(FILTER_THUMBNAIL_SIZE))
-                .center(FILTER_THUMBNAIL_SIZE)
-                .style(move |_theme| widget::container::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border {
-                        radius: [10.0; 4].into(),
-                        width: if is_selected {
-                            FILTER_BORDER_WIDTH
-                        } else {
-                            0.0
-                        },
-                        color: if is_selected {
-                            Color::from_rgb(0.3, 0.6, 1.0) // Accent blue for selection
-                        } else {
-                            Color::TRANSPARENT
-                        },
-                    },
-                    ..Default::default()
-                });
+                .center(FILTER_THUMBNAIL_SIZE);
 
-            // Wrap only thumbnail in button for interaction (hover applies only to preview)
-            let thumbnail_button = widget::button::custom(bordered_thumbnail)
+            // Use custom_image_button which provides built-in selection indicator
+            // (checkmark at bottom-left with accent styling on hover/selected)
+            let thumbnail_button = button::custom_image_button(centered_thumbnail, None)
                 .on_press(Message::SelectFilter(filter_type))
                 .padding(0)
-                .class(cosmic::theme::Button::Image);
+                .selected(is_selected)
+                .class(button::ButtonClass::Image);
 
             // Filter name label below thumbnail (outside button, no hover effect)
             let name_label = widget::text(Self::filter_display_name(filter_type))

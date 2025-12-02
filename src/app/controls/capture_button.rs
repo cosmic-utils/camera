@@ -21,6 +21,13 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
         let is_disabled = self.transition_state.ui_disabled;
 
+        // Get corner radius from theme - use radius_xl for large buttons
+        // Scale it to fit the button (max is half the button size for a circle)
+        let theme = cosmic::theme::active();
+        let theme_radius = theme.cosmic().corner_radii.radius_xl[0];
+        // Cap at half the button size (25.0) for circular appearance when theme is "round"
+        let base_corner_radius = theme_radius.min(ui::CAPTURE_BUTTON_RADIUS);
+
         // Determine button color based on mode and state
         let capture_button_color = if is_disabled {
             Color::from_rgba(0.5, 0.5, 0.5, 0.3) // Grayed out with low opacity when disabled
@@ -68,6 +75,9 @@ impl AppModel {
                 (ui::CAPTURE_BUTTON_INNER, ui::CAPTURE_BUTTON_OUTER)
             };
 
+        // Scale corner radius proportionally when button size changes
+        let corner_radius = base_corner_radius * (inner_size / ui::CAPTURE_BUTTON_INNER);
+
         let button_inner = widget::container(widget::Space::new(
             Length::Fixed(inner_size),
             Length::Fixed(inner_size),
@@ -75,8 +85,7 @@ impl AppModel {
         .style(move |_theme| widget::container::Style {
             background: Some(Background::Color(capture_button_color)),
             border: cosmic::iced::Border {
-                radius: [ui::CAPTURE_BUTTON_RADIUS * (inner_size / ui::CAPTURE_BUTTON_INNER); 4]
-                    .into(),
+                radius: [corner_radius; 4].into(),
                 ..Default::default()
             },
             ..Default::default()

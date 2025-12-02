@@ -18,13 +18,23 @@ impl AppModel {
     pub fn build_gallery_button(&self) -> Element<'_, Message> {
         let is_disabled = self.transition_state.ui_disabled;
 
+        // Get corner radius from theme for consistent styling
+        let theme = cosmic::theme::active();
+        let corner_radius = theme.cosmic().corner_radii.radius_s[0];
+
         // If we have both the thumbnail handle and RGBA data, use custom primitive
         let button_content = if let (Some(thumbnail), Some((rgba_data, width, height))) =
             (&self.gallery_thumbnail, &self.gallery_thumbnail_rgba)
         {
             // Use custom GPU primitive with rounded corner clipping
             // Arc::clone is cheap - just increments reference count, doesn't copy image data
-            gallery_widget(thumbnail.clone(), Arc::clone(rgba_data), *width, *height)
+            gallery_widget(
+                thumbnail.clone(),
+                Arc::clone(rgba_data),
+                *width,
+                *height,
+                corner_radius,
+            )
         } else if let Some(thumbnail) = &self.gallery_thumbnail {
             // Fallback: if we only have the handle (shouldn't happen in practice)
             let image = widget::image::Image::new(thumbnail.clone())

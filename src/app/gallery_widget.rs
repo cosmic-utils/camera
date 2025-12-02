@@ -25,8 +25,10 @@ impl GalleryWidget {
         rgba_data: Arc<Vec<u8>>,
         width: u32,
         height: u32,
+        corner_radius: f32,
     ) -> Self {
-        let primitive = GalleryPrimitive::new(image_handle, rgba_data, width, height);
+        let primitive =
+            GalleryPrimitive::new(image_handle, rgba_data, width, height, corner_radius);
 
         Self {
             primitive,
@@ -85,6 +87,13 @@ pub fn gallery_widget<'a>(
     rgba_data: Arc<Vec<u8>>,
     width: u32,
     height: u32,
+    corner_radius: f32,
 ) -> Element<'a, crate::app::Message, Theme, Renderer> {
-    Element::new(GalleryWidget::new(image_handle, rgba_data, width, height))
+    Element::new(GalleryWidget::new(
+        image_handle,
+        rgba_data,
+        width,
+        height,
+        corner_radius,
+    ))
 }

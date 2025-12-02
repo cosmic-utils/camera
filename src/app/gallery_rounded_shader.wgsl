@@ -7,8 +7,15 @@ var texture_img: texture_2d<f32>;
 @group(0) @binding(1)
 var sampler_img: sampler;
 
+// Uniform struct containing viewport size and corner radius
+struct ViewportParams {
+    size: vec2<f32>,
+    corner_radius: f32,
+    _padding: f32, // Padding for 16-byte alignment
+}
+
 @group(0) @binding(2)
-var<uniform> viewport_size: vec2<f32>;
+var<uniform> viewport: ViewportParams;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -44,7 +51,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Calculate aspect ratios
     let tex_aspect = tex_size.x / tex_size.y;
-    let viewport_aspect = viewport_size.x / viewport_size.y;
+    let viewport_aspect = viewport.size.x / viewport.size.y;
 
     // Calculate scale factor for "cover" behavior (like CSS object-fit: cover)
     // Scale so the image fills the viewport, cropping the overflow
@@ -61,14 +68,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let adjusted_uv = (in.tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
 
     // Convert to pixel coordinates for rounded corner calculation (centered)
-    let pixel_pos = (in.tex_coords - vec2<f32>(0.5, 0.5)) * viewport_size;
+    let pixel_pos = (in.tex_coords - vec2<f32>(0.5, 0.5)) * viewport.size;
 
-    // Rounded corner radius in pixels (based on rendered size)
-    let corner_radius = 8.0;
-
-    // Calculate distance to rounded rectangle
-    let half_size = viewport_size * 0.5;
-    let dist = rounded_box_sdf(pixel_pos, half_size, corner_radius);
+    // Calculate distance to rounded rectangle using corner radius from uniform
+    let half_size = viewport.size * 0.5;
+    let dist = rounded_box_sdf(pixel_pos, half_size, viewport.corner_radius);
 
     // Sample the texture with adjusted UVs for cover fit
     let color = textureSample(texture_img, sampler_img, adjusted_uv);
