@@ -3,7 +3,7 @@
 //! Settings drawer view
 
 use crate::app::state::{AppModel, Message};
-use crate::constants::{BitratePreset, ResolutionTier, app_info, format_bitrate};
+use crate::constants::{BitratePreset, ResolutionTier, format_bitrate};
 use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
@@ -115,20 +115,6 @@ impl AppModel {
             .title(fl!("settings-bug-reports"))
             .add(widget::settings::item_row(vec![bug_report_control]));
 
-        // Version info
-        let version_info = if app_info::is_flatpak() {
-            fl!("settings-version-flatpak", version = app_info::version())
-        } else {
-            fl!("settings-version", version = app_info::version())
-        };
-
-        let version_section = widget::settings::section().add(widget::settings::item_row(vec![
-            widget::text(version_info)
-                .size(12)
-                .class(cosmic::theme::Text::Accent)
-                .into(),
-        ]));
-
         // Combine all sections
         let settings_content: Element<'_, Message> = widget::settings::view_column(vec![
             camera_section.into(),
@@ -136,7 +122,6 @@ impl AppModel {
             mirror_section.into(),
             virtual_camera_section.into(),
             bug_reports_section.into(),
-            version_section.into(),
         ])
         .into();
 
