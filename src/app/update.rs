@@ -196,6 +196,7 @@ impl AppModel {
                 self.handle_select_photo_output_format(index)
             }
             Message::ToggleSaveBurstRaw => self.handle_toggle_save_burst_raw(),
+            Message::SelectBackend(index) => self.handle_select_backend(index),
 
             // ===== System & Recovery =====
             Message::CameraRecoveryStarted {

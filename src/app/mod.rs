@@ -317,7 +317,28 @@ impl cosmic::Application for AppModel {
                 .iter()
                 .map(|f| f.display_name().to_string())
                 .collect(),
+            backend_dropdown_options: {
+                let mut options = Vec::new();
+                if crate::backends::camera::pipewire::is_pipewire_available() {
+                    options.push(fl!("backend-pipewire"));
+                }
+                if crate::backends::camera::libcamera::is_libcamera_available() {
+                    options.push(fl!("backend-libcamera"));
+                }
+                options
+            },
+            available_backends: {
+                let mut backends = Vec::new();
+                if crate::backends::camera::pipewire::is_pipewire_available() {
+                    backends.push(crate::backends::camera::CameraBackendType::PipeWire);
+                }
+                if crate::backends::camera::libcamera::is_libcamera_available() {
+                    backends.push(crate::backends::camera::CameraBackendType::Libcamera);
+                }
+                backends
+            },
             device_info_visible: false,
+            bitrate_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
             qr_detection_enabled: true,
@@ -350,7 +371,7 @@ impl cosmic::Application for AppModel {
 
                 // Enumerate cameras (can be slow, especially with multiple devices)
                 info!(backend = %backend_type, "Enumerating cameras asynchronously");
-                let backend = crate::backends::camera::get_backend();
+                let backend = crate::backends::camera::get_backend(backend_type);
                 let cameras = backend.enumerate_cameras();
                 info!(count = cameras.len(), backend = %backend_type, "Found camera(s)");
 

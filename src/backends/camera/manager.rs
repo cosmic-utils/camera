@@ -37,7 +37,7 @@ impl CameraBackendManager {
     pub fn new(backend_type: CameraBackendType) -> Self {
         info!(backend = %backend_type, "Creating camera backend manager");
 
-        let backend = get_backend();
+        let backend = get_backend(backend_type);
 
         let state = ManagerState {
             backend,
@@ -161,7 +161,7 @@ impl CameraBackendManager {
         let _ = state.backend.shutdown(); // Ignore errors during shutdown
 
         // Create new backend
-        let new_backend = get_backend();
+        let new_backend = get_backend(new_backend_type);
 
         state.backend = new_backend;
         state.backend_type = new_backend_type;

@@ -21,7 +21,7 @@ impl AppModel {
         let camera_path = &camera.path;
 
         // Get formats for the new mode
-        let backend = crate::backends::camera::get_backend();
+        let backend = crate::backends::camera::get_backend(self.config.backend);
         let device = crate::backends::camera::types::CameraDevice {
             name: camera.name.clone(),
             path: camera_path.clone(),
@@ -231,8 +231,8 @@ impl AppModel {
         };
         let camera_path = camera.path.clone();
 
-        // Get formats for this camera using PipeWire backend
-        let backend = crate::backends::camera::get_backend();
+        // Get formats for this camera using the configured backend
+        let backend = crate::backends::camera::get_backend(self.config.backend);
         let device = crate::backends::camera::types::CameraDevice {
             name: camera.name.clone(),
             path: camera_path.clone(),
