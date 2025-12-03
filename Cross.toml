@@ -10,6 +10,15 @@ passthrough = [
     "RUST_BACKTRACE"
 ]
 
+[target.armv7-unknown-linux-gnueabihf]
+# Use custom Dockerfile based on Ubuntu 24.04 with armhf cross-compilation
+dockerfile = "docker/Dockerfile.armv7"
+
+[target.armv7-unknown-linux-gnueabihf.env]
+passthrough = [
+    "RUST_BACKTRACE"
+]
+
 [target.riscv64gc-unknown-linux-gnu]
 # Use custom Dockerfile based on Ubuntu 22.04 (which has libseat-dev)
 dockerfile = "docker/Dockerfile.riscv64"
