@@ -2,16 +2,58 @@
 
 use camera::app::AppModel;
 use camera::i18n;
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+mod cli;
 
 #[derive(Parser)]
 #[command(name = "camera")]
 #[command(about = "Camera application for the COSMIC desktop")]
 #[command(version)]
+#[command(subcommand_required = false)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
     /// Run in terminal mode (renders camera to terminal)
-    #[arg(short, long)]
-    terminal: bool,
+    Terminal,
+
+    /// List available cameras
+    List,
+
+    /// Take a photo
+    Photo {
+        /// Camera index to use (from 'camera list')
+        #[arg(short, long, default_value = "0")]
+        camera: usize,
+
+        /// Output file path (default: ~/Pictures/camera/photo_TIMESTAMP.jpg)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Record a video
+    Video {
+        /// Camera index to use (from 'camera list')
+        #[arg(short, long, default_value = "0")]
+        camera: usize,
+
+        /// Recording duration in seconds
+        #[arg(short, long, default_value = "10")]
+        duration: u64,
+
+        /// Output file path (default: ~/Videos/camera/video_TIMESTAMP.mp4)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Enable audio recording
+        #[arg(short, long)]
+        audio: bool,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,12 +71,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
-    if cli.terminal {
-        // Run terminal mode
-        camera::terminal::run()
-    } else {
-        // Run GUI mode
-        run_gui()
+    match cli.command {
+        Some(Commands::Terminal) => camera::terminal::run(),
+        Some(Commands::List) => cli::list_cameras(),
+        Some(Commands::Photo { camera, output }) => cli::take_photo(camera, output),
+        Some(Commands::Video {
+            camera,
+            duration,
+            output,
+            audio,
+        }) => cli::record_video(camera, duration, output, audio),
+        None => run_gui(),
     }
 }
 

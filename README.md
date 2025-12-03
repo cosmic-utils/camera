@@ -53,12 +53,79 @@ just build-release
 sudo just install
 ```
 
-## Terminal Mode (For the Brave)
+## CLI Usage
+
+The camera application supports several command-line modes for headless operation:
+
+```bash
+camera              # Launch GUI (default)
+camera --help       # Show help
+camera list         # List available cameras
+camera photo        # Take a photo
+camera video        # Record a video
+camera terminal     # Terminal mode viewer
+```
+
+### List Cameras
+
+```bash
+camera list
+```
+
+Shows available cameras with their supported formats:
+
+```
+Available cameras:
+
+  [0] Laptop Webcam Module (V4L2)
+      Formats: 1920x1080@30fps, 1280x720@30fps, 640x480@30fps
+```
+
+### Take a Photo
+
+```bash
+camera photo [OPTIONS]
+```
+
+**Options:**
+- `-c, --camera <INDEX>` - Camera index from `camera list` (default: 0)
+- `-o, --output <PATH>` - Output file path (default: ~/Pictures/camera/IMG_TIMESTAMP.jpg)
+
+**Examples:**
+```bash
+camera photo                         # Quick photo with defaults
+camera photo -o ~/snapshot.jpg       # Custom output path
+camera photo -c 1                    # Use second camera
+```
+
+### Record a Video
+
+```bash
+camera video [OPTIONS]
+```
+
+**Options:**
+- `-c, --camera <INDEX>` - Camera index from `camera list` (default: 0)
+- `-d, --duration <SECONDS>` - Recording duration (default: 10)
+- `-o, --output <PATH>` - Output file path (default: ~/Videos/camera/video_TIMESTAMP.mp4)
+- `-a, --audio` - Enable audio recording
+
+**Examples:**
+```bash
+camera video                         # 10 second video
+camera video -d 30                   # 30 second video
+camera video -d 60 -a                # 1 minute with audio
+camera video -c 1 -d 30 -o out.mp4   # Camera 1, custom output
+```
+
+Press `Ctrl+C` to stop recording early.
+
+### Terminal Mode (For the Brave)
 
 Ever wanted to see your face rendered in glorious Unicode? Wonder what you'd look like as a half-block character? Well, wonder no more!
 
 ```bash
-camera --terminal
+camera terminal
 ```
 
 ![Terminal Mode Demo](preview/preview-terminal-demo.gif)
