@@ -11,8 +11,8 @@ on:
         required: false
         default: false
         type: boolean
-      build_armv7_flatpak:
-        description: 'Build armv7 Flatpak (slow, uses QEMU)'
+      build_armhf_flatpak:
+        description: 'Build armhf Flatpak (slow, uses QEMU)'
         required: false
         default: false
         type: boolean
@@ -36,7 +36,7 @@ jobs:
             arch: aarch64
             use_cross: true
           - target: armv7-unknown-linux-gnueabihf
-            arch: armv7
+            arch: armhf
             use_cross: true
           - target: riscv64gc-unknown-linux-gnu
             arch: riscv64
@@ -183,12 +183,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Build Flatpak for armv7 (QEMU emulation, slow)
-  build-flatpak-armv7:
-    name: Build Flatpak (armv7)
+  # Build Flatpak for armhf (QEMU emulation, slow)
+  build-flatpak-armhf:
+    name: Build Flatpak (armhf)
     runs-on: ubuntu-latest
-    # Only run on manual trigger with build_armv7_flatpak=true
-    if: github.event_name == 'workflow_dispatch' && inputs.build_armv7_flatpak
+    # Only run on manual trigger with build_armhf_flatpak=true
+    if: github.event_name == 'workflow_dispatch' && inputs.build_armhf_flatpak
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -224,8 +224,8 @@ jobs:
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v5
         with:
-          name: flatpak-armv7
-          path: camera-armv7.flatpak
+          name: flatpak-armhf
+          path: camera-armhf.flatpak
           if-no-files-found: error
           retention-days: 1
 
@@ -233,7 +233,7 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-binaries, build-flatpak-x86_64, build-flatpak-aarch64, build-flatpak-armv7]
+    needs: [build-binaries, build-flatpak-x86_64, build-flatpak-aarch64, build-flatpak-armhf]
     if: ${{ !cancelled() && needs.build-binaries.result == 'success' && needs.build-flatpak-x86_64.result == 'success' }}
     permissions:
       contents: write
@@ -254,16 +254,16 @@ jobs:
           mkdir -p release-assets
           mv artifacts/binary-x86_64/camera-x86_64-linux.tar.gz release-assets/
           mv artifacts/binary-aarch64/camera-aarch64-linux.tar.gz release-assets/
-          mv artifacts/binary-armv7/camera-armv7-linux.tar.gz release-assets/
+          mv artifacts/binary-armhf/camera-armhf-linux.tar.gz release-assets/
           mv artifacts/binary-riscv64/camera-riscv64-linux.tar.gz release-assets/
           mv artifacts/flatpak-x86_64/camera-x86_64.flatpak release-assets/
           # aarch64 flatpak is optional (only built when manually triggered)
           if [ -d "artifacts/flatpak-aarch64" ]; then
             mv artifacts/flatpak-aarch64/camera-aarch64.flatpak release-assets/
           fi
-          # armv7 flatpak is optional (only built when manually triggered)
-          if [ -d "artifacts/flatpak-armv7" ]; then
-            mv artifacts/flatpak-armv7/camera-armv7.flatpak release-assets/
+          # armhf flatpak is optional (only built when manually triggered)
+          if [ -d "artifacts/flatpak-armhf" ]; then
+            mv artifacts/flatpak-armhf/camera-armhf.flatpak release-assets/
           fi
           git archive --format=zip --prefix=camera-${{ github.ref_name }}/ -o release-assets/camera-${{ github.ref_name }}-source.zip HEAD
 
@@ -291,7 +291,7 @@ jobs:
           | `camera-x86_64.flatpak` | Flatpak bundle for x86_64 |
           | `camera-x86_64-linux.tar.gz` | Linux binary for x86_64 |
           | `camera-aarch64-linux.tar.gz` | Linux binary for ARM64 |
-          | `camera-armv7-linux.tar.gz` | Linux binary for ARMv7 (32-bit) |
+          | `camera-armhf-linux.tar.gz` | Linux binary for armhf (32-bit) |
           | `camera-riscv64-linux.tar.gz` | Linux binary for RISC-V 64 |
           | `camera-${{ github.ref_name }}-source.zip` | Source code |
           EOF
@@ -299,9 +299,9 @@ jobs:
           if [ -f "release-assets/camera-aarch64.flatpak" ]; then
             sed -i '/camera-x86_64.flatpak/a | `camera-aarch64.flatpak` | Flatpak bundle for ARM64 |' release_notes_footer.md
           fi
-          # Add armv7 flatpak to release notes if it was built
-          if [ -f "release-assets/camera-armv7.flatpak" ]; then
-            sed -i '/camera-x86_64.flatpak/a | `camera-armv7.flatpak` | Flatpak bundle for ARMv7 (32-bit) |' release_notes_footer.md
+          # Add armhf flatpak to release notes if it was built
+          if [ -f "release-assets/camera-armhf.flatpak" ]; then
+            sed -i '/camera-x86_64.flatpak/a | `camera-armhf.flatpak` | Flatpak bundle for armhf (32-bit) |' release_notes_footer.md
           fi
 
       - name: Create GitHub Release

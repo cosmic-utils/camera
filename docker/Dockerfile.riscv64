@@ -19,11 +19,10 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Add riscv64 architecture
-RUN dpkg --add-architecture riscv64
-
-# Install cross-compilation toolchain and dependencies
-RUN apt-get update && apt-get install -y \
+# Add riscv64 architecture and install cross-compilation toolchain and dependencies
+# Combined into single RUN to ensure apt-get update is always fresh
+RUN dpkg --add-architecture riscv64 && \
+    apt-get update && apt-get install -y \
     gcc-riscv64-linux-gnu \
     g++-riscv64-linux-gnu \
     libglib2.0-dev:riscv64 \

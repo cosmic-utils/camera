@@ -12,8 +12,8 @@ on:
         required: false
         default: false
         type: boolean
-      build_armv7_flatpak:
-        description: 'Build armv7 Flatpak (slow, uses QEMU)'
+      build_armhf_flatpak:
+        description: 'Build armhf Flatpak (slow, uses QEMU)'
         required: false
         default: false
         type: boolean
@@ -93,7 +93,7 @@ jobs:
           - arch: aarch64
             target: aarch64-unknown-linux-gnu
             use_cross: true
-          - arch: armv7
+          - arch: armhf
             target: armv7-unknown-linux-gnueabihf
             use_cross: true
           - arch: riscv64
@@ -225,12 +225,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  flatpak-armv7:
-    name: Flatpak (armv7)
+  flatpak-armhf:
+    name: Flatpak (armhf)
     runs-on: ubuntu-latest
     needs: check
-    # Only run on manual trigger with build_armv7_flatpak=true
-    if: github.event_name == 'workflow_dispatch' && inputs.build_armv7_flatpak
+    # Only run on manual trigger with build_armhf_flatpak=true
+    if: github.event_name == 'workflow_dispatch' && inputs.build_armhf_flatpak
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -265,7 +265,7 @@ jobs:
       - name: Upload Flatpak bundle
         uses: actions/upload-artifact@v5
         with:
-          name: camera-armv7.flatpak
-          path: camera-armv7.flatpak
+          name: camera-armhf.flatpak
+          path: camera-armhf.flatpak
           if-no-files-found: error
           retention-days: 7

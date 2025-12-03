@@ -1,4 +1,4 @@
-# Cross-compilation image for armv7-unknown-linux-gnueabihf
+# Cross-compilation image for armhf (armv7-unknown-linux-gnueabihf)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive

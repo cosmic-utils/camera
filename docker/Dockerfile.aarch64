@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Configure apt sources: amd64 from archive.ubuntu.com, arm64 from ports.ubuntu.com
+# Configure apt sources: amd64 from archive.ubuntu.com, aarch64 (arm64) from ports.ubuntu.com
 RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
     echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main universe' > /etc/apt/sources.list && \
     echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main universe' >> /etc/apt/sources.list && \
@@ -12,18 +12,18 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
     echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe' >> /etc/apt/sources.list && \
     echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
 
-# Install base tools (before adding arm64 architecture)
+# Install base tools (before adding aarch64 architecture)
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Add arm64 architecture
-RUN dpkg --add-architecture arm64
-
-# Install cross-compilation toolchain and dependencies
-RUN apt-get update && apt-get install -y \
+# Add aarch64 architecture and install cross-compilation toolchain and dependencies
+# Combined into single RUN to ensure apt-get update is always fresh
+# (dpkg architecture name: arm64)
+RUN dpkg --add-architecture arm64 && \
+    apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
     libglib2.0-dev:arm64 \

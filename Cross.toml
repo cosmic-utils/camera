@@ -12,7 +12,7 @@ passthrough = [
 
 [target.armv7-unknown-linux-gnueabihf]
 # Use custom Dockerfile based on Ubuntu 24.04 with armhf cross-compilation
-dockerfile = "docker/Dockerfile.armv7"
+dockerfile = "docker/Dockerfile.armhf"
 
 [target.armv7-unknown-linux-gnueabihf.env]
 passthrough = [
