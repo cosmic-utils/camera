@@ -2,7 +2,8 @@
 
 //! Filter picker module
 //!
-//! iOS-style horizontal filter selector for photo mode.
-//! Shows filter options in a scrollable horizontal list.
+//! Grid-style filter selector shown in context drawer.
+//! Displays filter options in a responsive 3-column grid with live camera preview thumbnails.
 
+mod square_container;
 mod view;

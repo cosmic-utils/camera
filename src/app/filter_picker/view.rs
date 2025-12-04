@@ -3,7 +3,10 @@
 //! Filter picker UI view
 //!
 //! Grid-style filter selector using COSMIC context drawer with live camera preview thumbnails.
+//! Uses responsive sizing with 3 columns that adapt to drawer width while maintaining
+//! square aspect ratio for each preview.
 
+use super::square_container::square_container;
 use crate::app::state::{AppModel, ContextPage, FilterType, Message};
 use crate::app::video_widget::{self, VideoContentFit};
 use crate::fl;
@@ -14,23 +17,18 @@ use cosmic::widget::{self, button};
 use std::sync::Arc;
 
 /// Spacing between filter thumbnails in grid
-const FILTER_GRID_SPACING: f32 = 6.0;
-/// Border width for selected filter
-const FILTER_BORDER_WIDTH: f32 = 2.0;
+const FILTER_GRID_SPACING: f32 = 8.0;
 /// Number of columns in the filter grid
 const FILTER_GRID_COLUMNS: usize = 3;
-/// Context drawer content width
-const DRAWER_CONTENT_WIDTH: f32 = 420.0;
-/// Calculated thumbnail size: (drawer_width - (columns-1) * spacing) / columns
-const FILTER_THUMBNAIL_SIZE: f32 = (DRAWER_CONTENT_WIDTH
-    - (FILTER_GRID_COLUMNS as f32 - 1.0) * FILTER_GRID_SPACING)
-    / FILTER_GRID_COLUMNS as f32;
+/// Vertical spacing between thumbnail and label
+const LABEL_SPACING: f32 = 4.0;
 
 impl AppModel {
     /// Build the filter picker as a COSMIC context drawer
     ///
     /// Shows a grid of filter options with live camera preview thumbnails
-    /// and filter names below each thumbnail.
+    /// and filter names below each thumbnail. The grid is responsive and
+    /// adapts to the drawer width while maintaining square thumbnails.
     pub fn filters_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
         // Define available filters
         let filters: Vec<FilterType> = vec![
@@ -51,13 +49,11 @@ impl AppModel {
             FilterType::Pencil,
         ];
 
-        // Build filter grid with calculated thumbnail sizes
+        // Build filter grid with responsive sizing
         let spacing = FILTER_GRID_SPACING as u16;
         let mut grid_column = widget::column().spacing(spacing);
         let mut current_row = widget::row().spacing(spacing);
         let mut items_in_row = 0;
-
-        let inner_size = FILTER_THUMBNAIL_SIZE - FILTER_BORDER_WIDTH * 2.0;
 
         // Get corner radius from theme for consistent styling
         let theme = cosmic::theme::active();
@@ -69,6 +65,7 @@ impl AppModel {
             // Create preview thumbnail with camera frame and filter applied
             let thumbnail: Element<'_, Message> = if let Some(frame) = &self.current_frame {
                 // Use video widget with the specific filter type
+                // The video widget fills its container and handles aspect ratio via Cover mode
                 let video_elem = video_widget::video_widget(
                     Arc::clone(frame),
                     99, // Shared source texture ID for all filter previews
@@ -78,37 +75,30 @@ impl AppModel {
                     self.config.mirror_preview,
                 );
 
-                widget::container(video_elem)
-                    .width(Length::Fixed(inner_size))
-                    .height(Length::Fixed(inner_size))
-                    .into()
+                video_elem
             } else {
                 // Fallback: colored placeholder when no camera frame
                 let color = Self::filter_placeholder_color(filter_type);
-                widget::container(widget::Space::new(
-                    Length::Fixed(inner_size),
-                    Length::Fixed(inner_size),
-                ))
-                .style(move |theme: &cosmic::Theme| widget::container::Style {
-                    background: Some(Background::Color(color)),
-                    border: Border {
-                        radius: theme.cosmic().corner_radii.radius_s.into(),
+                widget::container(widget::Space::new(Length::Fill, Length::Fill))
+                    .style(move |theme: &cosmic::Theme| widget::container::Style {
+                        background: Some(Background::Color(color)),
+                        border: Border {
+                            radius: theme.cosmic().corner_radii.radius_s.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .into()
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
             };
 
-            // Center the thumbnail in a container
-            let centered_thumbnail = widget::container(thumbnail)
-                .width(Length::Fixed(FILTER_THUMBNAIL_SIZE))
-                .height(Length::Fixed(FILTER_THUMBNAIL_SIZE))
-                .center(FILTER_THUMBNAIL_SIZE);
+            // Wrap thumbnail in square container to enforce 1:1 aspect ratio
+            let square_thumbnail = square_container(thumbnail);
 
             // Use custom_image_button which provides built-in selection indicator
             // (checkmark at bottom-left with accent styling on hover/selected)
-            let thumbnail_button = button::custom_image_button(centered_thumbnail, None)
+            let thumbnail_button = button::custom_image_button(square_thumbnail, None)
                 .on_press(Message::SelectFilter(filter_type))
                 .padding(0)
                 .selected(is_selected)
@@ -116,17 +106,20 @@ impl AppModel {
 
             // Filter name label below thumbnail (outside button, no hover effect)
             let name_label = widget::text(Self::filter_display_name(filter_type))
-                .width(Length::Fixed(FILTER_THUMBNAIL_SIZE))
+                .width(Length::Fill)
                 .align_x(cosmic::iced::alignment::Horizontal::Center);
 
             // Column with button (thumbnail only) and name below
-            let filter_button = widget::column()
+            let filter_item = widget::column()
                 .push(thumbnail_button)
-                .push(widget::vertical_space().height(Length::Fixed(4.0)))
+                .push(widget::vertical_space().height(Length::Fixed(LABEL_SPACING)))
                 .push(name_label)
                 .align_x(Alignment::Center);
 
-            current_row = current_row.push(filter_button);
+            // Wrap in container with FillPortion(1) for equal width distribution
+            let item_container = widget::container(filter_item).width(Length::FillPortion(1));
+
+            current_row = current_row.push(item_container);
             items_in_row += 1;
 
             // Start new row after FILTER_GRID_COLUMNS items
@@ -137,13 +130,20 @@ impl AppModel {
             }
         }
 
-        // Push remaining items in last row
+        // Push remaining items in last row, padding with empty space for even distribution
         if items_in_row > 0 {
+            while items_in_row < FILTER_GRID_COLUMNS {
+                current_row =
+                    current_row.push(widget::Space::new(Length::FillPortion(1), Length::Shrink));
+                items_in_row += 1;
+            }
             grid_column = grid_column.push(current_row);
         }
 
-        // Grid content
-        let content: Element<'_, Message> = grid_column.into();
+        // Wrap in scrollable for proper overflow handling
+        let scrollable_content = widget::scrollable(grid_column).width(Length::Fill);
+
+        let content: Element<'_, Message> = scrollable_content.into();
 
         context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Filters))
             .title(fl!("filters-title"))
