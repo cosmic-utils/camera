@@ -52,9 +52,7 @@ impl AppModel {
             }
 
             // Wrap in container with themed background for better visibility on camera preview
-            widget::container(btn)
-                .style(overlay_container_style)
-                .into()
+            widget::container(btn).style(overlay_container_style).into()
         } else {
             // Add invisible placeholder with same width as icon button
             widget::Space::new(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH), Length::Shrink).into()
