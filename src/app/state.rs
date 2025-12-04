@@ -402,8 +402,12 @@ pub struct AppModel {
     pub bitrate_preset_dropdown_options: Vec<String>,
     /// Theme dropdown options (Match Desktop, Dark, Light)
     pub theme_dropdown_options: Vec<String>,
+    /// Virtual camera output dropdown options (with availability indicators)
+    pub virtual_camera_output_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
+    /// Whether the bitrate info matrix is visible
+    pub bitrate_info_visible: bool,
 
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
@@ -908,6 +912,8 @@ pub enum Message {
     SelectVideoEncoder(usize),
     /// Toggle virtual camera feature enabled
     ToggleVirtualCameraEnabled,
+    /// Select virtual camera output device type
+    SelectVirtualCameraOutput(usize),
 
     // ===== System & Recovery =====
     /// Camera backend recovery started

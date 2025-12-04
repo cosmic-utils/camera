@@ -40,6 +40,7 @@ pub use pipeline::VirtualCameraPipeline;
 
 use crate::app::FilterType;
 use crate::backends::camera::types::{BackendError, BackendResult, CameraFrame};
+use crate::constants::VirtualCameraOutput;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -66,11 +67,13 @@ pub struct VirtualCameraManager {
     gpu_available: bool,
     /// Whether to horizontally flip output (for file sources, to counteract app auto-mirroring)
     flip_horizontal: bool,
+    /// Output type (PipeWire or V4L2Loopback)
+    output_type: VirtualCameraOutput,
 }
 
 impl VirtualCameraManager {
-    /// Create a new virtual camera manager
-    pub fn new() -> Self {
+    /// Create a new virtual camera manager with the specified output type
+    pub fn new(output_type: VirtualCameraOutput) -> Self {
         Self {
             pipeline: None,
             current_filter: FilterType::Standard,
@@ -78,6 +81,7 @@ impl VirtualCameraManager {
             output_size: (1280, 720),
             gpu_available: false,
             flip_horizontal: false,
+            output_type,
         }
     }
 
@@ -92,7 +96,10 @@ impl VirtualCameraManager {
 
     /// Start streaming to virtual camera
     ///
-    /// Creates a PipeWire virtual camera node that will be visible to other applications.
+    /// Creates a virtual camera output that will be visible to other applications:
+    /// - PipeWire: Creates a PipeWire virtual camera node
+    /// - V4L2Loopback: Writes to a /dev/video* loopback device
+    ///
     /// Uses GPU-accelerated filtering with software rendering fallback.
     pub fn start(&mut self, width: u32, height: u32) -> BackendResult<()> {
         if self.streaming {
@@ -101,10 +108,10 @@ impl VirtualCameraManager {
             ));
         }
 
-        info!(width, height, "Starting virtual camera");
+        info!(width, height, ?self.output_type, "Starting virtual camera");
 
-        // Create and start the pipeline
-        let pipeline = VirtualCameraPipeline::new(width, height)?;
+        // Create and start the pipeline with the configured output type
+        let pipeline = VirtualCameraPipeline::new(width, height, self.output_type)?;
         pipeline.start()?;
 
         self.pipeline = Some(pipeline);
@@ -310,7 +317,7 @@ impl VirtualCameraManager {
 
 impl Default for VirtualCameraManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(VirtualCameraOutput::default())
     }
 }
 

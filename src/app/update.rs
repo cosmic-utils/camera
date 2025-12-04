@@ -109,6 +109,9 @@ impl AppModel {
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
             Message::ToggleVirtualCameraEnabled => self.handle_toggle_virtual_camera_enabled(),
+            Message::SelectVirtualCameraOutput(index) => {
+                self.handle_select_virtual_camera_output(index)
+            }
 
             // ===== Format Selection =====
             Message::SetMode(mode) => self.handle_set_mode(mode),

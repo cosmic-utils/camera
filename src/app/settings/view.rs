@@ -126,13 +126,29 @@ impl AppModel {
         );
 
         // Virtual camera section
-        let virtual_camera_section = widget::settings::section().add(
-            widget::settings::item::builder(fl!("virtual-camera-title"))
-                .description(fl!("virtual-camera-description"))
-                .toggler(self.config.virtual_camera_enabled, |_| {
-                    Message::ToggleVirtualCameraEnabled
-                }),
-        );
+        // Get current output index for dropdown
+        let current_output_index = crate::constants::VirtualCameraOutput::ALL
+            .iter()
+            .position(|o| *o == self.config.virtual_camera_output)
+            .unwrap_or(0);
+
+        let virtual_camera_section = widget::settings::section()
+            .add(
+                widget::settings::item::builder(fl!("virtual-camera-title"))
+                    .description(fl!("virtual-camera-description"))
+                    .toggler(self.config.virtual_camera_enabled, |_| {
+                        Message::ToggleVirtualCameraEnabled
+                    }),
+            )
+            .add(
+                widget::settings::item::builder(fl!("virtual-camera-output")).control(
+                    widget::dropdown(
+                        &self.virtual_camera_output_dropdown_options,
+                        Some(current_output_index),
+                        Message::SelectVirtualCameraOutput,
+                    ),
+                ),
+            );
 
         // Bug reports section
         let bug_report_button = widget::button::standard(fl!("settings-report-bug"))

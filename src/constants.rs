@@ -325,6 +325,144 @@ pub mod virtual_camera {
     pub const DURATION_QUERY_TIMEOUT_SECS: u64 = 5;
 }
 
+/// Virtual camera output device type
+///
+/// Determines which sink to use for virtual camera output:
+/// - PipeWire: Modern Linux multimedia framework (default)
+/// - V4L2Loopback: Traditional V4L2 loopback device (better app compatibility)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum VirtualCameraOutput {
+    /// PipeWire virtual camera (pipewiresink)
+    /// Works with PipeWire-aware applications
+    #[default]
+    PipeWire,
+    /// V4L2 loopback device (v4l2sink)
+    /// Works with applications that expect /dev/video* devices (e.g., Discord, Chrome)
+    V4L2Loopback,
+}
+
+impl VirtualCameraOutput {
+    /// Get all output variants for UI iteration
+    pub const ALL: [VirtualCameraOutput; 2] = [
+        VirtualCameraOutput::PipeWire,
+        VirtualCameraOutput::V4L2Loopback,
+    ];
+
+    /// Get display name for the output type
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            VirtualCameraOutput::PipeWire => "PipeWire",
+            VirtualCameraOutput::V4L2Loopback => "V4L2 Loopback",
+        }
+    }
+
+    /// Check if this output type is available on the system
+    pub fn is_available(&self) -> bool {
+        match self {
+            VirtualCameraOutput::PipeWire => is_pipewire_available(),
+            VirtualCameraOutput::V4L2Loopback => is_v4l2loopback_available(),
+        }
+    }
+
+    /// Get a description of why this output might not be available
+    pub fn unavailable_reason(&self) -> Option<&'static str> {
+        if self.is_available() {
+            return None;
+        }
+        match self {
+            VirtualCameraOutput::PipeWire => Some("PipeWire not running or pipewiresink plugin not found"),
+            VirtualCameraOutput::V4L2Loopback => Some("v4l2loopback module not loaded"),
+        }
+    }
+
+    /// Get the v4l2loopback device path if available
+    pub fn v4l2loopback_device() -> Option<String> {
+        find_v4l2loopback_device()
+    }
+}
+
+/// Check if PipeWire is available (daemon running and GStreamer plugin available)
+fn is_pipewire_available() -> bool {
+    // Check if pipewiresink element is available in GStreamer
+    if gstreamer::init().is_err() {
+        return false;
+    }
+    gstreamer::ElementFactory::find("pipewiresink").is_some()
+}
+
+/// Check if v4l2loopback is available (module loaded and device exists)
+fn is_v4l2loopback_available() -> bool {
+    find_v4l2loopback_device().is_some()
+}
+
+/// Find a v4l2loopback device
+///
+/// Scans /dev/video* devices and checks if any are v4l2loopback devices
+/// by checking the driver name via sysfs. Handles Flatpak sandboxing gracefully.
+fn find_v4l2loopback_device() -> Option<String> {
+    use std::fs;
+    use std::path::Path;
+
+    // Check if v4l2loopback module is loaded (skip if /proc/modules is not accessible)
+    // In Flatpak, this path might be sandboxed
+    let modules_path = Path::new("/proc/modules");
+    let module_check_passed = if modules_path.exists() {
+        match fs::read_to_string(modules_path) {
+            Ok(content) => content.contains("v4l2loopback"),
+            Err(_) => true, // Can't read, assume it might be available
+        }
+    } else {
+        true // No /proc/modules (might be Flatpak), continue checking devices
+    };
+
+    if !module_check_passed {
+        return None;
+    }
+
+    // Scan for video devices
+    let dev_path = Path::new("/dev");
+    if !dev_path.exists() {
+        return None;
+    }
+
+    // Collect and sort video devices to get consistent results
+    let mut video_devices: Vec<_> = fs::read_dir(dev_path)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("video"))
+        .collect();
+    video_devices.sort_by_key(|e| e.file_name());
+
+    // Check each video device
+    for entry in video_devices {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let device_path = entry.path();
+
+        // Try to read the device name from sysfs
+        // v4l2loopback devices have "Dummy video device" or custom names
+        let Some(device_num) = name_str.strip_prefix("video") else {
+            continue;
+        };
+        let sysfs_name = format!("/sys/class/video4linux/video{}/name", device_num);
+
+        if let Ok(device_name) = fs::read_to_string(&sysfs_name) {
+            let device_name = device_name.trim();
+            // v4l2loopback default names or check for "loopback" in name
+            // Also check for "OBS" which is commonly used for OBS Virtual Camera
+            if device_name.contains("Dummy video device")
+                || device_name.to_lowercase().contains("loopback")
+                || device_name.to_lowercase().contains("virtual")
+                || device_name.contains("OBS")
+            {
+                return Some(device_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
+}
+
 /// Application information utilities
 pub mod app_info {
     use std::path::Path;

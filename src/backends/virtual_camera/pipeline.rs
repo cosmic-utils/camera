@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! GStreamer pipeline for virtual camera output via PipeWire
+//! GStreamer pipeline for virtual camera output
 //!
 //! Creates a pipeline that:
 //! 1. Receives RGBA frames from the app (via appsrc)
-//! 2. Converts to a format supported by PipeWire (via videoconvert)
-//! 3. Outputs to a PipeWire virtual camera node
+//! 2. Converts to a format supported by the sink (via videoconvert)
+//! 3. Outputs to either a PipeWire virtual camera node or V4L2 loopback device
 
 use crate::backends::camera::types::{BackendError, BackendResult};
+use crate::constants::VirtualCameraOutput;
 use gstreamer::prelude::*;
 use gstreamer_app::AppSrc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,24 +18,30 @@ static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Virtual camera GStreamer pipeline
 ///
-/// Uses pipewiresink to create a virtual camera device that other
-/// applications can use as a video source. Accepts RGBA frames from the app
-/// and uses videoconvert for proper format negotiation with PipeWire.
+/// Supports two output modes:
+/// - PipeWire: Uses pipewiresink to create a virtual camera for PipeWire-aware apps
+/// - V4L2Loopback: Uses v4l2sink to write to a v4l2loopback device for wider compatibility
+///
+/// Accepts RGBA frames from the app and uses videoconvert for proper format negotiation.
 pub struct VirtualCameraPipeline {
     pipeline: gstreamer::Pipeline,
     appsrc: AppSrc,
     width: u32,
     height: u32,
+    #[allow(dead_code)] // Stored for potential future use (e.g., logging, diagnostics)
+    output_type: VirtualCameraOutput,
 }
 
 impl VirtualCameraPipeline {
     /// Create a new virtual camera pipeline
     ///
-    /// The pipeline accepts RGBA frames and outputs them to a PipeWire
-    /// virtual camera node named "Camera (Virtual)".
-    /// Uses videoconvert for proper format negotiation with PipeWire.
-    pub fn new(width: u32, height: u32) -> BackendResult<Self> {
-        info!(width, height, "Creating virtual camera pipeline");
+    /// The pipeline accepts RGBA frames and outputs them to either:
+    /// - PipeWire: A virtual camera node named "Camera (Virtual)"
+    /// - V4L2Loopback: A /dev/video* loopback device
+    ///
+    /// Uses videoconvert for proper format negotiation with the sink.
+    pub fn new(width: u32, height: u32, output_type: VirtualCameraOutput) -> BackendResult<Self> {
+        info!(width, height, ?output_type, "Creating virtual camera pipeline");
 
         // Initialize GStreamer if needed
         gstreamer::init().map_err(|e| {
@@ -52,7 +59,7 @@ impl VirtualCameraPipeline {
                 BackendError::InitializationFailed(format!("Failed to create appsrc: {}", e))
             })?;
 
-        // videoconvert: handles format negotiation with pipewiresink
+        // videoconvert: handles format negotiation with sink
         let videoconvert = gstreamer::ElementFactory::make("videoconvert")
             .name("virtual_camera_convert")
             .build()
@@ -60,13 +67,8 @@ impl VirtualCameraPipeline {
                 BackendError::InitializationFailed(format!("Failed to create videoconvert: {}", e))
             })?;
 
-        // pipewiresink: output to PipeWire as a virtual camera
-        let pipewiresink = gstreamer::ElementFactory::make("pipewiresink")
-            .name("virtual_camera_sink")
-            .build()
-            .map_err(|e| {
-                BackendError::InitializationFailed(format!("Failed to create pipewiresink: {}", e))
-            })?;
+        // Create sink based on output type
+        let sink = Self::create_sink(output_type)?;
 
         // Configure appsrc
         let appsrc = appsrc.downcast::<AppSrc>().map_err(|_| {
@@ -90,6 +92,62 @@ impl VirtualCameraPipeline {
         // Set stream type to stream for live data
         appsrc.set_property_from_str("stream-type", "stream");
 
+        // Add elements to pipeline
+        pipeline
+            .add_many([appsrc.upcast_ref(), &videoconvert, &sink])
+            .map_err(|e| {
+                BackendError::InitializationFailed(format!("Failed to add elements: {}", e))
+            })?;
+
+        // Link elements: appsrc -> videoconvert -> sink
+        appsrc.link(&videoconvert).map_err(|e| {
+            BackendError::InitializationFailed(format!(
+                "Failed to link appsrc to videoconvert: {}",
+                e
+            ))
+        })?;
+        videoconvert.link(&sink).map_err(|e| {
+            BackendError::InitializationFailed(format!(
+                "Failed to link videoconvert to sink: {}",
+                e
+            ))
+        })?;
+
+        let sink_name = match output_type {
+            VirtualCameraOutput::PipeWire => "pipewiresink",
+            VirtualCameraOutput::V4L2Loopback => "v4l2sink",
+        };
+        info!(
+            "Virtual camera pipeline created successfully (appsrc -> videoconvert -> {})",
+            sink_name
+        );
+
+        Ok(Self {
+            pipeline,
+            appsrc,
+            width,
+            height,
+            output_type,
+        })
+    }
+
+    /// Create the appropriate sink element based on output type
+    fn create_sink(output_type: VirtualCameraOutput) -> BackendResult<gstreamer::Element> {
+        match output_type {
+            VirtualCameraOutput::PipeWire => Self::create_pipewire_sink(),
+            VirtualCameraOutput::V4L2Loopback => Self::create_v4l2_sink(),
+        }
+    }
+
+    /// Create a PipeWire sink for virtual camera output
+    fn create_pipewire_sink() -> BackendResult<gstreamer::Element> {
+        let pipewiresink = gstreamer::ElementFactory::make("pipewiresink")
+            .name("virtual_camera_sink")
+            .build()
+            .map_err(|e| {
+                BackendError::InitializationFailed(format!("Failed to create pipewiresink: {}", e))
+            })?;
+
         // Configure pipewiresink for virtual camera mode
         // "provide" mode creates a video source that other applications can use
         pipewiresink.set_property_from_str("mode", "provide");
@@ -104,37 +162,35 @@ impl VirtualCameraPipeline {
             .build();
         pipewiresink.set_property("stream-properties", &stream_props);
 
-        // Add elements to pipeline
-        pipeline
-            .add_many([appsrc.upcast_ref(), &videoconvert, &pipewiresink])
+        Ok(pipewiresink)
+    }
+
+    /// Create a V4L2 sink for v4l2loopback device output
+    fn create_v4l2_sink() -> BackendResult<gstreamer::Element> {
+        // Find the v4l2loopback device
+        let device_path = VirtualCameraOutput::v4l2loopback_device().ok_or_else(|| {
+            BackendError::InitializationFailed(
+                "No v4l2loopback device found. Please load the v4l2loopback kernel module.".into(),
+            )
+        })?;
+
+        info!(device = %device_path, "Using v4l2loopback device");
+
+        let v4l2sink = gstreamer::ElementFactory::make("v4l2sink")
+            .name("virtual_camera_sink")
+            .build()
             .map_err(|e| {
-                BackendError::InitializationFailed(format!("Failed to add elements: {}", e))
+                BackendError::InitializationFailed(format!("Failed to create v4l2sink: {}", e))
             })?;
 
-        // Link elements: appsrc -> videoconvert -> pipewiresink
-        appsrc.link(&videoconvert).map_err(|e| {
-            BackendError::InitializationFailed(format!(
-                "Failed to link appsrc to videoconvert: {}",
-                e
-            ))
-        })?;
-        videoconvert.link(&pipewiresink).map_err(|e| {
-            BackendError::InitializationFailed(format!(
-                "Failed to link videoconvert to pipewiresink: {}",
-                e
-            ))
-        })?;
+        // Set the device path
+        v4l2sink.set_property("device", &device_path);
 
-        info!(
-            "Virtual camera pipeline created successfully (appsrc -> videoconvert -> pipewiresink)"
-        );
+        // Enable async mode for better performance
+        v4l2sink.set_property("async", false);
+        v4l2sink.set_property("sync", false);
 
-        Ok(Self {
-            pipeline,
-            appsrc,
-            width,
-            height,
-        })
+        Ok(v4l2sink)
     }
 
     /// Start the pipeline
