@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 name := 'camera'
-export APPID := 'io.github.cosmicutils.camera'
+export APPID := 'io.github.cosmic_utils.camera'
 
 rootdir := ''
 prefix := '/usr'

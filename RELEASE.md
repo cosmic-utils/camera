@@ -64,7 +64,7 @@ No additional setup required. The workflow uses the default `GITHUB_TOKEN`.
 The `FLATHUB_TOKEN` secret must be configured in the repository settings:
 
 1. Create a GitHub Personal Access Token with `repo` scope
-2. The token must have write access to the [flathub/io.github.cosmicutils.camera](https://github.com/flathub/io.github.cosmicutils.camera) repository
+2. The token must have write access to the [flathub/io.github.cosmic_utils.camera](https://github.com/flathub/io.github.cosmic_utils.camera) repository
 3. Add it as a repository secret named `FLATHUB_TOKEN`
 
 If the secret is not set, the Flathub publishing step will be skipped.
@@ -82,7 +82,7 @@ Release notes are generated from merged pull requests. If there are no PRs since
 
 ### Flathub Build Fails
 If the Flathub build fails after publishing:
-1. Check the [Flathub Buildbot](https://buildbot.flathub.org/#/apps/io.github.cosmicutils.camera)
+1. Check the [Flathub Buildbot](https://buildbot.flathub.org/#/apps/io.github.cosmic_utils.camera)
 2. Common issues: missing dependencies, cargo source hash mismatches
 3. You may need to manually fix the Flathub repository
 
@@ -93,7 +93,7 @@ If the automated workflow fails, you can create a release manually:
 ```bash
 # 1. Update metainfo.xml manually with the new version and date
 # 2. Commit the change
-git add resources/io.github.cosmicutils.camera.metainfo.xml
+git add resources/io.github.cosmic_utils.camera.metainfo.xml
 git commit -m "Release v0.1.7: update metainfo.xml"
 git push origin main
 

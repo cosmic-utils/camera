@@ -27,7 +27,7 @@ jobs:
         id: check
         run: |
           # Get current runtime version from manifest
-          CURRENT_VERSION=$(grep -oP "runtime-version:\s*'\K[^']+" io.github.cosmicutils.camera.yml)
+          CURRENT_VERSION=$(grep -oP "runtime-version:\s*'\K[^']+" io.github.cosmic_utils.camera.yml)
           echo "Current runtime version: $CURRENT_VERSION"
           echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
@@ -65,10 +65,10 @@ jobs:
           LATEST="${{ steps.check.outputs.latest }}"
 
           # Update runtime-version in the manifest
-          sed -i "s/runtime-version: '$CURRENT'/runtime-version: '$LATEST'/" io.github.cosmicutils.camera.yml
+          sed -i "s/runtime-version: '$CURRENT'/runtime-version: '$LATEST'/" io.github.cosmic_utils.camera.yml
 
           echo "Updated manifest:"
-          grep "runtime-version" io.github.cosmicutils.camera.yml
+          grep "runtime-version" io.github.cosmic_utils.camera.yml
 
       - name: Create Pull Request
         if: steps.check.outputs.update_available == 'true'
@@ -83,7 +83,7 @@ jobs:
             Updates `org.freedesktop.Platform` and `org.freedesktop.Sdk` from `${{ steps.check.outputs.current }}` to `${{ steps.check.outputs.latest }}`.
 
             ### Changes
-            - Updated `runtime-version` in `io.github.cosmicutils.camera.yml`
+            - Updated `runtime-version` in `io.github.cosmic_utils.camera.yml`
 
             ### Testing
             - [ ] Build Flatpak locally with `just flatpak-install`

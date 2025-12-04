@@ -78,7 +78,7 @@ const REPOSITORY: &str = "https://github.com/cosmic-utils/camera";
 
 /// App icon SVG for the about page (scalable, non-pixelated)
 const APP_ICON: &[u8] =
-    include_bytes!("../../resources/icons/hicolor/scalable/apps/io.github.cosmicutils.camera.svg");
+    include_bytes!("../../resources/icons/hicolor/scalable/apps/io.github.cosmic_utils.camera.svg");
 
 impl cosmic::Application for AppModel {
     /// The async executor that will be used to run your application's commands.
@@ -91,7 +91,7 @@ impl cosmic::Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "io.github.cosmicutils.camera";
+    const APP_ID: &'static str = "io.github.cosmic_utils.camera";
 
     fn core(&self) -> &cosmic::Core {
         &self.core
