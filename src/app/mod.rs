@@ -255,6 +255,11 @@ impl cosmic::Application for AppModel {
             last_qr_detection_time: None,
         };
 
+        // Make context drawer overlay the content instead of reserving space
+        app.core.window.context_is_overlay = true;
+        // Disable content container to prevent layout gaps
+        app.core.window.content_container = false;
+
         // Update all dropdown options based on initial format
         app.update_mode_options();
         app.update_resolution_options();
