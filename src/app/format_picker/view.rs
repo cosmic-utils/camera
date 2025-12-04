@@ -3,11 +3,39 @@
 //! Format picker UI view
 
 use crate::app::state::{AppModel, Message};
+use crate::app::view::overlay_container_style;
+use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::constants::{formats, ui};
 use crate::fl;
 use cosmic::Element;
-use cosmic::iced::{Alignment, Background, Border, Color, Length};
+use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget;
+
+/// Create a container style for the picker panel background
+///
+/// Uses `radius_s` (slightly rounded) as the maximum roundness.
+/// This ensures the picker panel is either square or slightly rounded,
+/// even when the theme is set to "round".
+/// Does not set text_color to allow buttons to use their native COSMIC theme colors.
+fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    let bg = cosmic.bg_color();
+    widget::container::Style {
+        background: Some(Background::Color(Color::from_rgba(
+            bg.red,
+            bg.green,
+            bg.blue,
+            OVERLAY_BACKGROUND_ALPHA,
+        ))),
+        border: cosmic::iced::Border {
+            // Use radius_s to cap at "slightly rounded" for panel backgrounds
+            radius: cosmic.corner_radii.radius_s.into(),
+            ..Default::default()
+        },
+        // Don't set text_color - let buttons use their native COSMIC theme colors
+        ..Default::default()
+    }
+}
 
 impl AppModel {
     /// Build the iOS-style format picker overlay
@@ -43,18 +71,24 @@ impl AppModel {
                 .width(Length::Fill)
                 .align_x(cosmic::iced::alignment::Horizontal::Center);
 
-            let button = widget::container(
-                widget::button::custom(centered_text)
-                    .on_press(Message::PickerSelectResolution(width))
-                    .class(if width == selected_res {
-                        cosmic::theme::Button::Suggested
-                    } else {
-                        cosmic::theme::Button::Standard
-                    })
-                    .width(Length::Fill),
-            )
-            .width(Length::Fixed(BUTTON_WIDTH));
-            res_row = res_row.push(button);
+            let is_selected = width == selected_res;
+
+            // Use Suggested for selected, Text for unselected - COSMIC's native button highlighting
+            let button = widget::button::custom(centered_text)
+                .on_press(Message::PickerSelectResolution(width))
+                .class(if is_selected {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Text
+                })
+                .width(Length::Fill);
+
+            // Wrap in styled container with overlay background
+            let styled_button = widget::container(button)
+                .style(overlay_container_style)
+                .width(Length::Fixed(BUTTON_WIDTH));
+
+            res_row = res_row.push(styled_button);
         }
 
         // Build framerate row
@@ -98,22 +132,27 @@ impl AppModel {
                     .map(|active_fps| active_fps == fps)
                     .unwrap_or(false);
 
-                let button = widget::container(
-                    widget::button::custom(centered_text)
-                        .on_press(Message::PickerSelectFormat(idx))
-                        .class(if is_selected {
-                            cosmic::theme::Button::Suggested
-                        } else {
-                            cosmic::theme::Button::Standard
-                        })
-                        .width(Length::Fill),
-                )
-                .width(Length::Fixed(BUTTON_WIDTH));
-                fps_row = fps_row.push(button);
+                // Use Suggested for selected, Text for unselected - COSMIC's native button highlighting
+                let button = widget::button::custom(centered_text)
+                    .on_press(Message::PickerSelectFormat(idx))
+                    .class(if is_selected {
+                        cosmic::theme::Button::Suggested
+                    } else {
+                        cosmic::theme::Button::Text
+                    })
+                    .width(Length::Fill);
+
+                // Wrap in styled container with overlay background
+                let styled_button = widget::container(button)
+                    .style(overlay_container_style)
+                    .width(Length::Fixed(BUTTON_WIDTH));
+
+                fps_row = fps_row.push(styled_button);
             }
         }
 
         // Build picker panel with semi-transparent themed background
+        // Uses picker_panel_style which caps roundness at "slightly rounded"
         let picker_panel = widget::container(
             widget::column()
                 .push(res_row)
@@ -121,18 +160,7 @@ impl AppModel {
                 .push(fps_row)
                 .padding(spacing.space_xs),
         )
-        .style(|theme: &cosmic::Theme| {
-            let mut bg: Color = theme.cosmic().bg_color().into();
-            bg.a = 0.85; // Semi-transparent
-            widget::container::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: [ui::PICKER_BORDER_RADIUS; 4].into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        });
+        .style(picker_panel_style);
 
         // Position picker and add click-outside-to-close
         let picker_positioned = widget::row()

@@ -176,9 +176,10 @@ pub mod ui {
     /// Capture button border radius
     pub const CAPTURE_BUTTON_RADIUS: f32 = 25.0;
 
-    /// Format picker overlay opacity
-    #[allow(dead_code)]
-    pub const PICKER_OVERLAY_OPACITY: f32 = 0.7;
+    /// Overlay button/container background transparency (0.0 = transparent, 1.0 = opaque)
+    ///
+    /// Used for semi-transparent backgrounds on buttons and panels overlaid on the camera preview.
+    pub const OVERLAY_BACKGROUND_ALPHA: f32 = 0.6;
 
     /// Format picker border radius
     pub const PICKER_BORDER_RADIUS: f32 = 8.0;

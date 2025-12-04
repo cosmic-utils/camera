@@ -3,9 +3,27 @@
 //! Mode switcher widget implementation (Photo/Video/Virtual toggle)
 
 use crate::app::state::{AppModel, CameraMode, Message};
+use crate::app::view::overlay_container_style;
 use crate::fl;
 use cosmic::Element;
+use cosmic::iced::Color;
 use cosmic::widget;
+
+/// Helper to wrap a mode button with overlay styling
+fn styled_mode_button<'a>(
+    button: impl Into<Element<'a, Message>>,
+    is_disabled: bool,
+) -> Element<'a, Message> {
+    widget::container(button)
+        .style(move |theme| {
+            let mut style = overlay_container_style(theme);
+            if is_disabled {
+                style.text_color = Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3));
+            }
+            style
+        })
+        .into()
+}
 
 impl AppModel {
     /// Build the mode switcher widget
@@ -21,16 +39,15 @@ impl AppModel {
             || self.recording.is_recording()
             || self.virtual_camera.is_streaming();
 
+        // Use Suggested for active mode, Text for inactive - COSMIC's native button highlighting
         let video_label = fl!("mode-video");
         let video_button = if is_disabled {
-            // Disabled during transitions - no action
             widget::button::text(video_label).class(if self.mode == CameraMode::Video {
                 cosmic::theme::Button::Suggested
             } else {
                 cosmic::theme::Button::Text
             })
         } else {
-            // Always has on_press, but SetMode handler checks if mode actually changes
             widget::button::text(video_label)
                 .on_press(Message::SetMode(CameraMode::Video))
                 .class(if self.mode == CameraMode::Video {
@@ -42,14 +59,12 @@ impl AppModel {
 
         let photo_label = fl!("mode-photo");
         let photo_button = if is_disabled {
-            // Disabled during transitions - no action
             widget::button::text(photo_label).class(if self.mode == CameraMode::Photo {
                 cosmic::theme::Button::Suggested
             } else {
                 cosmic::theme::Button::Text
             })
         } else {
-            // Always has on_press, but SetMode handler checks if mode actually changes
             widget::button::text(photo_label)
                 .on_press(Message::SetMode(CameraMode::Photo))
                 .class(if self.mode == CameraMode::Photo {
@@ -60,23 +75,21 @@ impl AppModel {
         };
 
         let mut row = widget::row()
-            .push(video_button)
+            .push(styled_mode_button(video_button, is_disabled))
             .push(widget::horizontal_space().width(spacing.space_xs))
-            .push(photo_button)
+            .push(styled_mode_button(photo_button, is_disabled))
             .spacing(spacing.space_xxs);
 
         // Only show Virtual button when the feature is enabled
         if self.config.virtual_camera_enabled {
             let virtual_label = fl!("mode-virtual");
             let virtual_button = if is_disabled {
-                // Disabled during transitions - no action
                 widget::button::text(virtual_label).class(if self.mode == CameraMode::Virtual {
                     cosmic::theme::Button::Suggested
                 } else {
                     cosmic::theme::Button::Text
                 })
             } else {
-                // Always has on_press, but SetMode handler checks if mode actually changes
                 widget::button::text(virtual_label)
                     .on_press(Message::SetMode(CameraMode::Virtual))
                     .class(if self.mode == CameraMode::Virtual {
@@ -88,19 +101,9 @@ impl AppModel {
 
             row = row
                 .push(widget::horizontal_space().width(spacing.space_xs))
-                .push(virtual_button);
+                .push(styled_mode_button(virtual_button, is_disabled));
         }
 
-        if is_disabled {
-            // Wrap in container with reduced opacity when disabled
-            widget::container(row)
-                .style(|_theme| widget::container::Style {
-                    text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                    ..Default::default()
-                })
-                .into()
-        } else {
-            row.into()
-        }
+        row.into()
     }
 }

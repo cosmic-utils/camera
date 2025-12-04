@@ -12,7 +12,8 @@
 use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
-use crate::constants::{resolution_thresholds, ui};
+use crate::constants::resolution_thresholds;
+use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -23,6 +24,59 @@ use tracing::info;
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
 /// Flash off icon SVG (lightning bolt with strike-through)
 const FLASH_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash-off.svg");
+
+/// Create a container style with semi-transparent themed background for overlay elements
+///
+/// Uses `radius_xl` to match COSMIC button corner radius (follows round/slightly round/square theme setting)
+/// Does not set text_color to allow buttons to use their native COSMIC theme colors.
+pub fn overlay_container_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    let bg = cosmic.bg_color();
+    widget::container::Style {
+        background: Some(Background::Color(Color::from_rgba(
+            bg.red,
+            bg.green,
+            bg.blue,
+            OVERLAY_BACKGROUND_ALPHA,
+        ))),
+        border: cosmic::iced::Border {
+            // Use radius_xl to match COSMIC button styling
+            radius: cosmic.corner_radii.radius_xl.into(),
+            ..Default::default()
+        },
+        // Don't set text_color - let buttons use their native COSMIC theme colors
+        ..Default::default()
+    }
+}
+
+/// Create an icon button with a themed background for use on camera preview overlays
+fn overlay_icon_button<'a, M: Clone + 'static>(
+    handle: impl Into<widget::icon::Handle>,
+    message: Option<M>,
+    highlighted: bool,
+) -> Element<'a, M> {
+    // Create icon widget that inherits theme colors
+    let icon_widget = widget::icon(handle.into()).size(20);
+
+    // Use custom button with icon as content - this allows icon to inherit theme colors
+    // Use Suggested for active state, Text for inactive (transparent background)
+    let mut button = widget::button::custom(icon_widget)
+        .padding(8)
+        .class(if highlighted {
+            cosmic::theme::Button::Suggested
+        } else {
+            cosmic::theme::Button::Text
+        });
+
+    if let Some(msg) = message {
+        button = button.on_press(msg);
+    }
+
+    // Wrap in container with themed background for better visibility on camera preview
+    widget::container(button)
+        .style(overlay_container_style)
+        .into()
+}
 
 impl AppModel {
     /// Check if filters are available in the current mode (Photo or Virtual)
@@ -347,15 +401,11 @@ impl AppModel {
                             .padding([4, 8]),
                     );
                 } else {
-                    row = row.push(
-                        widget::button::icon(flash_icon)
-                            .on_press(Message::ToggleFlash)
-                            .class(if self.flash_enabled {
-                                cosmic::theme::Button::Suggested
-                            } else {
-                                cosmic::theme::Button::Standard
-                            }),
-                    );
+                    row = row.push(overlay_icon_button(
+                        flash_icon,
+                        Some(Message::ToggleFlash),
+                        self.flash_enabled,
+                    ));
                 }
 
                 // 5px spacing
@@ -368,8 +418,9 @@ impl AppModel {
             if self.mode == CameraMode::Virtual && !self.virtual_camera.is_streaming() {
                 let has_file = self.virtual_camera_file_source.is_some();
                 if is_disabled {
-                    let file_button =
-                        widget::button::icon(icon::from_name("document-open-symbolic"));
+                    let file_button = widget::button::icon(
+                        icon::from_name("document-open-symbolic").symbolic(true),
+                    );
                     row = row.push(widget::container(file_button).style(|_theme| {
                         widget::container::Style {
                             text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
@@ -383,15 +434,11 @@ impl AppModel {
                     } else {
                         Message::OpenVirtualCameraFile
                     };
-                    row = row.push(
-                        widget::button::icon(icon::from_name("document-open-symbolic"))
-                            .on_press(message)
-                            .class(if has_file {
-                                cosmic::theme::Button::Suggested
-                            } else {
-                                cosmic::theme::Button::Standard
-                            }),
-                    );
+                    row = row.push(overlay_icon_button(
+                        icon::from_name("document-open-symbolic").symbolic(true),
+                        Some(message),
+                        has_file,
+                    ));
                 }
 
                 // 5px spacing
@@ -400,7 +447,8 @@ impl AppModel {
 
             // Filter picker button (available in Photo and Virtual modes)
             if is_disabled {
-                let filter_button = widget::button::icon(icon::from_name("image-filter-symbolic"));
+                let filter_button =
+                    widget::button::icon(icon::from_name("image-filter-symbolic").symbolic(true));
                 row = row.push(widget::container(filter_button).style(|_theme| {
                     widget::container::Style {
                         text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
@@ -410,17 +458,13 @@ impl AppModel {
             } else {
                 // Highlight only when a non-standard filter is active
                 let is_highlighted = self.selected_filter != FilterType::Standard;
-                row = row.push(
-                    widget::button::icon(icon::from_name("image-filter-symbolic"))
-                        .on_press(Message::ToggleContextPage(
-                            crate::app::state::ContextPage::Filters,
-                        ))
-                        .class(if is_highlighted {
-                            cosmic::theme::Button::Suggested
-                        } else {
-                            cosmic::theme::Button::Standard
-                        }),
-                );
+                row = row.push(overlay_icon_button(
+                    icon::from_name("image-filter-symbolic").symbolic(true),
+                    Some(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::Filters,
+                    )),
+                    is_highlighted,
+                ));
             }
 
             // 5px spacing before theatre button
@@ -429,7 +473,8 @@ impl AppModel {
 
         // Theatre mode button
         if is_disabled {
-            let theatre_button = widget::button::icon(icon::from_name("view-fullscreen-symbolic"));
+            let theatre_button =
+                widget::button::icon(icon::from_name("view-fullscreen-symbolic").symbolic(true));
             row = row.push(widget::container(theatre_button).style(|_theme| {
                 widget::container::Style {
                     text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
@@ -442,15 +487,11 @@ impl AppModel {
             } else {
                 "view-fullscreen-symbolic"
             };
-            row = row.push(
-                widget::button::icon(icon::from_name(theatre_icon))
-                    .on_press(Message::ToggleTheatreMode)
-                    .class(if self.theatre.enabled {
-                        cosmic::theme::Button::Suggested
-                    } else {
-                        cosmic::theme::Button::Standard
-                    }),
-            );
+            row = row.push(overlay_icon_button(
+                icon::from_name(theatre_icon).symbolic(true),
+                Some(Message::ToggleTheatreMode),
+                self.theatre.enabled,
+            ));
         }
 
         widget::container(row)
@@ -515,16 +556,16 @@ impl AppModel {
                 .class(cosmic::theme::Button::Text)
         };
 
-        if is_disabled {
-            widget::container(button)
-                .style(|_theme| widget::container::Style {
-                    text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                    ..Default::default()
-                })
-                .into()
-        } else {
-            button.into()
-        }
+        // Wrap in container with themed semi-transparent background for visibility on camera preview
+        widget::container(button)
+            .style(move |theme| {
+                let mut style = overlay_container_style(theme);
+                if is_disabled {
+                    style.text_color = Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3));
+                }
+                style
+            })
+            .into()
     }
 
     /// Build file source resolution label (non-clickable)
