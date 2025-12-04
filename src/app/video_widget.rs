@@ -32,7 +32,7 @@ pub struct VideoWidget {
     primitive: VideoPrimitive,
     width: Length,
     height: Length,
-    aspect_ratio: f32, // width / height of the video
+    aspect_ratio: f32,
     content_fit: VideoContentFit,
 }
 
