@@ -30,15 +30,63 @@ flatpak install camera-x86_64.flatpak
 
 ### From Source
 
-#### Dependencies
+#### Build Dependencies
 
 - Rust (stable)
-- GStreamer 1.0 with plugins (base, good, bad, ugly)
-- libwayland
-- libxkbcommon
-- libinput
-- libudev
-- libseat
+- GStreamer 1.0 development libraries
+- libwayland-dev
+- libxkbcommon-dev
+- libinput-dev
+- libudev-dev
+- libseat-dev
+
+#### Runtime Dependencies
+
+| Dependency | Required | Purpose |
+|------------|----------|---------|
+| PipeWire | Yes | Camera access and audio |
+| GStreamer 1.0 | Yes | Video processing pipeline |
+| gst-plugins-base | Yes | Core GStreamer elements |
+| gst-plugins-good | Yes | Video encoding (x264, vpx) |
+| gst-plugins-bad | Yes | Additional encoders |
+| gst-plugin-pipewire | Yes | PipeWire integration |
+| GPU drivers | Recommended | Hardware-accelerated filters |
+| v4l2loopback | Optional | Virtual camera for Discord, Chrome, etc. |
+
+##### Fedora/RHEL
+
+```bash
+sudo dnf install pipewire gstreamer1 gstreamer1-plugins-base \
+    gstreamer1-plugins-good gstreamer1-plugins-bad-free \
+    pipewire-gstreamer mesa-dri-drivers
+
+# Optional: Virtual camera for Discord/Chrome
+sudo dnf install v4l2loopback
+sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="Camera Virtual" exclusive_caps=1
+```
+
+##### Ubuntu/Debian
+
+```bash
+sudo apt install pipewire gstreamer1.0-tools gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+    gstreamer1.0-pipewire mesa-utils
+
+# Optional: Virtual camera for Discord/Chrome
+sudo apt install v4l2loopback-dkms v4l2loopback-utils
+sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="Camera Virtual" exclusive_caps=1
+```
+
+##### Arch Linux
+
+```bash
+sudo pacman -S pipewire gstreamer gst-plugins-base gst-plugins-good \
+    gst-plugins-bad gst-plugin-pipewire mesa
+
+# Optional: Virtual camera for Discord/Chrome
+sudo pacman -S v4l2loopback-dkms
+sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="Camera Virtual" exclusive_caps=1
+```
 
 #### Build
 

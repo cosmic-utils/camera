@@ -8,6 +8,7 @@
 use crate::app::state::{
     AppModel, FileSource, FilterType, Message, VideoPlaybackCommand, VirtualCameraState,
 };
+use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::Task;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -54,10 +55,12 @@ impl AppModel {
         let height = format.height;
         let filter_type = self.selected_filter;
 
+        let output_type = self.config.virtual_camera_output;
         info!(
             width,
             height,
             ?filter_type,
+            ?output_type,
             "Starting virtual camera streaming from camera"
         );
 
@@ -78,7 +81,7 @@ impl AppModel {
             use crate::backends::virtual_camera::VirtualCameraManager;
 
             // Create and start the virtual camera on this dedicated thread
-            let mut manager = VirtualCameraManager::new();
+            let mut manager = VirtualCameraManager::new(output_type);
             manager.set_filter(filter_type);
 
             let result = (|| {
@@ -170,11 +173,13 @@ impl AppModel {
         self.stop_video_preview_playback();
 
         let filter_type = self.selected_filter;
+        let output_type = self.config.virtual_camera_output;
         let is_video = matches!(file_source, FileSource::Video(_));
 
         info!(
             ?file_source,
             ?filter_type,
+            ?output_type,
             "Starting virtual camera from file source"
         );
 
@@ -226,6 +231,7 @@ impl AppModel {
                 FileSource::Image(path) => Self::stream_image_to_virtual_camera(
                     &path,
                     filter_type,
+                    output_type,
                     &mut filter_rx,
                     stop_rx,
                     preview_tx,
@@ -233,6 +239,7 @@ impl AppModel {
                 FileSource::Video(path) => Self::stream_video_to_virtual_camera(
                     &path,
                     filter_type,
+                    output_type,
                     &mut filter_rx,
                     stop_rx,
                     preview_tx,
@@ -278,6 +285,7 @@ impl AppModel {
     fn stream_image_to_virtual_camera(
         path: &std::path::Path,
         initial_filter: FilterType,
+        output_type: crate::constants::VirtualCameraOutput,
         filter_rx: &mut tokio::sync::watch::Receiver<FilterType>,
         mut stop_rx: tokio::sync::oneshot::Receiver<()>,
         preview_tx: tokio::sync::mpsc::UnboundedSender<
@@ -294,7 +302,7 @@ impl AppModel {
         let height = frame.height;
 
         // Create and start virtual camera manager
-        let mut manager = VirtualCameraManager::new();
+        let mut manager = VirtualCameraManager::new(output_type);
         manager.set_filter(initial_filter);
         // File sources should not be mirrored - output exactly as the file content
 
@@ -358,6 +366,7 @@ impl AppModel {
     fn stream_video_to_virtual_camera(
         path: &std::path::Path,
         initial_filter: FilterType,
+        output_type: crate::constants::VirtualCameraOutput,
         filter_rx: &mut tokio::sync::watch::Receiver<FilterType>,
         mut stop_rx: tokio::sync::oneshot::Receiver<()>,
         preview_tx: tokio::sync::mpsc::UnboundedSender<
@@ -383,7 +392,7 @@ impl AppModel {
         let (width, height) = decoder.dimensions();
 
         // Create and start virtual camera manager
-        let mut manager = VirtualCameraManager::new();
+        let mut manager = VirtualCameraManager::new(output_type);
         manager.set_filter(initial_filter);
         // File sources should not be mirrored - output exactly as the file content
 
@@ -556,6 +565,46 @@ impl AppModel {
             },
             |_| cosmic::Action::App(Message::UpdateVirtualCameraDuration),
         )
+    }
+
+    pub(crate) fn handle_select_virtual_camera_output(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::constants::VirtualCameraOutput;
+
+        let Some(output_type) = VirtualCameraOutput::ALL.get(index).copied() else {
+            warn!(index, "Invalid virtual camera output index");
+            return Task::none();
+        };
+
+        // Check if the selected output is available
+        if !output_type.is_available() {
+            warn!(
+                ?output_type,
+                reason = ?output_type.unavailable_reason(),
+                "Selected virtual camera output is not available"
+            );
+            // Don't change the selection if it's not available
+            return Task::none();
+        }
+
+        // Don't change if already selected
+        if self.config.virtual_camera_output == output_type {
+            return Task::none();
+        }
+
+        info!(?output_type, "Virtual camera output changed");
+        self.config.virtual_camera_output = output_type;
+
+        // Save the config change
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save virtual camera output setting");
+            }
+        }
+
+        Task::none()
     }
 
     pub(crate) fn handle_virtual_camera_stopped(
