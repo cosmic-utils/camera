@@ -43,24 +43,44 @@
   </branding>
   <screenshots>
     <screenshot type="default" xml:lang="en">
-      <caption>Photo mode with live camera preview</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
-    </screenshot>
-    <screenshot xml:lang="en">
-      <caption>Apply real-time filters to your preview</caption>
+      <caption>Main camera view (Photo mode)</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
     </screenshot>
     <screenshot xml:lang="en">
-      <caption>Record videos with a simple interface</caption>
+      <caption>Main camera view (Photo mode)</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Filter picker</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-003.png</image>
     </screenshot>
     <screenshot xml:lang="en">
-      <caption>Configure camera, audio, and encoding settings</caption>
+      <caption>Video recording in progress</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-004.png</image>
     </screenshot>
     <screenshot xml:lang="en">
-      <caption>Theatre mode for fullscreen preview</caption>
+      <caption>QR code detection</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Format/resolution picker</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Virtual camera streaming</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-007.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Theatre/fullscreen mode</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-008.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Theatre/fullscreen mode</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-009.png</image>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <caption>Theatre/fullscreen mode</caption>
+      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-010.png</image>
     </screenshot>
   </screenshots>
   <releases>
