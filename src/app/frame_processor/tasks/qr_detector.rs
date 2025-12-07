@@ -2,12 +2,15 @@
 
 //! QR code detection task
 //!
-//! This module implements QR code detection using the rqrr crate.
+//! This module implements QR code detection using the bardecoder crate.
 //! It converts camera frames to grayscale and searches for QR codes,
 //! returning their positions and decoded content.
 
 use crate::app::frame_processor::types::{FrameRegion, QrDetection};
 use crate::backends::camera::types::CameraFrame;
+use bardecoder::detect::{Detect, LineScan, Location};
+use bardecoder::prepare::{BlockedMean, Prepare};
+use image024::{ImageBuffer, Rgba};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -63,80 +66,98 @@ impl QrDetector {
 fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     let start = std::time::Instant::now();
 
-    // Convert RGBA frame to grayscale
-    let (gray_data, width, height) = convert_rgba_to_gray(frame);
+    let width = frame.width;
+    let height = frame.height;
 
-    let conversion_time = start.elapsed();
-    trace!(
-        width,
-        height,
-        conversion_ms = conversion_time.as_millis(),
-        "Converted frame to grayscale"
-    );
-
-    // Downscale if needed for faster processing
-    let (gray_data, proc_width, proc_height, scale) = if width > max_dimension
+    // Convert RGBA frame data to image024::RgbaImage for bardecoder
+    // Also handle optional downscaling for performance
+    let (rgba_image, proc_width, proc_height, scale) = if width > max_dimension
         || height > max_dimension
     {
         let scale = (width as f32 / max_dimension as f32).max(height as f32 / max_dimension as f32);
         let new_width = (width as f32 / scale) as u32;
         let new_height = (height as f32 / scale) as u32;
 
-        let downscaled = downscale_gray(&gray_data, width, height, new_width, new_height);
-        (downscaled, new_width, new_height, scale)
+        let downscaled = downscale_rgba(frame, new_width, new_height);
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(new_width, new_height, downscaled)
+                .expect("RGBA data should match dimensions");
+        (img, new_width, new_height, scale)
     } else {
-        (gray_data, width, height, 1.0)
+        // Copy frame data without stride padding
+        let rgba_data = copy_rgba_without_stride(frame);
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(width, height, rgba_data)
+                .expect("RGBA data should match dimensions");
+        (img, width, height, 1.0)
     };
 
-    let downscale_time = start.elapsed() - conversion_time;
+    let conversion_time = start.elapsed();
     trace!(
         proc_width,
         proc_height,
         scale,
-        downscale_ms = downscale_time.as_millis(),
-        "Downscaled for processing"
+        conversion_ms = conversion_time.as_millis(),
+        "Prepared RGBA image for processing"
     );
 
-    // Create grayscale image for rqrr
-    let mut img = match rqrr::PreparedImage::prepare_from_greyscale(
-        proc_width as usize,
-        proc_height as usize,
-        |x, y| gray_data[y * proc_width as usize + x],
-    ) {
-        img => img,
-    };
+    // Prepare image using BlockedMean (default parameters: 7x9 block size)
+    // This converts RGBA to grayscale internally
+    let prepare = BlockedMean::new(7, 9);
+    let prepared = prepare.prepare(&rgba_image);
 
-    // Detect QR codes
-    let grids = img.detect_grids();
+    // Detect QR codes to get their locations
+    let detector = LineScan {};
+    let locations = detector.detect(&prepared);
 
-    let detection_time = start.elapsed() - conversion_time - downscale_time;
+    let detection_time = start.elapsed() - conversion_time;
     trace!(
-        count = grids.len(),
+        count = locations.len(),
         detection_ms = detection_time.as_millis(),
         "QR detection complete"
     );
 
-    // Decode and convert to our format
-    let mut detections = Vec::with_capacity(grids.len());
+    // Use the decoder to get the decoded content
+    let decoder = bardecoder::default_decoder();
+    let results = decoder.decode(&rgba_image);
 
-    for grid in grids {
-        // Decode the QR content
-        let content = match grid.decode() {
-            Ok((_, content)) => content,
+    // Match locations with decoded content
+    // Detection and decoding should return results in the same order
+    let mut detections = Vec::with_capacity(locations.len());
+
+    for (location, result) in locations.into_iter().zip(results.into_iter()) {
+        let content = match result {
+            Ok(content) => content,
             Err(e) => {
                 debug!(error = %e, "Failed to decode QR code");
                 continue;
             }
         };
 
-        // Get bounding box from grid bounds
-        let bounds = grid.bounds;
+        // Extract QRLocation from the Location enum
+        let qr_loc = match location {
+            Location::QR(loc) => loc,
+        };
 
-        // Find min/max coordinates of the QR code corners (Point uses i32)
-        let min_x = bounds.iter().map(|p| p.x).min().unwrap_or(0) as f32;
-        let max_x = bounds.iter().map(|p| p.x).max().unwrap_or(0) as f32;
-        let min_y = bounds.iter().map(|p| p.y).min().unwrap_or(0) as f32;
-        let max_y = bounds.iter().map(|p| p.y).max().unwrap_or(0) as f32;
+        // Calculate bounding box from the three finder pattern centers
+        // QRLocation provides top_left, top_right, bottom_left (centers of finder patterns)
+        let top_left = &qr_loc.top_left;
+        let top_right = &qr_loc.top_right;
+        let bottom_left = &qr_loc.bottom_left;
+
+        // Calculate the fourth corner (bottom_right) by vector addition
+        // bottom_right = bottom_left + (top_right - top_left)
+        let bottom_right_x = bottom_left.x + (top_right.x - top_left.x);
+        let bottom_right_y = bottom_left.y + (top_right.y - top_left.y);
+
+        // Calculate bounding box with some padding for the finder patterns
+        // The finder patterns have a size of about 7 modules
+        let padding = qr_loc.module_size * 3.5; // Half of 7 modules
+
+        let min_x = (top_left.x.min(bottom_left.x) - padding).max(0.0) as f32;
+        let max_x = (top_right.x.max(bottom_right_x) + padding).min(proc_width as f64) as f32;
+        let min_y = (top_left.y.min(top_right.y) - padding).max(0.0) as f32;
+        let max_y = (bottom_left.y.max(bottom_right_y) + padding).min(proc_height as f64) as f32;
 
         // Scale back to original frame coordinates
         let x = min_x * scale;
@@ -178,41 +199,32 @@ fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     detections
 }
 
-/// Convert RGBA frame to grayscale
-fn convert_rgba_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
+/// Copy RGBA frame data without stride padding
+fn copy_rgba_without_stride(frame: &CameraFrame) -> Vec<u8> {
     let width = frame.width as usize;
     let height = frame.height as usize;
     let stride = frame.stride as usize;
 
-    let mut gray = Vec::with_capacity(width * height);
+    let mut result = Vec::with_capacity(width * height * 4);
 
     for y in 0..height {
         let row_start = y * stride;
-        for x in 0..width {
-            let offset = row_start + x * 4;
-            if offset + 2 < frame.data.len() {
-                let r = frame.data[offset] as u32;
-                let g = frame.data[offset + 1] as u32;
-                let b = frame.data[offset + 2] as u32;
-                // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
-                let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
-                gray.push(gray_val);
-            }
+        let row_end = row_start + width * 4;
+        if row_end <= frame.data.len() {
+            result.extend_from_slice(&frame.data[row_start..row_end]);
         }
     }
 
-    (gray, frame.width, frame.height)
+    result
 }
 
-/// Downscale grayscale image using bilinear interpolation
-fn downscale_gray(
-    data: &[u8],
-    src_width: u32,
-    src_height: u32,
-    dst_width: u32,
-    dst_height: u32,
-) -> Vec<u8> {
-    let mut result = Vec::with_capacity((dst_width * dst_height) as usize);
+/// Downscale RGBA frame using bilinear interpolation
+fn downscale_rgba(frame: &CameraFrame, dst_width: u32, dst_height: u32) -> Vec<u8> {
+    let src_width = frame.width as usize;
+    let src_height = frame.height as usize;
+    let stride = frame.stride as usize;
+
+    let mut result = Vec::with_capacity((dst_width * dst_height * 4) as usize);
 
     let x_ratio = src_width as f32 / dst_width as f32;
     let y_ratio = src_height as f32 / dst_height as f32;
@@ -222,30 +234,34 @@ fn downscale_gray(
             let src_x = x as f32 * x_ratio;
             let src_y = y as f32 * y_ratio;
 
-            let x0 = src_x as u32;
-            let y0 = src_y as u32;
+            let x0 = src_x as usize;
+            let y0 = src_y as usize;
             let x1 = (x0 + 1).min(src_width - 1);
             let y1 = (y0 + 1).min(src_height - 1);
 
             let x_frac = src_x - x0 as f32;
             let y_frac = src_y - y0 as f32;
 
-            let idx00 = (y0 * src_width + x0) as usize;
-            let idx01 = (y0 * src_width + x1) as usize;
-            let idx10 = (y1 * src_width + x0) as usize;
-            let idx11 = (y1 * src_width + x1) as usize;
+            // Calculate pixel offsets accounting for stride
+            let get_pixel = |px: usize, py: usize, channel: usize| -> f32 {
+                let offset = py * stride + px * 4 + channel;
+                frame.data.get(offset).copied().unwrap_or(0) as f32
+            };
 
-            let p00 = data.get(idx00).copied().unwrap_or(0) as f32;
-            let p01 = data.get(idx01).copied().unwrap_or(0) as f32;
-            let p10 = data.get(idx10).copied().unwrap_or(0) as f32;
-            let p11 = data.get(idx11).copied().unwrap_or(0) as f32;
+            // Bilinear interpolation for each channel (RGBA)
+            for channel in 0..4 {
+                let p00 = get_pixel(x0, y0, channel);
+                let p01 = get_pixel(x1, y0, channel);
+                let p10 = get_pixel(x0, y1, channel);
+                let p11 = get_pixel(x1, y1, channel);
 
-            let value = p00 * (1.0 - x_frac) * (1.0 - y_frac)
-                + p01 * x_frac * (1.0 - y_frac)
-                + p10 * (1.0 - x_frac) * y_frac
-                + p11 * x_frac * y_frac;
+                let value = p00 * (1.0 - x_frac) * (1.0 - y_frac)
+                    + p01 * x_frac * (1.0 - y_frac)
+                    + p10 * (1.0 - x_frac) * y_frac
+                    + p11 * x_frac * y_frac;
 
-            result.push(value as u8);
+                result.push(value as u8);
+            }
         }
     }
 
@@ -258,13 +274,15 @@ mod tests {
     use crate::backends::camera::types::PixelFormat;
 
     #[test]
-    fn test_rgba_to_gray() {
-        // Create a simple 2x2 RGBA frame
+    fn test_copy_rgba_without_stride() {
+        // Create a simple 2x2 RGBA frame with extra stride padding
         let data: Vec<u8> = vec![
             255, 0, 0, 255, // Red pixel
             0, 255, 0, 255, // Green pixel
+            0, 0,           // stride padding
             0, 0, 255, 255, // Blue pixel
             255, 255, 255, 255, // White pixel
+            0, 0,           // stride padding
         ];
 
         let frame = CameraFrame {
@@ -272,32 +290,50 @@ mod tests {
             height: 2,
             data: Arc::from(data.as_slice()),
             format: PixelFormat::RGBA,
-            stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
+            stride: 10, // 2 pixels * 4 bytes + 2 padding = 10 bytes per row
             captured_at: std::time::Instant::now(),
         };
 
-        let (gray, w, h) = convert_rgba_to_gray(&frame);
-        assert_eq!(w, 2);
-        assert_eq!(h, 2);
-        assert_eq!(gray.len(), 4);
+        let result = copy_rgba_without_stride(&frame);
+        assert_eq!(result.len(), 16); // 2x2 pixels * 4 channels = 16 bytes
 
-        // Check gray values (approximate due to integer math)
-        assert!(gray[0] > 70 && gray[0] < 80); // Red -> ~77
-        assert!(gray[1] > 145 && gray[1] < 155); // Green -> ~150
-        assert!(gray[2] > 25 && gray[2] < 35); // Blue -> ~29
-        assert!(gray[3] > 250); // White -> ~255
+        // Check that stride padding was removed
+        assert_eq!(&result[0..4], &[255, 0, 0, 255]); // Red
+        assert_eq!(&result[4..8], &[0, 255, 0, 255]); // Green
+        assert_eq!(&result[8..12], &[0, 0, 255, 255]); // Blue
+        assert_eq!(&result[12..16], &[255, 255, 255, 255]); // White
     }
 
     #[test]
-    fn test_downscale() {
-        // 4x2 uniform gradient
-        let data: Vec<u8> = vec![0, 100, 200, 255, 0, 100, 200, 255];
+    fn test_downscale_rgba() {
+        // 4x2 RGBA image with gradient in red channel
+        let data: Vec<u8> = vec![
+            // Row 0
+            0, 0, 0, 255,     // pixel (0,0) - black
+            85, 0, 0, 255,    // pixel (1,0) - dark red
+            170, 0, 0, 255,   // pixel (2,0) - medium red
+            255, 0, 0, 255,   // pixel (3,0) - bright red
+            // Row 1
+            0, 0, 0, 255,
+            85, 0, 0, 255,
+            170, 0, 0, 255,
+            255, 0, 0, 255,
+        ];
 
-        let result = downscale_gray(&data, 4, 2, 2, 1);
-        assert_eq!(result.len(), 2);
+        let frame = CameraFrame {
+            width: 4,
+            height: 2,
+            data: Arc::from(data.as_slice()),
+            format: PixelFormat::RGBA,
+            stride: 16, // 4 pixels * 4 bytes = 16 bytes per row
+            captured_at: std::time::Instant::now(),
+        };
+
+        let result = downscale_rgba(&frame, 2, 1);
+        assert_eq!(result.len(), 8); // 2x1 pixels * 4 channels = 8 bytes
 
         // First pixel samples around (0,0), second around (2,0)
-        assert!(result[0] < 100); // Near start of gradient
-        assert!(result[1] > 150); // Near end of gradient
+        assert!(result[0] < 100); // Near start of gradient (red channel)
+        assert!(result[4] > 150); // Near end of gradient (red channel)
     }
 }
