@@ -202,9 +202,8 @@ impl AppModel {
             camera_preview
         };
 
-        // Check if filter name label should be shown (only when a non-standard filter is selected)
-        let show_filter_label =
-            self.filters_available() && self.selected_filter != FilterType::Standard;
+        // Check if zoom label should be shown (only in Photo mode)
+        let show_zoom_label = self.mode == CameraMode::Photo;
 
         // Capture button area - changes based on recording/streaming state and video file selection
         // Check if we have video file controls (play/pause button for video file sources)
@@ -299,14 +298,14 @@ impl AppModel {
                 // Theatre mode with UI visible - overlay all UI on top of preview
                 // Use same layout structure as normal mode to prevent position jumps
 
-                // Bottom controls: filter label + capture button + bottom area in a column
-                // Filter label is added first (above capture button) with same 8px padding as normal mode
+                // Bottom controls: zoom label + capture button + bottom area in a column
+                // Zoom label is added first (above capture button) with same 8px padding as normal mode
                 let mut bottom_controls = widget::column().width(Length::Fill);
 
-                // Add filter name label above capture button (same 8px margin as normal mode)
-                if show_filter_label {
+                // Add zoom label above capture button (same 8px margin as normal mode)
+                if show_zoom_label {
                     bottom_controls = bottom_controls.push(
-                        widget::container(self.build_filter_name_label())
+                        widget::container(self.build_zoom_label())
                             .width(Length::Fill)
                             .center_x(Length::Fill)
                             .padding([0, 0, 8, 0]),
@@ -358,10 +357,10 @@ impl AppModel {
                     .align_y(cosmic::iced::alignment::Vertical::Top)
             ];
 
-            // Add filter name label overlapping bottom of preview (centered above capture button)
-            if show_filter_label {
+            // Add zoom label overlapping bottom of preview (centered above capture button)
+            if show_zoom_label {
                 preview_stack = preview_stack.push(
-                    widget::container(self.build_filter_name_label())
+                    widget::container(self.build_zoom_label())
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .align_x(cosmic::iced::alignment::Horizontal::Center)
@@ -759,16 +758,29 @@ impl AppModel {
         widget::container(label_content).padding([4, 8]).into()
     }
 
-    /// Build filter name label styled like the mode buttons
+    /// Build zoom level button for display above capture button
     ///
-    /// Used to display the current filter name when filter picker is open.
-    /// Styled like a Suggested button but not clickable.
-    fn build_filter_name_label(&self) -> Element<'_, Message> {
-        let filter_name = self.selected_filter_name();
-        // Use text button style with Suggested class (like active mode button)
-        // No on_press makes it non-clickable
-        widget::button::text(filter_name)
-            .class(cosmic::theme::Button::Suggested)
+    /// Shows current zoom level (1x, 1.3x, 2x, etc.) in Photo mode.
+    /// Click to reset zoom to 1.0.
+    fn build_zoom_label(&self) -> Element<'_, Message> {
+        let zoom_text = if self.zoom_level >= 10.0 {
+            "10x".to_string()
+        } else if (self.zoom_level - self.zoom_level.round()).abs() < 0.05 {
+            format!("{}x", self.zoom_level.round() as u32)
+        } else {
+            format!("{:.1}x", self.zoom_level)
+        };
+
+        let is_zoomed = (self.zoom_level - 1.0).abs() > 0.01;
+
+        // Use text button style - Suggested when zoomed, Standard when at 1x
+        widget::button::text(zoom_text)
+            .on_press(Message::ResetZoom)
+            .class(if is_zoomed {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Standard
+            })
             .into()
     }
 

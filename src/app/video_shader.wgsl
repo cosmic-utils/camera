@@ -18,6 +18,8 @@ struct ViewportUniform {
     uv_scale: vec2<f32>,        // UV scale for scroll clipping (0-1)
     crop_uv_min: vec2<f32>,     // Crop UV min (u_min, v_min) - normalized 0-1
     crop_uv_max: vec2<f32>,     // Crop UV max (u_max, v_max) - normalized 0-1
+    zoom_level: f32,            // Zoom level (1.0 = no zoom, 2.0 = 2x zoom)
+    _padding: f32,              // Padding for 16-byte alignment
 }
 
 @group(0) @binding(2)
@@ -109,6 +111,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         // Adjust UV coordinates to center and scale the texture
         tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
+    }
+
+    // Apply digital zoom (center crop)
+    // At zoom_level 2.0, show only center 50% of the image
+    if (viewport.zoom_level > 1.0) {
+        let inv_zoom = 1.0 / viewport.zoom_level;
+        tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * inv_zoom + vec2<f32>(0.5, 0.5);
     }
 
     // Sample RGBA texture

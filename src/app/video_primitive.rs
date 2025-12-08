@@ -56,6 +56,10 @@ struct ViewportUniform {
     crop_uv_min: [f32; 2],
     /// Crop UV max (u_max, v_max) - normalized 0-1
     crop_uv_max: [f32; 2],
+    /// Zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
+    zoom_level: f32,
+    /// Padding to maintain 16-byte alignment
+    _padding: f32,
 }
 
 /// Combined frame and viewport data to reduce mutex contention
@@ -87,6 +91,8 @@ pub struct VideoPrimitive {
     pub mirror_horizontal: bool,
     /// Crop UV coordinates (u_min, v_min, u_max, v_max) - None means no cropping
     pub crop_uv: Option<(f32, f32, f32, f32)>,
+    /// Zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
+    pub zoom_level: f32,
 }
 
 /// Video texture (shared across filter variations)
@@ -153,6 +159,7 @@ impl VideoPrimitive {
             corner_radius: 0.0,
             mirror_horizontal: false,
             crop_uv: None,
+            zoom_level: 1.0,
         }
     }
 
@@ -341,6 +348,8 @@ impl PrimitiveTrait for VideoPrimitive {
                             uv_scale: [1.0, 1.0],
                             crop_uv_min: crop_min,
                             crop_uv_max: crop_max,
+                            zoom_level: 1.0, // No zoom for blur passes
+                            _padding: 0.0,
                         };
                         queue.write_buffer(
                             &binding.viewport_buffer,
@@ -360,6 +369,8 @@ impl PrimitiveTrait for VideoPrimitive {
                         uv_scale: [stored_uv_scale.0, stored_uv_scale.1],
                         crop_uv_min: crop_min,
                         crop_uv_max: crop_max,
+                        zoom_level: self.zoom_level,
+                        _padding: 0.0,
                     };
                     queue.write_buffer(
                         &binding.viewport_buffer,
@@ -382,6 +393,8 @@ impl PrimitiveTrait for VideoPrimitive {
                         uv_scale: [1.0, 1.0],
                         crop_uv_min: [0.0, 0.0], // No crop for intermediate
                         crop_uv_max: [1.0, 1.0],
+                        zoom_level: 1.0, // No zoom for intermediate passes
+                        _padding: 0.0,
                     };
                     queue.write_buffer(
                         &intermediate_1.viewport_buffer,
@@ -402,6 +415,8 @@ impl PrimitiveTrait for VideoPrimitive {
                         uv_scale: [1.0, 1.0],
                         crop_uv_min: [0.0, 0.0], // No crop for final blur pass
                         crop_uv_max: [1.0, 1.0],
+                        zoom_level: 1.0, // No zoom for blur
+                        _padding: 0.0,
                     };
                     queue.write_buffer(
                         &intermediate_2.viewport_buffer,

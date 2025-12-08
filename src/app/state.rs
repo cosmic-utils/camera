@@ -335,6 +335,8 @@ pub struct AppModel {
     pub photo_timer_tick_start: Option<Instant>,
     /// Photo aspect ratio (native, 4:3, 16:9, 1:1)
     pub photo_aspect_ratio: PhotoAspectRatio,
+    /// Current zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
+    pub zoom_level: f32,
     /// Path to last generated bug report
     pub last_bug_report_path: Option<String>,
     /// Latest gallery thumbnail (cached)
@@ -741,6 +743,12 @@ pub enum Message {
     PhotoTimerAnimationFrame,
     /// Abort photo timer countdown
     AbortPhotoTimer,
+    /// Zoom in (increase zoom level)
+    ZoomIn,
+    /// Zoom out (decrease zoom level)
+    ZoomOut,
+    /// Reset zoom to 1.0
+    ResetZoom,
     /// Photo was saved successfully with the given file path
     PhotoSaved(Result<String, String>),
     /// Clear capture animation after brief delay

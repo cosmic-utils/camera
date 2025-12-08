@@ -8,12 +8,14 @@
 //! 3. Persistent textures across frames
 //! 4. Native RGBA format for simplified processing
 
-use crate::app::state::FilterType;
+use crate::app::state::{FilterType, Message};
 use crate::app::video_primitive::{VideoFrame, VideoPrimitive};
 use crate::backends::camera::types::CameraFrame;
 use cosmic::iced::advanced::widget::Tree;
-use cosmic::iced::advanced::{Widget, layout};
-use cosmic::iced::{Element, Length, Rectangle, Size};
+use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout};
+use cosmic::iced::event::Status;
+use cosmic::iced::mouse;
+use cosmic::iced::{Element, Event, Length, Rectangle, Size};
 use cosmic::iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use cosmic::{Renderer, Theme};
 use std::sync::Arc;
@@ -34,6 +36,8 @@ pub struct VideoWidget {
     height: Length,
     aspect_ratio: f32,
     content_fit: VideoContentFit,
+    /// Enable scroll wheel zoom (only for main camera preview, not filter picker)
+    scroll_zoom_enabled: bool,
 }
 
 impl VideoWidget {
@@ -41,6 +45,8 @@ impl VideoWidget {
     ///
     /// # Arguments
     /// * `crop_uv` - Optional crop UV coordinates (u_min, v_min, u_max, v_max) in 0-1 range
+    /// * `zoom_level` - Zoom level (1.0 = no zoom, 2.0 = 2x zoom)
+    /// * `scroll_zoom_enabled` - Whether scroll wheel zoom is enabled
     pub fn new(
         frame: Arc<CameraFrame>,
         video_id: u64,
@@ -49,12 +55,15 @@ impl VideoWidget {
         corner_radius: f32,
         mirror_horizontal: bool,
         crop_uv: Option<(f32, f32, f32, f32)>,
+        zoom_level: f32,
+        scroll_zoom_enabled: bool,
     ) -> Self {
         let mut primitive = VideoPrimitive::new(video_id);
         primitive.filter_type = filter_type;
         primitive.corner_radius = corner_radius;
         primitive.mirror_horizontal = mirror_horizontal;
         primitive.crop_uv = crop_uv;
+        primitive.zoom_level = zoom_level;
 
         // Calculate aspect ratio from frame dimensions, adjusted for crop
         let aspect_ratio = if let Some((u_min, v_min, u_max, v_max)) = crop_uv {
@@ -98,6 +107,7 @@ impl VideoWidget {
             height: Length::Fill,
             aspect_ratio,
             content_fit,
+            scroll_zoom_enabled,
         }
     }
 }
@@ -142,6 +152,49 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
         layout::Node::new(final_size)
     }
 
+    fn on_event(
+        &mut self,
+        _tree: &mut Tree,
+        event: Event,
+        layout: layout::Layout<'_>,
+        cursor: mouse::Cursor,
+        _renderer: &Renderer,
+        _clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        _viewport: &Rectangle,
+    ) -> Status {
+        // Only handle scroll zoom if enabled (photo mode main preview)
+        if !self.scroll_zoom_enabled {
+            return Status::Ignored;
+        }
+
+        // Check if cursor is over the widget bounds
+        let bounds = layout.bounds();
+        if !cursor.is_over(bounds) {
+            return Status::Ignored;
+        }
+
+        // Handle mouse wheel scroll for zoom
+        if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event {
+            let scroll_delta = match delta {
+                mouse::ScrollDelta::Lines { y, .. } => y,
+                mouse::ScrollDelta::Pixels { y, .. } => y / 50.0, // Normalize pixel scrolling
+            };
+
+            if scroll_delta > 0.0 {
+                // Scroll up = zoom in
+                shell.publish(Message::ZoomIn);
+                return Status::Captured;
+            } else if scroll_delta < 0.0 {
+                // Scroll down = zoom out
+                shell.publish(Message::ZoomOut);
+                return Status::Captured;
+            }
+        }
+
+        Status::Ignored
+    }
+
     fn draw(
         &self,
         _tree: &Tree,
@@ -174,6 +227,8 @@ impl<'a> From<VideoWidget> for Element<'a, crate::app::Message, Theme, Renderer>
 ///
 /// # Arguments
 /// * `crop_uv` - Optional crop UV coordinates (u_min, v_min, u_max, v_max) in 0-1 range
+/// * `zoom_level` - Zoom level (1.0 = no zoom, 2.0 = 2x zoom)
+/// * `scroll_zoom_enabled` - Whether scroll wheel zoom is enabled
 pub fn video_widget<'a>(
     frame: Arc<CameraFrame>,
     video_id: u64,
@@ -182,6 +237,8 @@ pub fn video_widget<'a>(
     corner_radius: f32,
     mirror_horizontal: bool,
     crop_uv: Option<(f32, f32, f32, f32)>,
+    zoom_level: f32,
+    scroll_zoom_enabled: bool,
 ) -> Element<'a, crate::app::Message, Theme, Renderer> {
     Element::new(VideoWidget::new(
         frame,
@@ -191,5 +248,7 @@ pub fn video_widget<'a>(
         corner_radius,
         mirror_horizontal,
         crop_uv,
+        zoom_level,
+        scroll_zoom_enabled,
     ))
 }

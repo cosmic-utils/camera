@@ -73,7 +73,9 @@ impl AppModel {
                     filter_type,
                     corner_radius,
                     self.config.mirror_preview,
-                    None, // No aspect ratio cropping in filter previews
+                    None,  // No aspect ratio cropping in filter previews
+                    1.0,   // No zoom for filter previews
+                    false, // No scroll zoom for filter previews
                 );
 
                 video_elem

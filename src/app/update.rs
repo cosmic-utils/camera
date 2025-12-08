@@ -77,6 +77,9 @@ impl AppModel {
             Message::PhotoTimerTick => self.handle_photo_timer_tick(),
             Message::PhotoTimerAnimationFrame => Task::none(), // Just triggers view refresh
             Message::AbortPhotoTimer => self.handle_abort_photo_timer(),
+            Message::ZoomIn => self.handle_zoom_in(),
+            Message::ZoomOut => self.handle_zoom_out(),
+            Message::ResetZoom => self.handle_reset_zoom(),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),
@@ -283,6 +286,7 @@ impl AppModel {
                 std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             self.current_camera_index = index;
+            self.zoom_level = 1.0; // Reset zoom when switching cameras
             self.switch_camera_or_mode(index, self.mode);
         }
         Task::none()
@@ -552,6 +556,7 @@ impl AppModel {
         }
 
         self.mode = mode;
+        self.zoom_level = 1.0; // Reset zoom when switching modes
         self.switch_camera_or_mode(self.current_camera_index, mode);
 
         // When switching to Virtual mode with a file source, restore the file source preview
@@ -655,6 +660,7 @@ impl AppModel {
         if let Some((width, height)) = parse_resolution(&resolution_str) {
             info!(width, height, "Switching to resolution");
             self.change_resolution(width, height);
+            self.zoom_level = 1.0; // Reset zoom when changing resolution
             let _ = self.transition_state.start();
         }
         Task::none()
@@ -715,6 +721,7 @@ impl AppModel {
                     self.photo_aspect_ratio =
                         PhotoAspectRatio::default_for_frame(fmt.width, fmt.height);
                 }
+                self.zoom_level = 1.0; // Reset zoom when changing resolution
                 self.save_settings();
                 let _ = self.transition_state.start();
             }
@@ -733,6 +740,7 @@ impl AppModel {
                 self.photo_aspect_ratio =
                     PhotoAspectRatio::default_for_frame(fmt.width, fmt.height);
             }
+            self.zoom_level = 1.0; // Reset zoom when changing format
             self.save_settings();
             let _ = self.transition_state.start();
         }
@@ -758,7 +766,7 @@ impl AppModel {
     // Capture Operations Handlers
     // =========================================================================
 
-    /// Capture the current frame as a photo with the selected filter
+    /// Capture the current frame as a photo with the selected filter and zoom
     fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
         let Some(frame) = &self.current_frame else {
             info!("No frame available to capture");
@@ -771,6 +779,7 @@ impl AppModel {
         let frame_arc = Arc::clone(frame);
         let save_dir = crate::app::get_photo_directory();
         let filter_type = self.selected_filter;
+        let zoom_level = self.zoom_level;
 
         // Calculate crop rectangle based on aspect ratio setting
         let crop_rect = self.photo_aspect_ratio.crop_rect(frame.width, frame.height);
@@ -788,6 +797,7 @@ impl AppModel {
                 let mut config = PostProcessingConfig::default();
                 config.filter_type = filter_type;
                 config.crop_rect = crop_rect;
+                config.zoom_level = zoom_level;
                 let pipeline =
                     PhotoPipeline::with_config(config, EncodingFormat::Jpeg, EncodingQuality::High);
                 pipeline
@@ -903,6 +913,34 @@ impl AppModel {
             info!("Photo timer countdown aborted");
             self.photo_timer_countdown = None;
             self.photo_timer_tick_start = None;
+        }
+        Task::none()
+    }
+
+    fn handle_zoom_in(&mut self) -> Task<cosmic::Action<Message>> {
+        // Zoom in by 0.1x, max 10x
+        let new_zoom = (self.zoom_level + 0.1).min(10.0);
+        if (new_zoom - self.zoom_level).abs() > 0.001 {
+            self.zoom_level = new_zoom;
+            debug!(zoom = self.zoom_level, "Zoom in");
+        }
+        Task::none()
+    }
+
+    fn handle_zoom_out(&mut self) -> Task<cosmic::Action<Message>> {
+        // Zoom out by 0.1x, min 1.0x
+        let new_zoom = (self.zoom_level - 0.1).max(1.0);
+        if (new_zoom - self.zoom_level).abs() > 0.001 {
+            self.zoom_level = new_zoom;
+            debug!(zoom = self.zoom_level, "Zoom out");
+        }
+        Task::none()
+    }
+
+    fn handle_reset_zoom(&mut self) -> Task<cosmic::Action<Message>> {
+        if (self.zoom_level - 1.0).abs() > 0.001 {
+            self.zoom_level = 1.0;
+            debug!("Zoom reset to 1.0");
         }
         Task::none()
     }

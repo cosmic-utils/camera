@@ -247,6 +247,7 @@ impl cosmic::Application for AppModel {
             photo_timer_countdown: None,
             photo_timer_tick_start: None,
             photo_aspect_ratio: PhotoAspectRatio::default(),
+            zoom_level: 1.0,
             last_bug_report_path: None,
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,

@@ -87,6 +87,12 @@ impl AppModel {
                 _ => None,
             };
 
+            // Apply zoom only in Photo mode
+            let (zoom_level, scroll_zoom_enabled) = match self.mode {
+                crate::app::state::CameraMode::Photo => (self.zoom_level, true),
+                _ => (1.0, false),
+            };
+
             let video_elem = video_widget::video_widget(
                 frame.clone(),
                 video_id,
@@ -95,6 +101,8 @@ impl AppModel {
                 0.0,
                 should_mirror,
                 crop_uv,
+                zoom_level,
+                scroll_zoom_enabled,
             );
 
             widget::container(video_elem)

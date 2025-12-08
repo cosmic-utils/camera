@@ -35,6 +35,8 @@ pub struct PostProcessingConfig {
     pub filter_type: FilterType,
     /// Crop rectangle (x, y, width, height) - None means no cropping
     pub crop_rect: Option<(u32, u32, u32, u32)>,
+    /// Zoom level (1.0 = no zoom, 2.0 = 2x zoom center crop)
+    pub zoom_level: f32,
 }
 
 impl Default for PostProcessingConfig {
@@ -47,6 +49,7 @@ impl Default for PostProcessingConfig {
             saturation: 1.0,
             filter_type: FilterType::Standard,
             crop_rect: None,
+            zoom_level: 1.0,
         }
     }
 }
@@ -109,21 +112,33 @@ impl PostProcessor {
             frame.data.to_vec()
         };
 
-        // Step 2: Apply cropping if configured
-        let (cropped_rgba, output_width, output_height) = if let Some((x, y, w, h)) =
+        // Step 2: Apply aspect ratio cropping if configured
+        let (cropped_rgba, current_width, current_height) = if let Some((x, y, w, h)) =
             config.crop_rect
         {
-            debug!(x, y, width = w, height = h, "Applying crop");
+            debug!(x, y, width = w, height = h, "Applying aspect ratio crop");
             let cropped = Self::crop_rgba(&filtered_rgba, frame_width, frame_height, x, y, w, h)?;
             (cropped, w, h)
         } else {
             (filtered_rgba, frame_width, frame_height)
         };
 
-        // Step 3: Convert filtered RGBA to RGB (drop alpha channel)
-        let rgb_image = Self::convert_rgba_to_rgb(&cropped_rgba, output_width, output_height)?;
+        // Step 3: Apply zoom (center crop) if zoom_level > 1.0
+        let (final_rgba, final_width, final_height) = if config.zoom_level > 1.0 {
+            Self::apply_zoom_crop(
+                &cropped_rgba,
+                current_width,
+                current_height,
+                config.zoom_level,
+            )?
+        } else {
+            (cropped_rgba, current_width, current_height)
+        };
 
-        // Step 3 & 4: Apply adjustments and sharpening (CPU-bound)
+        // Step 4: Convert filtered RGBA to RGB (drop alpha channel)
+        let rgb_image = Self::convert_rgba_to_rgb(&final_rgba, final_width, final_height)?;
+
+        // Step 5 & 6: Apply adjustments and sharpening (CPU-bound)
         let needs_adjustments =
             config.brightness != 0.0 || config.contrast != 1.0 || config.saturation != 1.0;
         let needs_sharpening = config.sharpening;
@@ -151,8 +166,8 @@ impl PostProcessor {
         debug!("Post-processing complete");
 
         Ok(ProcessedImage {
-            width: output_width,
-            height: output_height,
+            width: final_width,
+            height: final_height,
             image: rgb_image,
         })
     }
@@ -208,6 +223,62 @@ impl PostProcessor {
 
         RgbImage::from_raw(width, height, rgb_data)
             .ok_or_else(|| "Failed to create RGB image from converted data".to_string())
+    }
+
+    /// Apply zoom by center-cropping the RGBA image
+    ///
+    /// At zoom_level 2.0, the center 50% of the image is cropped and returned.
+    fn apply_zoom_crop(
+        rgba_data: &[u8],
+        width: u32,
+        height: u32,
+        zoom_level: f32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        if zoom_level <= 1.0 {
+            return Ok((rgba_data.to_vec(), width, height));
+        }
+
+        // Calculate cropped dimensions
+        let crop_width = (width as f32 / zoom_level).round() as u32;
+        let crop_height = (height as f32 / zoom_level).round() as u32;
+
+        // Ensure minimum size
+        let crop_width = crop_width.max(1);
+        let crop_height = crop_height.max(1);
+
+        // Calculate center offset
+        let offset_x = (width - crop_width) / 2;
+        let offset_y = (height - crop_height) / 2;
+
+        debug!(
+            zoom_level,
+            original_width = width,
+            original_height = height,
+            crop_width,
+            crop_height,
+            offset_x,
+            offset_y,
+            "Applying zoom crop"
+        );
+
+        // Extract the center region
+        let mut cropped_data = Vec::with_capacity((crop_width * crop_height * 4) as usize);
+        let bytes_per_pixel = 4;
+        let src_stride = width * bytes_per_pixel;
+
+        for y in 0..crop_height {
+            let src_y = offset_y + y;
+            let src_row_start = (src_y * src_stride + offset_x * bytes_per_pixel) as usize;
+            let src_row_end = src_row_start + (crop_width * bytes_per_pixel) as usize;
+
+            if src_row_end <= rgba_data.len() {
+                cropped_data.extend_from_slice(&rgba_data[src_row_start..src_row_end]);
+            } else {
+                return Err("Zoom crop out of bounds".to_string());
+            }
+        }
+
+        Ok((cropped_data, crop_width, crop_height))
     }
 
     /// Apply brightness, contrast, and saturation adjustments
