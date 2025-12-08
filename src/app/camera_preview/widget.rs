@@ -43,7 +43,7 @@ impl AppModel {
             static VIEW_FRAME_COUNT: std::sync::atomic::AtomicU64 =
                 std::sync::atomic::AtomicU64::new(0);
             let count = VIEW_FRAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if count % 30 == 0 {
+            if count.is_multiple_of(30) {
                 info!(
                     frame = count,
                     width = frame.width,
@@ -56,7 +56,7 @@ impl AppModel {
             // Use custom video widget with GPU primitive rendering
             // During transitions, use blur shader (video_id=1), otherwise normal shader (video_id=0)
             let should_blur = self.transition_state.should_blur();
-            if should_blur && count % 10 == 0 {
+            if should_blur && count.is_multiple_of(10) {
                 info!("Applying blur to frame during transition");
             }
             let video_id = if should_blur { 1 } else { 0 };
@@ -115,7 +115,7 @@ impl AppModel {
             static NO_FRAME_COUNT: std::sync::atomic::AtomicU64 =
                 std::sync::atomic::AtomicU64::new(0);
             let count = NO_FRAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if count % 30 == 0 {
+            if count.is_multiple_of(30) {
                 info!(render_count = count, "No frame available in view");
             }
 

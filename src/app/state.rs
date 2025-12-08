@@ -2,6 +2,9 @@
 
 //! Application state management
 
+use crate::app::exposure_picker::{
+    AvailableExposureControls, ColorSettings, ExposureMode, ExposureSettings, MeteringMode,
+};
 use crate::app::frame_processor::QrDetection;
 use crate::backends::audio::AudioDevice;
 use crate::backends::camera::CameraBackendManager;
@@ -319,6 +322,23 @@ pub struct AppModel {
     pub is_capturing: bool,
     /// Whether the format picker is visible (iOS-style popup)
     pub format_picker_visible: bool,
+    /// Whether the exposure picker is visible (iOS-style popup)
+    pub exposure_picker_visible: bool,
+    /// Whether the color picker is visible (iOS-style popup)
+    pub color_picker_visible: bool,
+    /// Whether the tools menu is visible (iOS-style popup)
+    pub tools_menu_visible: bool,
+    /// Current exposure settings for active camera
+    pub exposure_settings: Option<ExposureSettings>,
+    /// Current color/image adjustment settings for active camera
+    pub color_settings: Option<ColorSettings>,
+    /// Available exposure controls for current camera (queried from V4L2)
+    pub available_exposure_controls: AvailableExposureControls,
+    /// Segmented button model for exposure mode (Auto/Manual)
+    pub exposure_mode_model: cosmic::widget::segmented_button::SingleSelectModel,
+    /// Base exposure time (in 100µs units) captured when entering manual mode
+    /// Used to calculate EV-based adjustments in non-advanced mode
+    pub base_exposure_time: Option<i32>,
     /// Theatre mode state (enabled, UI visibility, auto-hide)
     pub theatre: TheatreState,
     /// Currently selected filter
@@ -382,8 +402,6 @@ pub struct AppModel {
     pub bitrate_preset_dropdown_options: Vec<String>,
     /// Theme dropdown options (Match Desktop, Dark, Light)
     pub theme_dropdown_options: Vec<String>,
-    /// Whether the bitrate info matrix is visible
-    pub bitrate_info_visible: bool,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -683,10 +701,72 @@ pub enum Message {
     TheatreShowUI,
     /// Hide UI in theatre mode (auto-hide timer)
     TheatreHideUI,
-    /// Toggle bitrate info matrix visibility
-    ToggleBitrateInfo,
     /// Toggle device info panel visibility
     ToggleDeviceInfo,
+
+    // ===== Tools Menu =====
+    /// Toggle tools menu visibility
+    ToggleToolsMenu,
+    /// Close tools menu (click outside)
+    CloseToolsMenu,
+
+    // ===== Exposure Controls =====
+    /// Toggle exposure picker visibility
+    ToggleExposurePicker,
+    /// Close exposure picker (click outside)
+    CloseExposurePicker,
+    /// Set exposure mode (Auto, Manual, Shutter Priority, Aperture Priority)
+    SetExposureMode(ExposureMode),
+    /// Set exposure compensation (EV bias) - value in 0.001 EV units
+    SetExposureCompensation(i32),
+    /// Reset exposure compensation to 0 and return to aperture priority mode
+    ResetExposureCompensation,
+    /// Set exposure time (100us units, only in manual mode)
+    SetExposureTime(i32),
+    /// Set gain value
+    SetGain(i32),
+    /// Set ISO sensitivity
+    SetIsoSensitivity(i32),
+    /// Set metering mode
+    SetMeteringMode(MeteringMode),
+    /// Toggle auto exposure priority (allow frame rate variation)
+    ToggleAutoExposurePriority,
+    /// Exposure controls queried from camera
+    ExposureControlsQueried(AvailableExposureControls, ExposureSettings, ColorSettings),
+    /// Exposure control change applied successfully
+    ExposureControlApplied,
+    /// White balance toggled, with optional temperature value when switching to manual
+    WhiteBalanceToggled(Option<i32>),
+    /// Exposure control change failed
+    ExposureControlFailed(String),
+    /// Base exposure time captured (for non-advanced EV slider)
+    ExposureBaseTimeCaptured(i32),
+    /// Set backlight compensation value
+    SetBacklightCompensation(i32),
+    /// Reset all exposure settings to defaults
+    ResetExposureSettings,
+    /// Exposure mode selected via segmented button
+    ExposureModeSelected(cosmic::widget::segmented_button::Entity),
+
+    // ===== Color Controls =====
+    /// Toggle color picker visibility
+    ToggleColorPicker,
+    /// Close color picker (click outside)
+    CloseColorPicker,
+    /// Set contrast value
+    SetContrast(i32),
+    /// Set saturation value
+    SetSaturation(i32),
+    /// Set sharpness value
+    SetSharpness(i32),
+    /// Set hue value
+    SetHue(i32),
+    /// Toggle auto white balance
+    ToggleAutoWhiteBalance,
+    /// Set white balance temperature (Kelvin)
+    SetWhiteBalanceTemperature(i32),
+    /// Reset all color settings to defaults
+    ResetColorSettings,
 
     // ===== Camera Control =====
     /// Switch to next camera
@@ -923,6 +1003,3 @@ impl TransitionState {
         self.first_frame_time = None;
     }
 }
-
-// MenuAction removed - not currently used in the application
-// Can be re-added if menu bar functionality is needed

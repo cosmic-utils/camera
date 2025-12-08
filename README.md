@@ -182,6 +182,10 @@ just flatpak-build  # Build and install Flatpak
 just flatpak-clean  # Remove build artifacts
 ```
 
+## Acknowledgments
+
+The exposure controls implementation was inspired by [cameractrls](https://github.com/soyersoyer/cameractrls), a camera controls GUI for Linux.
+
 ## License
 
 Licensed under the [GNU Public License 3.0](https://choosealicense.com/licenses/gpl-3.0).

@@ -24,13 +24,13 @@ use tracing::debug;
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
 /// Flash off icon SVG (lightning bolt with strike-through)
 const FLASH_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash-off.svg");
-/// Timer off icon SVG (stopwatch with clock hand)
+/// Timer off icon SVG
 const TIMER_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-off.svg");
-/// Timer 3s icon SVG (stopwatch with "3")
+/// Timer 3s icon SVG
 const TIMER_3_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-3.svg");
-/// Timer 5s icon SVG (stopwatch with "5")
+/// Timer 5s icon SVG
 const TIMER_5_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-5.svg");
-/// Timer 10s icon SVG (stopwatch with "10")
+/// Timer 10s icon SVG
 const TIMER_10_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-10.svg");
 /// Aspect ratio native icon SVG
 const ASPECT_NATIVE_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-native.svg");
@@ -40,6 +40,9 @@ const ASPECT_4_3_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspe
 const ASPECT_16_9_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-16-9.svg");
 /// Aspect ratio 1:1 icon SVG
 const ASPECT_1_1_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-1-1.svg");
+/// Exposure icon SVG
+const EXPOSURE_ICON: &[u8] = include_bytes!("../../resources/button_icons/exposure.svg");
+const TOOLS_GRID_ICON: &[u8] = include_bytes!("../../resources/button_icons/tools-grid.svg");
 
 /// Create a container style with semi-transparent themed background for overlay elements
 ///
@@ -95,17 +98,10 @@ fn overlay_icon_button<'a, M: Clone + 'static>(
 }
 
 impl AppModel {
-    /// Check if filters are available in the current mode (Photo or Virtual)
-    fn filters_available(&self) -> bool {
-        self.mode == CameraMode::Photo || self.mode == CameraMode::Virtual
-    }
-
     /// Build the main application view
     ///
     /// Composes all UI components into a layered layout with overlays.
     pub fn view(&self) -> Element<'_, Message> {
-        let _spacing = cosmic::theme::spacing();
-
         // Camera preview from camera_preview module
         let camera_preview = self.build_camera_preview();
 
@@ -395,6 +391,21 @@ impl AppModel {
             main_stack = main_stack.push(self.build_format_picker());
         }
 
+        // Add iOS-style exposure picker overlay if visible
+        if self.exposure_picker_visible {
+            main_stack = main_stack.push(self.build_exposure_picker());
+        }
+
+        // Add iOS-style color picker overlay if visible
+        if self.color_picker_visible {
+            main_stack = main_stack.push(self.build_color_picker());
+        }
+
+        // Add tools menu overlay if visible
+        if self.tools_menu_visible {
+            main_stack = main_stack.push(self.build_tools_menu());
+        }
+
         // Wrap everything in a themed background container
         widget::container(main_stack)
             .width(Length::Fill)
@@ -450,8 +461,11 @@ impl AppModel {
         // Right side buttons
         row = row.push(widget::Space::new(Length::Fill, Length::Shrink));
 
-        // Photo and Virtual mode buttons: Flash and filter (filter for both, flash only for Photo)
-        if self.filters_available() {
+        // Hide flash and tools buttons when any picker/menu is open
+        let hide_top_bar_buttons =
+            self.tools_menu_visible || self.exposure_picker_visible || self.color_picker_visible;
+
+        if !hide_top_bar_buttons {
             // Flash toggle button (only in Photo mode)
             if self.mode == CameraMode::Photo {
                 let flash_icon_bytes = if self.flash_enabled {
@@ -480,100 +494,9 @@ impl AppModel {
 
                 // 5px spacing
                 row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
-
-                // Timer toggle button (Photo mode only)
-                let timer_active =
-                    self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
-                let timer_icon_bytes = match self.photo_timer_setting {
-                    crate::app::state::PhotoTimerSetting::Off => TIMER_OFF_ICON,
-                    crate::app::state::PhotoTimerSetting::Sec3 => TIMER_3_ICON,
-                    crate::app::state::PhotoTimerSetting::Sec5 => TIMER_5_ICON,
-                    crate::app::state::PhotoTimerSetting::Sec10 => TIMER_10_ICON,
-                };
-                let timer_icon = widget::icon::from_svg_bytes(timer_icon_bytes).symbolic(true);
-
-                if is_disabled {
-                    row = row.push(
-                        widget::container(widget::icon(timer_icon).size(20))
-                            .style(|_theme| widget::container::Style {
-                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                ..Default::default()
-                            })
-                            .padding([4, 8]),
-                    );
-                } else {
-                    row = row.push(overlay_icon_button(
-                        timer_icon,
-                        Some(Message::CyclePhotoTimer),
-                        timer_active,
-                    ));
-                }
-
-                // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
-
-                // Aspect ratio toggle button (Photo mode only)
-                // Get frame dimensions to determine native ratio
-                let (frame_width, frame_height) = self
-                    .current_frame
-                    .as_ref()
-                    .map(|f| (f.width, f.height))
-                    .unwrap_or((0, 0));
-                let has_frame = frame_width > 0 && frame_height > 0;
-                let native_ratio = crate::app::state::PhotoAspectRatio::from_frame_dimensions(
-                    frame_width,
-                    frame_height,
-                );
-
-                // Button is active only when cropping is actually happening
-                // (selected ratio differs from native camera ratio)
-                // Not active if no frame is loaded yet
-                let aspect_active = has_frame
-                    && match (self.photo_aspect_ratio, native_ratio) {
-                        (crate::app::state::PhotoAspectRatio::Native, _) => false,
-                        (selected, Some(native)) => selected != native,
-                        (_, None) => true, // Non-standard native ratio, any selection crops
-                    };
-
-                // Show the effective aspect ratio icon (native ratio when matching)
-                let effective_ratio =
-                    if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-                        native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
-                    } else {
-                        self.photo_aspect_ratio
-                    };
-                let aspect_icon_bytes = match effective_ratio {
-                    crate::app::state::PhotoAspectRatio::Native => ASPECT_NATIVE_ICON,
-                    crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
-                    crate::app::state::PhotoAspectRatio::Ratio16x9 => ASPECT_16_9_ICON,
-                    crate::app::state::PhotoAspectRatio::Ratio1x1 => ASPECT_1_1_ICON,
-                };
-                let aspect_icon = widget::icon::from_svg_bytes(aspect_icon_bytes).symbolic(true);
-
-                if is_disabled {
-                    row = row.push(
-                        widget::container(widget::icon(aspect_icon).size(20))
-                            .style(|_theme| widget::container::Style {
-                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                ..Default::default()
-                            })
-                            .padding([4, 8]),
-                    );
-                } else {
-                    row = row.push(overlay_icon_button(
-                        aspect_icon,
-                        Some(Message::CyclePhotoAspectRatio),
-                        aspect_active,
-                    ));
-                }
-
-                // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
             }
 
             // File open button (only in Virtual mode, hidden when streaming)
-            // - When no file is selected: opens file picker
-            // - When file is selected: clears file source and switches back to camera
             if self.mode == CameraMode::Virtual && !self.virtual_camera.is_streaming() {
                 let has_file = self.virtual_camera_file_source.is_some();
                 if is_disabled {
@@ -587,7 +510,6 @@ impl AppModel {
                         }
                     }));
                 } else {
-                    // Toggle behavior: open file picker or clear file source
                     let message = if has_file {
                         Message::ClearVirtualCameraFile
                     } else {
@@ -604,53 +526,27 @@ impl AppModel {
                 row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
             }
 
-            // Filter picker button (available in Photo and Virtual modes)
+            // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, theatre)
+            // Highlight when tools menu is open or any tool setting is non-default
+            let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
+            let tools_icon = widget::icon::from_svg_bytes(TOOLS_GRID_ICON).symbolic(true);
+
             if is_disabled {
-                let filter_button =
-                    widget::button::icon(icon::from_name("image-filter-symbolic").symbolic(true));
-                row = row.push(widget::container(filter_button).style(|_theme| {
-                    widget::container::Style {
-                        text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                        ..Default::default()
-                    }
-                }));
+                row = row.push(
+                    widget::container(widget::icon(tools_icon.into()).size(20))
+                        .style(|_theme| widget::container::Style {
+                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                            ..Default::default()
+                        })
+                        .padding([4, 8]),
+                );
             } else {
-                // Highlight only when a non-standard filter is active
-                let is_highlighted = self.selected_filter != FilterType::Standard;
                 row = row.push(overlay_icon_button(
-                    icon::from_name("image-filter-symbolic").symbolic(true),
-                    Some(Message::ToggleContextPage(
-                        crate::app::state::ContextPage::Filters,
-                    )),
-                    is_highlighted,
+                    tools_icon,
+                    Some(Message::ToggleToolsMenu),
+                    tools_active,
                 ));
             }
-
-            // 5px spacing before theatre button
-            row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
-        }
-
-        // Theatre mode button
-        if is_disabled {
-            let theatre_button =
-                widget::button::icon(icon::from_name("view-fullscreen-symbolic").symbolic(true));
-            row = row.push(widget::container(theatre_button).style(|_theme| {
-                widget::container::Style {
-                    text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                    ..Default::default()
-                }
-            }));
-        } else {
-            let theatre_icon = if self.theatre.enabled {
-                "view-restore-symbolic"
-            } else {
-                "view-fullscreen-symbolic"
-            };
-            row = row.push(overlay_icon_button(
-                icon::from_name(theatre_icon).symbolic(true),
-                Some(Message::ToggleTheatreMode),
-                self.theatre.enabled,
-            ));
         }
 
         widget::container(row)
@@ -817,5 +713,282 @@ impl AppModel {
             content_fit,
             should_mirror,
         )
+    }
+
+    /// Build the tools menu overlay
+    ///
+    /// Shows timer, aspect ratio, exposure, filter, and theatre mode buttons
+    /// in a floating panel aligned to the top-right with large icon buttons in a 2-row grid.
+    fn build_tools_menu(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let is_photo_mode = self.mode == CameraMode::Photo;
+
+        // Collect all tool buttons for the grid
+        let mut buttons: Vec<Element<'_, Message>> = Vec::new();
+
+        // Timer button (Photo mode only)
+        if is_photo_mode {
+            let timer_active =
+                self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
+            let timer_icon_bytes = match self.photo_timer_setting {
+                crate::app::state::PhotoTimerSetting::Off => TIMER_OFF_ICON,
+                crate::app::state::PhotoTimerSetting::Sec3 => TIMER_3_ICON,
+                crate::app::state::PhotoTimerSetting::Sec5 => TIMER_5_ICON,
+                crate::app::state::PhotoTimerSetting::Sec10 => TIMER_10_ICON,
+            };
+            let timer_icon = widget::icon::from_svg_bytes(timer_icon_bytes).symbolic(true);
+            buttons.push(self.build_tools_grid_button(
+                timer_icon,
+                fl!("tools-timer"),
+                Message::CyclePhotoTimer,
+                timer_active,
+            ));
+
+            // Aspect ratio button (Photo mode only)
+            let aspect_active = self.is_aspect_ratio_changed();
+            let native_ratio = self.current_frame.as_ref().and_then(|f| {
+                crate::app::state::PhotoAspectRatio::from_frame_dimensions(f.width, f.height)
+            });
+            let effective_ratio =
+                if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
+                    native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
+                } else {
+                    self.photo_aspect_ratio
+                };
+            let aspect_icon_bytes = match effective_ratio {
+                crate::app::state::PhotoAspectRatio::Native => ASPECT_NATIVE_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio16x9 => ASPECT_16_9_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio1x1 => ASPECT_1_1_ICON,
+            };
+            let aspect_icon = widget::icon::from_svg_bytes(aspect_icon_bytes).symbolic(true);
+            buttons.push(self.build_tools_grid_button(
+                aspect_icon,
+                fl!("tools-aspect"),
+                Message::CyclePhotoAspectRatio,
+                aspect_active,
+            ));
+        }
+
+        // Exposure button
+        if self.available_exposure_controls.has_any_essential() {
+            let exposure_icon = widget::icon::from_svg_bytes(EXPOSURE_ICON).symbolic(true);
+            buttons.push(self.build_tools_grid_button(
+                exposure_icon,
+                fl!("tools-exposure"),
+                Message::ToggleExposurePicker,
+                self.is_exposure_changed(),
+            ));
+        }
+
+        // Color button (for contrast, saturation, white balance, etc.)
+        if self.available_exposure_controls.has_any_image_controls()
+            || self.available_exposure_controls.has_any_white_balance()
+        {
+            buttons.push(self.build_tools_grid_button(
+                icon::from_name("applications-graphics-symbolic").symbolic(true),
+                fl!("tools-color"),
+                Message::ToggleColorPicker,
+                self.is_color_changed(),
+            ));
+        }
+
+        // Filter button
+        let filter_active = self.selected_filter != FilterType::Standard;
+        buttons.push(self.build_tools_grid_button(
+            icon::from_name("image-filter-symbolic").symbolic(true),
+            fl!("tools-filter"),
+            Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
+            filter_active,
+        ));
+
+        // Theatre mode button
+        let theatre_icon = if self.theatre.enabled {
+            "view-restore-symbolic"
+        } else {
+            "view-fullscreen-symbolic"
+        };
+        buttons.push(self.build_tools_grid_button(
+            icon::from_name(theatre_icon).symbolic(true),
+            fl!("tools-theatre"),
+            Message::ToggleTheatreMode,
+            self.theatre.enabled,
+        ));
+
+        // Distribute buttons into 2 rows
+        let items_per_row = (buttons.len() + 1) / 2; // Ceiling division
+        let mut rows: Vec<Element<'_, Message>> = Vec::new();
+        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
+
+        for (i, button) in buttons.into_iter().enumerate() {
+            current_row.push(button);
+            if current_row.len() >= items_per_row || i == items_per_row * 2 - 1 {
+                let row = widget::row::with_children(std::mem::take(&mut current_row))
+                    .spacing(spacing.space_s)
+                    .align_y(Alignment::Start);
+                rows.push(row.into());
+            }
+        }
+        if !current_row.is_empty() {
+            let row = widget::row::with_children(current_row)
+                .spacing(spacing.space_s)
+                .align_y(Alignment::Start);
+            rows.push(row.into());
+        }
+
+        // Build column from rows
+        let column = widget::column::with_children(rows)
+            .spacing(spacing.space_s)
+            .padding(spacing.space_s);
+
+        // Build panel with semi-transparent themed background
+        let panel = widget::container(column).style(|theme: &cosmic::Theme| {
+            let cosmic = theme.cosmic();
+            let bg = cosmic.bg_color();
+            widget::container::Style {
+                background: Some(Background::Color(Color::from_rgba(
+                    bg.red,
+                    bg.green,
+                    bg.blue,
+                    OVERLAY_BACKGROUND_ALPHA,
+                ))),
+                border: cosmic::iced::Border {
+                    radius: cosmic.corner_radii.radius_s.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        });
+
+        // Position in top-right corner (space first pushes panel to right)
+        let positioned = widget::row()
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(panel)
+            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+
+        widget::mouse_area(
+            widget::container(positioned)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::CloseToolsMenu)
+        .into()
+    }
+
+    /// Build a grid button with large icon and text label below (outside the button)
+    fn build_tools_grid_button<'a>(
+        &self,
+        icon_handle: impl Into<widget::icon::Handle>,
+        label: String,
+        message: Message,
+        is_active: bool,
+    ) -> Element<'a, Message> {
+        // Icon button with appropriate styling
+        let button = widget::button::custom(widget::icon(icon_handle.into()).size(32))
+            .on_press(message)
+            .class(if is_active {
+                cosmic::theme::Button::Suggested
+            } else {
+                cosmic::theme::Button::Text
+            })
+            .padding(12);
+
+        // Wrap inactive buttons in a container with visible background
+        let button_element: Element<'_, Message> = if is_active {
+            button.into()
+        } else {
+            widget::container(button)
+                .style(overlay_container_style)
+                .into()
+        };
+
+        // Button with label below
+        widget::column()
+            .push(button_element)
+            .push(widget::text(label).size(11))
+            .spacing(4)
+            .align_x(Alignment::Center)
+            .into()
+    }
+
+    /// Check if any tool settings are non-default (for highlighting tools button)
+    fn has_non_default_tool_settings(&self) -> bool {
+        let timer_active = self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
+        let aspect_active = self.is_aspect_ratio_changed();
+        let exposure_active = self.is_exposure_changed();
+        let color_active = self.is_color_changed();
+        let filter_active = self.selected_filter != FilterType::Standard;
+        let theatre_active = self.theatre.enabled;
+
+        timer_active
+            || aspect_active
+            || exposure_active
+            || color_active
+            || filter_active
+            || theatre_active
+    }
+
+    /// Check if aspect ratio is cropped (not using native ratio)
+    fn is_aspect_ratio_changed(&self) -> bool {
+        let (frame_width, frame_height) = self
+            .current_frame
+            .as_ref()
+            .map(|f| (f.width, f.height))
+            .unwrap_or((0, 0));
+        let has_frame = frame_width > 0 && frame_height > 0;
+        let native_ratio =
+            crate::app::state::PhotoAspectRatio::from_frame_dimensions(frame_width, frame_height);
+        has_frame
+            && match (self.photo_aspect_ratio, native_ratio) {
+                (crate::app::state::PhotoAspectRatio::Native, _) => false,
+                (selected, Some(native)) => selected != native,
+                (_, None) => true,
+            }
+    }
+
+    /// Check if exposure settings differ from defaults
+    fn is_exposure_changed(&self) -> bool {
+        let controls = &self.available_exposure_controls;
+        self.exposure_settings
+            .as_ref()
+            .map(|s| {
+                let mode_changed = controls.has_exposure_auto
+                    && s.mode != crate::app::exposure_picker::ExposureMode::AperturePriority;
+                let ev_changed = controls.exposure_bias.available
+                    && s.exposure_compensation != controls.exposure_bias.default;
+                let backlight_changed = controls.backlight_compensation.available
+                    && s.backlight_compensation
+                        .map(|v| v != controls.backlight_compensation.default)
+                        .unwrap_or(false);
+                mode_changed || ev_changed || backlight_changed
+            })
+            .unwrap_or(false)
+    }
+
+    /// Check if color settings differ from defaults
+    fn is_color_changed(&self) -> bool {
+        let controls = &self.available_exposure_controls;
+        self.color_settings
+            .as_ref()
+            .map(|s| {
+                let image_changed = (controls.contrast.available
+                    && s.contrast
+                        .map(|v| v != controls.contrast.default)
+                        .unwrap_or(false))
+                    || (controls.saturation.available
+                        && s.saturation
+                            .map(|v| v != controls.saturation.default)
+                            .unwrap_or(false))
+                    || (controls.sharpness.available
+                        && s.sharpness
+                            .map(|v| v != controls.sharpness.default)
+                            .unwrap_or(false))
+                    || (controls.hue.available
+                        && s.hue.map(|v| v != controls.hue.default).unwrap_or(false));
+                let wb_auto_off = controls.has_white_balance_auto
+                    && s.white_balance_auto.map(|v| !v).unwrap_or(false);
+                image_changed || wb_auto_off
+            })
+            .unwrap_or(false)
     }
 }

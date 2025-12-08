@@ -54,7 +54,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 6]
+#[version = 7]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,

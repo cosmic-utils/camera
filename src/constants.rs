@@ -236,21 +236,6 @@ pub mod formats {
     pub const DEFAULT_PICKER_RESOLUTION: u32 = 1920;
 }
 
-/// Camera device constants
-pub mod camera {
-    /// Maximum number of video devices to scan
-    #[allow(dead_code)]
-    pub const MAX_VIDEO_DEVICES: usize = 10;
-
-    /// Maximum metadata device offset to search
-    #[allow(dead_code)]
-    pub const MAX_METADATA_OFFSET: usize = 3;
-
-    /// Default video device path
-    #[allow(dead_code)]
-    pub const DEFAULT_DEVICE: &str = "/dev/video0";
-}
-
 /// GStreamer pipeline constants
 pub mod pipeline {
     /// Maximum buffer queue size (keep small for low latency)
@@ -270,8 +255,6 @@ pub mod pipeline {
 
 /// Timing constants
 pub mod timing {
-    use super::Duration;
-
     /// Frame counter modulo for periodic logging
     pub const FRAME_LOG_INTERVAL: u64 = 30;
 
@@ -280,27 +263,10 @@ pub mod timing {
     pub const STATE_CHANGE_TIMEOUT_MS: u64 = 50;
 
     /// Pipeline state change timeout on stop
-    #[allow(dead_code)]
     pub const STOP_TIMEOUT_SECS: u64 = 2;
 
     /// Pipeline playing state timeout on start
     pub const START_TIMEOUT_SECS: u64 = 5;
-
-    /// Camera retry delay after failure
-    #[allow(dead_code)]
-    pub const CAMERA_RETRY_DELAY: Duration = Duration::from_secs(5);
-
-    /// Hardware release delay after stop
-    #[allow(dead_code)]
-    pub const HARDWARE_RELEASE_DELAY: Duration = Duration::from_millis(100);
-
-    /// GStreamer probe delay between tests
-    #[allow(dead_code)]
-    pub const PROBE_DELAY: Duration = Duration::from_millis(200);
-
-    /// GStreamer probe timeout per resolution
-    #[allow(dead_code)]
-    pub const PROBE_TIMEOUT_SECS: u64 = 3;
 }
 
 /// Resolution labels for format picker

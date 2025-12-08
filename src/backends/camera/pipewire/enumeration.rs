@@ -35,7 +35,7 @@ pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
     // 1. Try to discover cameras through pw-cli/pactl (if available)
     // 2. Otherwise, provide generic "Default Camera" that lets PipeWire auto-select
 
-    let cameras = try_enumerate_with_pw_cli().or_else(|| try_enumerate_with_pactl());
+    let cameras = try_enumerate_with_pw_cli().or_else(try_enumerate_with_pactl);
 
     if let Some(ref cams) = cameras {
         info!(count = cams.len(), "Found PipeWire cameras");

@@ -4,7 +4,7 @@
 
 use crate::app::state::{AppModel, Message};
 use crate::config::AppTheme;
-use crate::constants::{BitratePreset, ResolutionTier, format_bitrate};
+use crate::constants::BitratePreset;
 use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
@@ -156,15 +156,16 @@ impl AppModel {
             .add(widget::settings::item_row(vec![bug_report_control]));
 
         // Combine all sections
-        let settings_content: Element<'_, Message> = widget::settings::view_column(vec![
+        let sections = vec![
             appearance_section.into(),
             camera_section.into(),
             video_section.into(),
             mirror_section.into(),
             virtual_camera_section.into(),
             bug_reports_section.into(),
-        ])
-        .into();
+        ];
+
+        let settings_content: Element<'_, Message> = widget::settings::view_column(sections).into();
 
         context_drawer::context_drawer(
             settings_content,
@@ -173,107 +174,17 @@ impl AppModel {
         .title(fl!("settings-title"))
     }
 
-    /// Build the bitrate info matrix table (shown when info button is toggled)
-    #[allow(dead_code)]
-    fn build_bitrate_info_matrix(&self, vertical_spacing: u16) -> Element<'_, Message> {
-        if !self.bitrate_info_visible {
-            return widget::vertical_space().height(Length::Fixed(0.0)).into();
-        }
-
-        // Build the matrix table
-        let mut table_column = widget::column()
-            .push(widget::vertical_space().height(vertical_spacing))
-            .spacing(4);
-
-        // Header row
-        let header_row = widget::row()
-            .push(
-                widget::container(
-                    widget::text(fl!("settings-resolution"))
-                        .size(12)
-                        .font(cosmic::font::bold()),
-                )
-                .width(Length::Fixed(70.0)),
-            )
-            .push(
-                widget::container(
-                    widget::text(fl!("preset-low"))
-                        .size(12)
-                        .font(cosmic::font::bold()),
-                )
-                .width(Length::Fixed(65.0))
-                .center_x(65.0),
-            )
-            .push(
-                widget::container(
-                    widget::text(fl!("preset-medium"))
-                        .size(12)
-                        .font(cosmic::font::bold()),
-                )
-                .width(Length::Fixed(65.0))
-                .center_x(65.0),
-            )
-            .push(
-                widget::container(
-                    widget::text(fl!("preset-high"))
-                        .size(12)
-                        .font(cosmic::font::bold()),
-                )
-                .width(Length::Fixed(65.0))
-                .center_x(65.0),
-            )
-            .spacing(4);
-
-        table_column = table_column.push(header_row);
-
-        // Data rows for each resolution tier
-        for tier in ResolutionTier::ALL.iter() {
-            let row = widget::row()
-                .push(
-                    widget::container(widget::text(tier.display_name()).size(11))
-                        .width(Length::Fixed(70.0)),
-                )
-                .push(
-                    widget::container(
-                        widget::text(format_bitrate(BitratePreset::Low.bitrate_for_tier(*tier)))
-                            .size(11),
-                    )
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
-                )
-                .push(
-                    widget::container(
-                        widget::text(format_bitrate(
-                            BitratePreset::Medium.bitrate_for_tier(*tier),
-                        ))
-                        .size(11),
-                    )
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
-                )
-                .push(
-                    widget::container(
-                        widget::text(format_bitrate(BitratePreset::High.bitrate_for_tier(*tier)))
-                            .size(11),
-                    )
-                    .width(Length::Fixed(65.0))
-                    .center_x(65.0),
-                )
-                .spacing(4);
-
-            table_column = table_column.push(row);
-        }
-
-        // Wrap in a container with subtle background
-        widget::container(table_column)
-            .padding(8)
-            .class(cosmic::theme::Container::Card)
-            .into()
-    }
-
     /// Build the device info panel (shown when info button is clicked)
     fn build_device_info_panel(&self) -> Element<'_, Message> {
-        // Get device info from current camera
+        // Helper to build a label: value row
+        fn info_row<'a>(label: String, value: &str) -> Element<'a, Message> {
+            widget::row()
+                .push(widget::text(label).size(12).font(cosmic::font::bold()))
+                .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                .push(widget::text(value.to_string()).size(12))
+                .into()
+        }
+
         let device_info = self
             .available_cameras
             .get(self.current_camera_index)
@@ -282,68 +193,24 @@ impl AppModel {
         let mut info_column = widget::column().spacing(4);
 
         if let Some(info) = device_info {
-            // Card (device name)
             if !info.card.is_empty() {
-                info_column = info_column.push(
-                    widget::row()
-                        .push(
-                            widget::text(fl!("device-info-card"))
-                                .size(12)
-                                .font(cosmic::font::bold()),
-                        )
-                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
-                        .push(widget::text(&info.card).size(12)),
-                );
+                info_column = info_column.push(info_row(fl!("device-info-card"), &info.card));
             }
-
-            // Driver
             if !info.driver.is_empty() {
-                info_column = info_column.push(
-                    widget::row()
-                        .push(
-                            widget::text(fl!("device-info-driver"))
-                                .size(12)
-                                .font(cosmic::font::bold()),
-                        )
-                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
-                        .push(widget::text(&info.driver).size(12)),
-                );
+                info_column = info_column.push(info_row(fl!("device-info-driver"), &info.driver));
             }
-
-            // Path
             if !info.path.is_empty() {
-                info_column = info_column.push(
-                    widget::row()
-                        .push(
-                            widget::text(fl!("device-info-path"))
-                                .size(12)
-                                .font(cosmic::font::bold()),
-                        )
-                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
-                        .push(widget::text(&info.path).size(12)),
-                );
+                info_column = info_column.push(info_row(fl!("device-info-path"), &info.path));
             }
-
-            // Real Path (only show if different from path)
             if !info.real_path.is_empty() && info.real_path != info.path {
-                info_column = info_column.push(
-                    widget::row()
-                        .push(
-                            widget::text(fl!("device-info-real-path"))
-                                .size(12)
-                                .font(cosmic::font::bold()),
-                        )
-                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
-                        .push(widget::text(&info.real_path).size(12)),
-                );
+                info_column =
+                    info_column.push(info_row(fl!("device-info-real-path"), &info.real_path));
             }
         } else {
-            // No device info available
             info_column =
                 info_column.push(widget::text("No device information available").size(12));
         }
 
-        // Wrap in a container with card styling
         widget::container(info_column)
             .padding(8)
             .class(cosmic::theme::Container::Card)

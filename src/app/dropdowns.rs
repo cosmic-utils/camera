@@ -77,7 +77,7 @@ impl AppModel {
                 .collect();
 
             // Sort by preference order
-            available_pixel_formats.sort_by(|a, b| pixel_format_rank(a).cmp(&pixel_format_rank(b)));
+            available_pixel_formats.sort_by_key(|pf| pixel_format_rank(pf));
 
             self.pixel_format_dropdown_options = available_pixel_formats;
         } else {

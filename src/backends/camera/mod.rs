@@ -32,6 +32,7 @@
 pub mod manager;
 pub mod pipewire;
 pub mod types;
+pub mod v4l2_controls;
 
 pub use manager::CameraBackendManager;
 pub use types::*;

@@ -30,11 +30,13 @@ mod camera_ops;
 mod camera_preview;
 mod controls;
 mod dropdowns;
+pub mod exposure_picker;
 mod filter_picker;
 mod format_picker;
 pub mod frame_processor;
 mod gallery_primitive;
 mod gallery_widget;
+mod handlers;
 pub mod qr_overlay;
 pub mod settings;
 mod state;
@@ -239,6 +241,22 @@ impl cosmic::Application for AppModel {
             file_source_preview_receiver: None,
             is_capturing: false,
             format_picker_visible: false,
+            exposure_picker_visible: false,
+            color_picker_visible: false,
+            tools_menu_visible: false,
+            exposure_settings: None,
+            color_settings: None,
+            available_exposure_controls:
+                crate::app::exposure_picker::AvailableExposureControls::default(),
+            exposure_mode_model: {
+                let mut model = cosmic::widget::segmented_button::SingleSelectModel::builder()
+                    .insert(|b| b.text(fl!("exposure-auto-mode")))
+                    .insert(|b| b.text(fl!("exposure-manual-mode")))
+                    .build();
+                model.activate_position(0); // Start with Auto
+                model
+            },
+            base_exposure_time: None,
             theatre: TheatreState::default(),
             selected_filter: FilterType::default(),
             flash_enabled: false,
@@ -277,7 +295,6 @@ impl cosmic::Application for AppModel {
                 .map(|p| p.display_name().to_string())
                 .collect(),
             theme_dropdown_options: vec![fl!("match-desktop"), fl!("dark"), fl!("light")],
-            bitrate_info_visible: false,
             device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
@@ -432,6 +449,26 @@ impl cosmic::Application for AppModel {
 
     /// Handle escape key - close any open drawers or pickers
     fn on_escape(&mut self) -> Task<cosmic::Action<Self::Message>> {
+        // Close color picker and return to tools menu
+        if self.color_picker_visible {
+            self.color_picker_visible = false;
+            self.tools_menu_visible = true;
+            return Task::none();
+        }
+
+        // Close exposure picker and return to tools menu
+        if self.exposure_picker_visible {
+            self.exposure_picker_visible = false;
+            self.tools_menu_visible = true;
+            return Task::none();
+        }
+
+        // Close tools menu if open
+        if self.tools_menu_visible {
+            self.tools_menu_visible = false;
+            return Task::none();
+        }
+
         // Close format picker if open
         if self.format_picker_visible {
             self.format_picker_visible = false;
@@ -598,7 +635,7 @@ impl cosmic::Application for AppModel {
                             let format = CameraFormat {
                                 width: width.unwrap_or(640),
                                 height: height.unwrap_or(480),
-                                framerate: framerate,
+                                framerate,
                                 hardware_accelerated: true, // Assume HW acceleration available
                                 pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
                             };

@@ -1,0 +1,622 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+//! Exposure picker UI view
+//!
+//! Floating overlay for exposure controls with semi-transparent background.
+
+use super::ControlRange;
+use crate::app::state::{AppModel, Message};
+use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
+use crate::fl;
+use cosmic::Element;
+use cosmic::iced::{Alignment, Background, Color, Length};
+use cosmic::widget;
+
+// UI Constants
+const PICKER_PANEL_WIDTH: f32 = 260.0;
+const COLOR_PICKER_WIDTH: f32 = 280.0;
+const LABEL_WIDTH: f32 = 70.0;
+const SLIDER_WIDTH_EXPOSURE: f32 = 100.0;
+const SLIDER_WIDTH_COLOR: f32 = 120.0;
+const VALUE_WIDTH_EXPOSURE: f32 = 50.0;
+const VALUE_WIDTH_COLOR: f32 = 40.0;
+const CONTROL_SPACING: u16 = 8;
+
+/// Create a container style for the picker panel background
+fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    let bg = cosmic.bg_color();
+    widget::container::Style {
+        background: Some(Background::Color(Color::from_rgba(
+            bg.red,
+            bg.green,
+            bg.blue,
+            OVERLAY_BACKGROUND_ALPHA,
+        ))),
+        border: cosmic::iced::Border {
+            radius: cosmic.corner_radii.radius_s.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+impl AppModel {
+    /// Build the exposure picker overlay
+    pub fn build_exposure_picker(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let settings_data = self.exposure_settings.as_ref();
+        let current_mode = settings_data.map(|s| s.mode).unwrap_or_default();
+        let is_manual = current_mode == super::ExposureMode::Manual;
+
+        let mut column = widget::column()
+            .spacing(spacing.space_xs)
+            .padding(spacing.space_s)
+            .width(Length::Shrink);
+
+        // Mode toggle row (segmented button + reset icon)
+        column = column.push(self.build_mode_toggle());
+
+        // Add controls based on mode
+        if is_manual {
+            column = self.add_manual_controls(column, settings_data);
+        } else {
+            column = self.add_auto_controls(column, settings_data);
+        }
+
+        // Build picker panel with semi-transparent themed background
+        let picker_panel = widget::mouse_area(
+            widget::container(column)
+                .style(picker_panel_style)
+                .width(Length::Fixed(PICKER_PANEL_WIDTH)),
+        )
+        .on_press(Message::Noop);
+
+        // Position picker in top-right corner
+        let picker_positioned = widget::row()
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(picker_panel)
+            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+
+        widget::mouse_area(
+            widget::container(picker_positioned)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::CloseExposurePicker)
+        .into()
+    }
+
+    /// Build mode toggle row (Auto/Manual)
+    fn build_mode_toggle(&self) -> Element<'_, Message> {
+        let toggle = widget::segmented_button::horizontal(&self.exposure_mode_model)
+            .button_alignment(Alignment::Center)
+            .width(Length::Fill)
+            .on_activate(Message::ExposureModeSelected);
+
+        let reset_btn = widget::button::icon(widget::icon::from_name("edit-undo-symbolic"))
+            .on_press(Message::ResetExposureSettings)
+            .class(cosmic::theme::Button::Text)
+            .padding(4);
+
+        widget::row()
+            .push(toggle)
+            .push(reset_btn)
+            .spacing(CONTROL_SPACING)
+            .align_y(Alignment::Center)
+            .into()
+    }
+
+    /// Add auto mode controls to column
+    fn add_auto_controls<'a>(
+        &'a self,
+        mut column: widget::Column<'a, Message>,
+        settings_data: Option<&'a super::ExposureSettings>,
+    ) -> widget::Column<'a, Message> {
+        let controls = &self.available_exposure_controls;
+
+        if controls.exposure_bias.available {
+            column = column.push(self.build_ev_row(settings_data));
+        }
+        if controls.backlight_compensation.available {
+            column = column.push(self.build_backlight_row(settings_data));
+        }
+
+        column
+    }
+
+    /// Add manual mode controls to column (shows all controls, disabled if unsupported)
+    fn add_manual_controls<'a>(
+        &'a self,
+        mut column: widget::Column<'a, Message>,
+        settings_data: Option<&'a super::ExposureSettings>,
+    ) -> widget::Column<'a, Message> {
+        let controls = &self.available_exposure_controls;
+
+        // Exposure Time
+        if controls.exposure_time.available {
+            column = column.push(self.build_exposure_time_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-time")));
+        }
+
+        // Gain
+        if controls.gain.available {
+            column = column.push(self.build_gain_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-gain")));
+        }
+
+        // ISO
+        if controls.iso.available {
+            column = column.push(self.build_iso_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-iso")));
+        }
+
+        // EV Compensation
+        if controls.exposure_bias.available {
+            column = column.push(self.build_ev_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-ev")));
+        }
+
+        // Metering Mode
+        if controls.has_metering && !controls.metering_modes.is_empty() {
+            column = column.push(self.build_metering_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-metering")));
+        }
+
+        // Auto Priority
+        if controls.has_auto_priority {
+            column = column.push(self.build_auto_priority_row(settings_data));
+        } else {
+            column = column.push(Self::build_unsupported_row(fl!("exposure-auto-priority")));
+        }
+
+        column
+    }
+
+    // =========================================================================
+    // Control row builders
+    // =========================================================================
+
+    /// Build a control row with label, slider, and value display
+    fn build_control_row<'a>(
+        label: String,
+        value_text: String,
+        value_width: f32,
+        slider: impl Into<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
+        widget::row::with_capacity(3)
+            .align_y(Alignment::Center)
+            .spacing(CONTROL_SPACING)
+            .width(Length::Shrink)
+            .push(
+                widget::text(label)
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .push(slider.into())
+            .push(
+                widget::text::body(value_text)
+                    .width(Length::Fixed(value_width))
+                    .align_x(Alignment::End),
+            )
+            .into()
+    }
+
+    /// Build a generic slider row using ControlRange
+    fn build_slider_row<'a, F>(
+        label: String,
+        current: i32,
+        range: &ControlRange,
+        slider_width: f32,
+        value_width: f32,
+        format_value: impl Fn(i32) -> String,
+        message_fn: F,
+    ) -> Element<'a, Message>
+    where
+        F: 'a + Fn(i32) -> Message,
+    {
+        let min = range.min as f32;
+        let max = range.max as f32;
+        let clamped = (current as f32).clamp(min, max);
+
+        let slider = widget::slider(min..=max, clamped, move |v| message_fn(v as i32))
+            .width(Length::Fixed(slider_width));
+
+        Self::build_control_row(label, format_value(current), value_width, slider)
+    }
+
+    /// Build a row for unsupported controls
+    fn build_unsupported_row(label: String) -> Element<'static, Message> {
+        widget::row::with_capacity(2)
+            .align_y(Alignment::Center)
+            .spacing(CONTROL_SPACING)
+            .width(Length::Shrink)
+            .push(
+                widget::text(label)
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .push(widget::text(fl!("exposure-not-supported")).size(13))
+            .into()
+    }
+
+    /// Build EV compensation row
+    fn build_ev_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let controls = &self.available_exposure_controls;
+        let current = settings_data.map(|s| s.exposure_compensation).unwrap_or(0);
+        let range = &controls.exposure_bias;
+
+        let min = range.min as f32;
+        let max = range.max as f32;
+        let clamped = (current as f32).clamp(min, max);
+
+        let slider = widget::slider(min..=max, clamped, |v| {
+            Message::SetExposureCompensation(v as i32)
+        })
+        .width(Length::Fixed(SLIDER_WIDTH_EXPOSURE))
+        .breakpoints(&[0.0]);
+
+        Self::build_control_row(
+            fl!("exposure-ev"),
+            format!("{:+.1}", current as f32 / 1000.0),
+            VALUE_WIDTH_EXPOSURE,
+            slider,
+        )
+    }
+
+    /// Build backlight compensation row
+    fn build_backlight_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.backlight_compensation;
+        let current = settings_data
+            .and_then(|s| s.backlight_compensation)
+            .unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("exposure-backlight"),
+            current,
+            range,
+            SLIDER_WIDTH_EXPOSURE,
+            VALUE_WIDTH_EXPOSURE,
+            |v| format!("{}", v),
+            Message::SetBacklightCompensation,
+        )
+    }
+
+    /// Build exposure time row
+    fn build_exposure_time_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.exposure_time;
+        let current = settings_data
+            .and_then(|s| s.exposure_time)
+            .unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("exposure-time"),
+            current,
+            range,
+            SLIDER_WIDTH_EXPOSURE,
+            VALUE_WIDTH_EXPOSURE,
+            format_exposure_time,
+            Message::SetExposureTime,
+        )
+    }
+
+    /// Build gain row
+    fn build_gain_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.gain;
+        let current = settings_data.and_then(|s| s.gain).unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("exposure-gain"),
+            current,
+            range,
+            SLIDER_WIDTH_EXPOSURE,
+            VALUE_WIDTH_EXPOSURE,
+            |v| format!("{}", v),
+            Message::SetGain,
+        )
+    }
+
+    /// Build ISO row
+    fn build_iso_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.iso;
+        let current = settings_data.and_then(|s| s.iso).unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("exposure-iso"),
+            current,
+            range,
+            SLIDER_WIDTH_EXPOSURE,
+            VALUE_WIDTH_EXPOSURE,
+            |v| format!("{}", v),
+            Message::SetIsoSensitivity,
+        )
+    }
+
+    /// Build metering mode row
+    fn build_metering_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let controls = &self.available_exposure_controls;
+        let current_mode = settings_data
+            .and_then(|s| s.metering_mode)
+            .unwrap_or_default();
+
+        let mut row = widget::row()
+            .push(
+                widget::text(fl!("exposure-metering"))
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .width(Length::Shrink);
+
+        for mode in &controls.metering_modes {
+            let is_active = *mode == current_mode;
+            let mode_copy = *mode;
+
+            let btn = widget::button::text(mode.display_name())
+                .on_press(Message::SetMeteringMode(mode_copy))
+                .class(if is_active {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Text
+                });
+
+            row = row.push(btn);
+        }
+
+        row.into()
+    }
+
+    /// Build auto priority row (frame rate variation toggle)
+    fn build_auto_priority_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let enabled = settings_data.and_then(|s| s.auto_priority).unwrap_or(false);
+
+        widget::row()
+            .push(
+                widget::text(fl!("exposure-auto-priority"))
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .push(widget::toggler(enabled).on_toggle(|_| Message::ToggleAutoExposurePriority))
+            .spacing(CONTROL_SPACING)
+            .align_y(Alignment::Center)
+            .width(Length::Shrink)
+            .into()
+    }
+
+    // =========================================================================
+    // Color Picker
+    // =========================================================================
+
+    /// Build the color picker overlay
+    pub fn build_color_picker(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let color_data = self.color_settings.as_ref();
+
+        let mut column = widget::column()
+            .spacing(spacing.space_xs)
+            .padding(spacing.space_s)
+            .width(Length::Shrink);
+
+        column = column.push(self.build_color_header());
+        column = self.add_image_controls(column, color_data);
+        column = self.add_white_balance_controls(column, color_data);
+
+        let picker_panel = widget::mouse_area(
+            widget::container(column)
+                .style(picker_panel_style)
+                .width(Length::Fixed(COLOR_PICKER_WIDTH)),
+        )
+        .on_press(Message::Noop);
+
+        let picker_positioned = widget::row()
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(picker_panel)
+            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+
+        widget::mouse_area(
+            widget::container(picker_positioned)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::CloseColorPicker)
+        .into()
+    }
+
+    /// Build color picker header with title and reset button
+    fn build_color_header(&self) -> Element<'_, Message> {
+        let reset_btn = widget::button::icon(widget::icon::from_name("edit-undo-symbolic"))
+            .on_press(Message::ResetColorSettings)
+            .class(cosmic::theme::Button::Text)
+            .padding(4);
+
+        widget::row()
+            .push(
+                widget::text(fl!("color-title"))
+                    .size(14)
+                    .width(Length::Fill),
+            )
+            .push(reset_btn)
+            .spacing(CONTROL_SPACING)
+            .align_y(Alignment::Center)
+            .into()
+    }
+
+    /// Add image adjustment controls (contrast, saturation, sharpness, hue)
+    fn add_image_controls<'a>(
+        &'a self,
+        mut column: widget::Column<'a, Message>,
+        settings_data: Option<&'a super::ColorSettings>,
+    ) -> widget::Column<'a, Message> {
+        let controls = &self.available_exposure_controls;
+
+        if controls.contrast.available {
+            column = column.push(self.build_color_slider_row(
+                fl!("color-contrast"),
+                settings_data.and_then(|s| s.contrast),
+                &controls.contrast,
+                Message::SetContrast,
+            ));
+        }
+        if controls.saturation.available {
+            column = column.push(self.build_color_slider_row(
+                fl!("color-saturation"),
+                settings_data.and_then(|s| s.saturation),
+                &controls.saturation,
+                Message::SetSaturation,
+            ));
+        }
+        if controls.sharpness.available {
+            column = column.push(self.build_color_slider_row(
+                fl!("color-sharpness"),
+                settings_data.and_then(|s| s.sharpness),
+                &controls.sharpness,
+                Message::SetSharpness,
+            ));
+        }
+        if controls.hue.available {
+            column = column.push(self.build_color_slider_row(
+                fl!("color-hue"),
+                settings_data.and_then(|s| s.hue),
+                &controls.hue,
+                Message::SetHue,
+            ));
+        }
+
+        column
+    }
+
+    /// Build a color control slider row
+    fn build_color_slider_row<'a, F>(
+        &self,
+        label: String,
+        current: Option<i32>,
+        range: &ControlRange,
+        message_fn: F,
+    ) -> Element<'a, Message>
+    where
+        F: 'a + Fn(i32) -> Message,
+    {
+        Self::build_slider_row(
+            label,
+            current.unwrap_or(range.default),
+            range,
+            SLIDER_WIDTH_COLOR,
+            VALUE_WIDTH_COLOR,
+            |v| format!("{}", v),
+            message_fn,
+        )
+    }
+
+    /// Add white balance controls
+    fn add_white_balance_controls<'a>(
+        &'a self,
+        mut column: widget::Column<'a, Message>,
+        settings_data: Option<&'a super::ColorSettings>,
+    ) -> widget::Column<'a, Message> {
+        let controls = &self.available_exposure_controls;
+
+        if controls.has_white_balance_auto {
+            column = column.push(self.build_auto_white_balance_row(settings_data));
+        }
+
+        if controls.white_balance_temperature.available {
+            let is_auto = settings_data
+                .and_then(|s| s.white_balance_auto)
+                .unwrap_or(true);
+            if !is_auto || !controls.has_white_balance_auto {
+                column = column.push(self.build_white_balance_temp_row(settings_data));
+            }
+        }
+
+        column
+    }
+
+    /// Build auto white balance toggle row
+    fn build_auto_white_balance_row(
+        &self,
+        settings_data: Option<&super::ColorSettings>,
+    ) -> Element<'_, Message> {
+        let enabled = settings_data
+            .and_then(|s| s.white_balance_auto)
+            .unwrap_or(true);
+
+        widget::row()
+            .push(
+                widget::text(fl!("color-white-balance"))
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .push(widget::toggler(enabled).on_toggle(|_| Message::ToggleAutoWhiteBalance))
+            .push(
+                widget::text(if enabled {
+                    fl!("color-auto")
+                } else {
+                    fl!("color-manual")
+                })
+                .size(12),
+            )
+            .spacing(CONTROL_SPACING)
+            .align_y(Alignment::Center)
+            .width(Length::Shrink)
+            .into()
+    }
+
+    /// Build white balance temperature row
+    fn build_white_balance_temp_row(
+        &self,
+        settings_data: Option<&super::ColorSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.white_balance_temperature;
+        let current = settings_data
+            .and_then(|s| s.white_balance_temperature)
+            .unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("color-temperature"),
+            current,
+            range,
+            SLIDER_WIDTH_COLOR,
+            VALUE_WIDTH_EXPOSURE,
+            |v| format!("{}K", v),
+            Message::SetWhiteBalanceTemperature,
+        )
+    }
+}
+
+/// Format exposure time in 100µs units for display
+fn format_exposure_time(time_100us: i32) -> String {
+    let seconds = time_100us as f64 / 10000.0;
+    if seconds < 0.5 {
+        let denominator = (1.0 / seconds).round() as i32;
+        format!("1/{}s", denominator)
+    } else {
+        format!("{:.1}s", seconds)
+    }
+}

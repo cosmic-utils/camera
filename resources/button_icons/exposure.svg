@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Exposure compensation icon: circle with +/- -->
+  <!-- Plus sign on top -->
+  <rect x="10.5" y="4" width="3" height="8" rx="1" fill="#FFFFFF"/>
+  <rect x="7" y="6.5" width="10" height="3" rx="1" fill="#FFFFFF"/>
+  <!-- Minus sign on bottom -->
+  <rect x="7" y="14.5" width="10" height="3" rx="1" fill="#FFFFFF"/>
+</svg>

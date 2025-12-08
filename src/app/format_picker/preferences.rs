@@ -71,7 +71,7 @@ pub fn select_first_time_video_format(formats: &[CameraFormat]) -> Option<Camera
             if fps >= 25 {
                 resolution_groups
                     .entry((format.width, format.height))
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(format);
             }
         }

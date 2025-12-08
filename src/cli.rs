@@ -116,7 +116,7 @@ pub fn take_photo(
         } else {
             path.parent()
                 .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| get_default_photo_dir())
+                .unwrap_or_else(get_default_photo_dir)
         }
     } else {
         get_default_photo_dir()

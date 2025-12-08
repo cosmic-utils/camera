@@ -43,7 +43,7 @@ pub async fn load_latest_thumbnail(
         e.metadata()
             .ok()
             .and_then(|m| m.modified().ok())
-            .map(|t| std::cmp::Reverse(t))
+            .map(std::cmp::Reverse)
     });
 
     let latest_path = entries.first()?.path();

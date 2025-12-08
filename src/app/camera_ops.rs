@@ -305,8 +305,8 @@ impl AppModel {
                     && f.height == height
                     && current_pixel_format
                         .as_ref()
-                        .map_or(true, |pf| &f.pixel_format == pf)
-                    && current_framerate.map_or(true, |fps| f.framerate == Some(fps))
+                        .is_none_or(|pf| &f.pixel_format == pf)
+                    && current_framerate.is_none_or(|fps| f.framerate == Some(fps))
             })
             .or_else(|| {
                 // Fall back to best format for this resolution

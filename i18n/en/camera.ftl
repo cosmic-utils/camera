@@ -85,5 +85,40 @@ qr-open-map = Open Map
 qr-add-contact = Add Contact
 qr-add-event = Add Event
 
+# Exposure controls
+exposure-mode = Mode
+exposure-ev = EV
+exposure-time = Time
+exposure-gain = Gain
+exposure-iso = ISO
+exposure-metering = Metering
+exposure-auto-priority = Frame Rate
+exposure-no-controls = No exposure controls available
+exposure-title = Exposure
+exposure-reset = Reset
+exposure-backlight = Backlight
+exposure-manual-mode = Manual
+exposure-auto-mode = Auto
+exposure-not-supported = unsupported
+
+# Color controls
+color-title = Color
+color-contrast = Contrast
+color-saturation = Saturation
+color-sharpness = Sharpness
+color-hue = Hue
+color-white-balance = White Balance
+color-temperature = Temp
+color-auto = Auto
+color-manual = Manual
+
+# Tools menu
+tools-timer = Timer
+tools-aspect = Aspect
+tools-exposure = Exposure
+tools-color = Color
+tools-filter = Filter
+tools-theatre = Theatre
+
 # About page
 about-support = Support & Feedback
