@@ -232,11 +232,33 @@ impl TheatreState {
     }
 
     /// Show UI (on interaction)
-    pub fn show_ui(&mut self) {
-        if self.enabled {
-            self.ui_visible = true;
-            self.last_interaction = Some(Instant::now());
+    ///
+    /// Returns `true` if a new hide timer should be scheduled (UI was hidden or
+    /// interaction time was stale). Returns `false` if interaction was too recent
+    /// to warrant a new timer (debouncing).
+    pub fn show_ui(&mut self) -> bool {
+        if !self.enabled {
+            return false;
         }
+
+        let now = Instant::now();
+
+        // Debounce: if UI is already visible and last interaction was very recent,
+        // skip the state update entirely to avoid unnecessary re-renders
+        if self.ui_visible {
+            if let Some(last) = self.last_interaction {
+                if now.duration_since(last) < std::time::Duration::from_millis(100) {
+                    return false;
+                }
+            }
+        }
+
+        // UI was hidden, or enough time has passed - update state
+        self.ui_visible = true;
+        self.last_interaction = Some(now);
+
+        // Spawn a new hide timer to reset the countdown
+        true
     }
 
     /// Try to hide UI (only if enough time has passed)

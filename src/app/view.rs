@@ -18,7 +18,7 @@ use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
-use tracing::info;
+use tracing::debug;
 
 /// Flash icon SVG (lightning bolt)
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
@@ -219,7 +219,7 @@ impl AppModel {
         // Build content based on theatre mode
         let content: Element<'_, Message> = if self.theatre.enabled {
             // Theatre mode - camera preview as full background with UI overlaid
-            info!(
+            debug!(
                 "Building theatre mode layout (UI visible: {})",
                 self.theatre.ui_visible
             );

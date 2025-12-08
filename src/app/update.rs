@@ -212,10 +212,9 @@ impl AppModel {
     }
 
     fn handle_theatre_show_ui(&mut self) -> Task<cosmic::Action<Message>> {
-        if self.theatre.enabled {
-            info!("Theatre mode: showing UI");
-            self.theatre.show_ui();
-
+        // show_ui() returns true only if state changed (debounces rapid mouse moves)
+        if self.theatre.show_ui() {
+            tracing::debug!("Theatre mode: showing UI");
             return Task::perform(
                 async {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
