@@ -3,6 +3,7 @@
 //! Recording and streaming UI components (indicator and timer)
 
 use crate::app::state::{AppModel, CameraMode, FileSource, Message};
+use crate::app::view::overlay_container_style;
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -55,7 +56,12 @@ impl AppModel {
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
 
-        Some(row.into())
+        Some(
+            widget::container(row)
+                .padding([4, 8])
+                .style(overlay_container_style)
+                .into(),
+        )
     }
 
     /// Build the virtual camera streaming indicator widget
@@ -76,7 +82,12 @@ impl AppModel {
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
 
-        Some(row.into())
+        Some(
+            widget::container(row)
+                .padding([4, 8])
+                .style(overlay_container_style)
+                .into(),
+        )
     }
 
     /// Build a full-width video progress bar for video file streaming
