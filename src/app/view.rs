@@ -744,17 +744,21 @@ impl AppModel {
                 timer_active,
             ));
 
-            // Aspect ratio button (Photo mode only)
+            // Aspect ratio button (Photo mode only, disabled in theatre mode)
+            // Theatre mode always uses native resolution, so aspect ratio control is disabled
             let aspect_active = self.is_aspect_ratio_changed();
+            let aspect_enabled = !self.theatre.enabled;
             let native_ratio = self.current_frame.as_ref().and_then(|f| {
                 crate::app::state::PhotoAspectRatio::from_frame_dimensions(f.width, f.height)
             });
-            let effective_ratio =
-                if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-                    native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
-                } else {
-                    self.photo_aspect_ratio
-                };
+            // In theatre mode, always show native icon since aspect ratio is ignored
+            let effective_ratio = if self.theatre.enabled {
+                crate::app::state::PhotoAspectRatio::Native
+            } else if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
+                native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
+            } else {
+                self.photo_aspect_ratio
+            };
             let aspect_icon_bytes = match effective_ratio {
                 crate::app::state::PhotoAspectRatio::Native => ASPECT_NATIVE_ICON,
                 crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
@@ -762,11 +766,12 @@ impl AppModel {
                 crate::app::state::PhotoAspectRatio::Ratio1x1 => ASPECT_1_1_ICON,
             };
             let aspect_icon = widget::icon::from_svg_bytes(aspect_icon_bytes).symbolic(true);
-            buttons.push(self.build_tools_grid_button(
+            buttons.push(self.build_tools_grid_button_with_enabled(
                 aspect_icon,
                 fl!("tools-aspect"),
                 Message::CyclePhotoAspectRatio,
-                aspect_active,
+                aspect_active && aspect_enabled, // Only show as active if enabled and changed
+                aspect_enabled,
             ));
         }
 
@@ -883,15 +888,31 @@ impl AppModel {
         message: Message,
         is_active: bool,
     ) -> Element<'a, Message> {
+        self.build_tools_grid_button_with_enabled(icon_handle, label, message, is_active, true)
+    }
+
+    /// Build a grid button with large icon and text label below, with optional enabled state
+    fn build_tools_grid_button_with_enabled<'a>(
+        &self,
+        icon_handle: impl Into<widget::icon::Handle>,
+        label: String,
+        message: Message,
+        is_active: bool,
+        enabled: bool,
+    ) -> Element<'a, Message> {
         // Icon button with appropriate styling
-        let button = widget::button::custom(widget::icon(icon_handle.into()).size(32))
-            .on_press(message)
+        let mut button = widget::button::custom(widget::icon(icon_handle.into()).size(32))
             .class(if is_active {
                 cosmic::theme::Button::Suggested
             } else {
                 cosmic::theme::Button::Text
             })
             .padding(12);
+
+        // Only add on_press handler if enabled
+        if enabled {
+            button = button.on_press(message);
+        }
 
         // Wrap inactive buttons in a container with visible background
         let button_element: Element<'_, Message> = if is_active {

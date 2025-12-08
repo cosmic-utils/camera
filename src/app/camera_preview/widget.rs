@@ -79,9 +79,10 @@ impl AppModel {
             // Use the flag that tracks if the current frame is actually from a file source
             let should_mirror = self.config.mirror_preview && !self.current_frame_is_file_source;
 
-            // Calculate crop UV for aspect ratio (only in Photo mode)
+            // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)
+            // Theatre mode always uses native resolution for full-screen display
             let crop_uv = match self.mode {
-                crate::app::state::CameraMode::Photo => {
+                crate::app::state::CameraMode::Photo if !self.theatre.enabled => {
                     self.photo_aspect_ratio.crop_uv(frame.width, frame.height)
                 }
                 _ => None,
