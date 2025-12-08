@@ -384,6 +384,8 @@ pub struct AppModel {
     pub theme_dropdown_options: Vec<String>,
     /// Whether the bitrate info matrix is visible
     pub bitrate_info_visible: bool,
+    /// Whether the device info panel is visible
+    pub device_info_visible: bool,
 
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
@@ -683,6 +685,8 @@ pub enum Message {
     TheatreHideUI,
     /// Toggle bitrate info matrix visibility
     ToggleBitrateInfo,
+    /// Toggle device info panel visibility
+    ToggleDeviceInfo,
 
     // ===== Camera Control =====
     /// Switch to next camera

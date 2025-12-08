@@ -5,7 +5,7 @@
 //! This module provides camera discovery and format enumeration using PipeWire.
 //! PipeWire handles all camera access, format negotiation, and decoding internally.
 
-use super::super::types::{CameraDevice, CameraFormat};
+use super::super::types::{CameraDevice, CameraFormat, DeviceInfo};
 use crate::constants::formats;
 use tracing::{debug, info, warn};
 
@@ -48,6 +48,7 @@ pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
         name: "Default Camera (PipeWire)".to_string(),
         path: String::new(), // Empty path = PipeWire auto-selects
         metadata_path: None,
+        device_info: None,
     }])
 }
 
@@ -70,6 +71,8 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
     let mut current_id: Option<String> = None;
     let mut current_serial: Option<String> = None;
     let mut current_name: Option<String> = None;
+    let mut current_nick: Option<String> = None;
+    let mut current_object_path: Option<String> = None;
     let mut is_video_source = false;
 
     for line in stdout.lines() {
@@ -90,11 +93,19 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
                         } else {
                             format!("pipewire-{}", id)
                         };
+
+                        // Build device info from captured properties
+                        let device_info = build_device_info(
+                            current_nick.as_deref(),
+                            current_object_path.as_deref(),
+                        );
+
                         debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera");
                         cameras.push(CameraDevice {
                             name: name.clone(),
                             path,
                             metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                            device_info,
                         });
                     }
                 }
@@ -107,6 +118,8 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
                     current_id = Some(id_clean.to_string());
                     current_serial = None;
                     current_name = None;
+                    current_nick = None;
+                    current_object_path = None;
                     is_video_source = false;
                 }
             }
@@ -121,24 +134,36 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
         // Look for object.serial for PipeWire target-object property
         // Format: object.serial = "2146"
         if trimmed.contains("object.serial") {
-            if let Some(serial_start) = trimmed.find('"') {
-                if let Some(serial_end) = trimmed[serial_start + 1..].find('"') {
-                    let serial = &trimmed[serial_start + 1..serial_start + 1 + serial_end];
-                    current_serial = Some(serial.to_string());
-                    debug!(serial = %serial, "Found object.serial");
-                }
+            if let Some(value) = extract_quoted_value(trimmed) {
+                current_serial = Some(value);
+                debug!(serial = %current_serial.as_ref().unwrap(), "Found object.serial");
+            }
+        }
+
+        // Look for object.path for V4L2 device path
+        // Format: object.path = "v4l2:/dev/video0"
+        if trimmed.contains("object.path") {
+            if let Some(value) = extract_quoted_value(trimmed) {
+                current_object_path = Some(value);
+                debug!(object_path = %current_object_path.as_ref().unwrap(), "Found object.path");
+            }
+        }
+
+        // Look for node.nick for card name
+        // Format: node.nick = "Laptop Webcam Module (2nd Gen)"
+        if trimmed.contains("node.nick") {
+            if let Some(value) = extract_quoted_value(trimmed) {
+                current_nick = Some(value);
+                debug!(nick = %current_nick.as_ref().unwrap(), "Found node.nick");
             }
         }
 
         // Look for node.description for camera name
         // Format: node.description = "Laptop Webcam Module (2nd Gen) (V4L2)"
         if trimmed.contains("node.description") {
-            if let Some(desc_start) = trimmed.find('"') {
-                if let Some(desc_end) = trimmed[desc_start + 1..].find('"') {
-                    let name = &trimmed[desc_start + 1..desc_start + 1 + desc_end];
-                    current_name = Some(name.to_string());
-                    debug!(name = %name, "Found node description");
-                }
+            if let Some(value) = extract_quoted_value(trimmed) {
+                current_name = Some(value);
+                debug!(name = %current_name.as_ref().unwrap(), "Found node description");
             }
         }
     }
@@ -155,11 +180,17 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
                 } else {
                     format!("pipewire-{}", id)
                 };
+
+                // Build device info from captured properties
+                let device_info =
+                    build_device_info(current_nick.as_deref(), current_object_path.as_deref());
+
                 debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera (last)");
                 cameras.push(CameraDevice {
                     name: name.clone(),
                     path,
                     metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                    device_info,
                 });
             }
         }
@@ -172,6 +203,89 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
         info!(count = cameras.len(), "Enumerated cameras via pw-cli");
         Some(cameras)
     }
+}
+
+/// Extract quoted value from a property line (e.g., 'property = "value"' -> "value")
+fn extract_quoted_value(line: &str) -> Option<String> {
+    let start = line.find('"')?;
+    let end = line[start + 1..].find('"')?;
+    Some(line[start + 1..start + 1 + end].to_string())
+}
+
+/// Build DeviceInfo from PipeWire properties and V4L2 device info
+fn build_device_info(nick: Option<&str>, object_path: Option<&str>) -> Option<DeviceInfo> {
+    // Extract V4L2 device path from object.path (format: "v4l2:/dev/video0")
+    let v4l2_path = object_path.and_then(|p| p.strip_prefix("v4l2:"));
+
+    let v4l2_path = match v4l2_path {
+        Some(p) => p.to_string(),
+        None => return None,
+    };
+
+    // Get real path by resolving symlinks
+    let real_path = std::fs::canonicalize(&v4l2_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| v4l2_path.clone());
+
+    // Get driver name using V4L2 ioctl
+    let driver = get_v4l2_driver(&v4l2_path).unwrap_or_default();
+
+    // Use node.nick as the card name, fallback to empty
+    let card = nick.unwrap_or_default().to_string();
+
+    Some(DeviceInfo {
+        card,
+        driver,
+        path: v4l2_path,
+        real_path,
+    })
+}
+
+/// Get V4L2 driver name using ioctl
+fn get_v4l2_driver(device_path: &str) -> Option<String> {
+    use std::os::unix::io::AsRawFd;
+
+    // VIDIOC_QUERYCAP ioctl number
+    const VIDIOC_QUERYCAP: libc::c_ulong = 0x80685600;
+
+    // V4L2 capability structure (simplified - we only need driver field)
+    #[repr(C)]
+    struct V4l2Capability {
+        driver: [u8; 16],
+        card: [u8; 32],
+        bus_info: [u8; 32],
+        version: u32,
+        capabilities: u32,
+        device_caps: u32,
+        reserved: [u32; 3],
+    }
+
+    let file = std::fs::File::open(device_path).ok()?;
+    let fd = file.as_raw_fd();
+
+    let mut cap = V4l2Capability {
+        driver: [0; 16],
+        card: [0; 32],
+        bus_info: [0; 32],
+        version: 0,
+        capabilities: 0,
+        device_caps: 0,
+        reserved: [0; 3],
+    };
+
+    let result = unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut cap as *mut V4l2Capability) };
+
+    if result < 0 {
+        debug!(device_path, "Failed to query V4L2 capability");
+        return None;
+    }
+
+    // Convert driver name from null-terminated bytes to String
+    let driver_len = cap.driver.iter().position(|&c| c == 0).unwrap_or(16);
+    let driver = String::from_utf8_lossy(&cap.driver[..driver_len]).to_string();
+
+    debug!(device_path, driver = %driver, "Got V4L2 driver name");
+    Some(driver)
 }
 
 /// Try to enumerate cameras using pactl command (PipeWire)
@@ -200,6 +314,7 @@ fn try_enumerate_with_pactl() -> Option<Vec<CameraDevice>> {
                     name: name.trim().to_string(),
                     path: name.trim().to_string(),
                     metadata_path: None,
+                    device_info: None,
                 });
             }
         }

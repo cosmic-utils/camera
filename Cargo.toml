@@ -37,6 +37,7 @@ uuid = { version = "1.19.0", features = ["v4"] }
 clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.29"
 crossterm = "0.29"
+libc = "0.2"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

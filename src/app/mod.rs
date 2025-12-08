@@ -278,6 +278,7 @@ impl cosmic::Application for AppModel {
                 .collect(),
             theme_dropdown_options: vec![fl!("match-desktop"), fl!("dark"), fl!("light")],
             bitrate_info_visible: false,
+            device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
             qr_detection_enabled: true,
@@ -589,6 +590,9 @@ impl cosmic::Application for AppModel {
                                 metadata_path: current_camera
                                     .as_ref()
                                     .and_then(|c| c.metadata_path.clone()),
+                                device_info: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.device_info.clone()),
                             };
 
                             let format = CameraFormat {

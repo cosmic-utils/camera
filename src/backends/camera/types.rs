@@ -27,12 +27,26 @@ impl std::fmt::Display for CameraBackendType {
     }
 }
 
+/// Device information from V4L2 capability
+#[derive(Debug, Clone, Default)]
+pub struct DeviceInfo {
+    /// Name of the device (V4L2 card)
+    pub card: String,
+    /// Driver name (V4L2 driver)
+    pub driver: String,
+    /// Device path (e.g., /dev/video0)
+    pub path: String,
+    /// Real device path (resolved symlinks)
+    pub real_path: String,
+}
+
 /// Represents a camera device
 #[derive(Debug, Clone)]
 pub struct CameraDevice {
     pub name: String,
-    pub path: String,                  // Path to capture device (pipewire node ID)
-    pub metadata_path: Option<String>, // Path to metadata/control device or node ID
+    pub path: String,                    // Path to capture device (pipewire node ID)
+    pub metadata_path: Option<String>,   // Path to metadata/control device or node ID
+    pub device_info: Option<DeviceInfo>, // V4L2 device information (card, driver, path, real_path)
 }
 
 /// Camera format specification

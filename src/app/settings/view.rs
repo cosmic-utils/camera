@@ -8,8 +8,9 @@ use crate::constants::{BitratePreset, ResolutionTier, format_bitrate};
 use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
-use cosmic::iced::Length;
+use cosmic::iced::{Alignment, Length};
 use cosmic::widget;
+use cosmic::widget::icon;
 
 impl AppModel {
     /// Create the settings view for the context drawer
@@ -53,22 +54,42 @@ impl AppModel {
             );
 
         // Camera section
-        let camera_section = widget::settings::section()
-            .title(fl!("settings-camera"))
-            .add(
-                widget::settings::item::builder(fl!("settings-device")).control(widget::dropdown(
-                    &self.camera_dropdown_options,
-                    Some(self.current_camera_index),
-                    Message::SelectCamera,
-                )),
+        // Custom device row with label, info button, and dropdown
+        let device_label_with_info = widget::row()
+            .push(widget::text::body(fl!("settings-device")))
+            .push(widget::horizontal_space().width(Length::Fixed(4.0)))
+            .push(
+                widget::button::icon(icon::from_name("dialog-information-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::ToggleDeviceInfo),
             )
-            .add(
-                widget::settings::item::builder(fl!("settings-format")).control(widget::dropdown(
-                    &self.mode_dropdown_options,
-                    current_mode_index,
-                    Message::SelectMode,
-                )),
-            );
+            .push(widget::horizontal_space())
+            .push(widget::dropdown(
+                &self.camera_dropdown_options,
+                Some(self.current_camera_index),
+                Message::SelectCamera,
+            ))
+            .align_y(Alignment::Center)
+            .width(Length::Fill);
+
+        let mut camera_section = widget::settings::section()
+            .title(fl!("settings-camera"))
+            .add(widget::settings::item_row(vec![
+                device_label_with_info.into(),
+            ]));
+
+        // Add device info panel if visible
+        if self.device_info_visible {
+            camera_section = camera_section.add(self.build_device_info_panel());
+        }
+
+        camera_section = camera_section.add(
+            widget::settings::item::builder(fl!("settings-format")).control(widget::dropdown(
+                &self.mode_dropdown_options,
+                current_mode_index,
+                Message::SelectMode,
+            )),
+        );
 
         // Video section
         let video_section = widget::settings::section()
@@ -245,6 +266,85 @@ impl AppModel {
 
         // Wrap in a container with subtle background
         widget::container(table_column)
+            .padding(8)
+            .class(cosmic::theme::Container::Card)
+            .into()
+    }
+
+    /// Build the device info panel (shown when info button is clicked)
+    fn build_device_info_panel(&self) -> Element<'_, Message> {
+        // Get device info from current camera
+        let device_info = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .and_then(|c| c.device_info.as_ref());
+
+        let mut info_column = widget::column().spacing(4);
+
+        if let Some(info) = device_info {
+            // Card (device name)
+            if !info.card.is_empty() {
+                info_column = info_column.push(
+                    widget::row()
+                        .push(
+                            widget::text(fl!("device-info-card"))
+                                .size(12)
+                                .font(cosmic::font::bold()),
+                        )
+                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                        .push(widget::text(&info.card).size(12)),
+                );
+            }
+
+            // Driver
+            if !info.driver.is_empty() {
+                info_column = info_column.push(
+                    widget::row()
+                        .push(
+                            widget::text(fl!("device-info-driver"))
+                                .size(12)
+                                .font(cosmic::font::bold()),
+                        )
+                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                        .push(widget::text(&info.driver).size(12)),
+                );
+            }
+
+            // Path
+            if !info.path.is_empty() {
+                info_column = info_column.push(
+                    widget::row()
+                        .push(
+                            widget::text(fl!("device-info-path"))
+                                .size(12)
+                                .font(cosmic::font::bold()),
+                        )
+                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                        .push(widget::text(&info.path).size(12)),
+                );
+            }
+
+            // Real Path (only show if different from path)
+            if !info.real_path.is_empty() && info.real_path != info.path {
+                info_column = info_column.push(
+                    widget::row()
+                        .push(
+                            widget::text(fl!("device-info-real-path"))
+                                .size(12)
+                                .font(cosmic::font::bold()),
+                        )
+                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                        .push(widget::text(&info.real_path).size(12)),
+                );
+            }
+        } else {
+            // No device info available
+            info_column =
+                info_column.push(widget::text("No device information available").size(12));
+        }
+
+        // Wrap in a container with card styling
+        widget::container(info_column)
             .padding(8)
             .class(cosmic::theme::Container::Card)
             .into()

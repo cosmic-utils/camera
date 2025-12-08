@@ -48,6 +48,12 @@ settings-resolution = Resolution
 settings-version = Version { $version }
 settings-version-flatpak = Version { $version } (Flatpak)
 
+# Device info
+device-info-card = Card
+device-info-driver = Driver
+device-info-path = Path
+device-info-real-path = Real Path
+
 # Bitrate presets
 preset-low = Low
 preset-medium = Medium

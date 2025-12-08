@@ -26,6 +26,7 @@ impl AppModel {
             name: camera.name.clone(),
             path: camera_path.clone(),
             metadata_path: camera.metadata_path.clone(),
+            device_info: camera.device_info.clone(),
         };
         let formats_for_new_mode = backend.get_formats(&device, new_mode == CameraMode::Video);
 
@@ -236,6 +237,7 @@ impl AppModel {
             name: camera.name.clone(),
             path: camera_path.clone(),
             metadata_path: camera.metadata_path.clone(),
+            device_info: camera.device_info.clone(),
         };
         self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
 

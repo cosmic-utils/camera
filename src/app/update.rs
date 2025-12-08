@@ -43,6 +43,7 @@ impl AppModel {
             Message::TheatreShowUI => self.handle_theatre_show_ui(),
             Message::TheatreHideUI => self.handle_theatre_hide_ui(),
             Message::ToggleBitrateInfo => self.handle_toggle_bitrate_info(),
+            Message::ToggleDeviceInfo => self.handle_toggle_device_info(),
 
             // ===== Camera Control =====
             Message::SwitchCamera => self.handle_switch_camera(),
@@ -243,6 +244,12 @@ impl AppModel {
     fn handle_toggle_bitrate_info(&mut self) -> Task<cosmic::Action<Message>> {
         self.bitrate_info_visible = !self.bitrate_info_visible;
         info!(visible = self.bitrate_info_visible, "Bitrate info toggled");
+        Task::none()
+    }
+
+    fn handle_toggle_device_info(&mut self) -> Task<cosmic::Action<Message>> {
+        self.device_info_visible = !self.device_info_visible;
+        info!(visible = self.device_info_visible, "Device info toggled");
         Task::none()
     }
 
