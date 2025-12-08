@@ -24,6 +24,14 @@ use tracing::debug;
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
 /// Flash off icon SVG (lightning bolt with strike-through)
 const FLASH_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash-off.svg");
+/// Timer off icon SVG (stopwatch with clock hand)
+const TIMER_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-off.svg");
+/// Timer 3s icon SVG (stopwatch with "3")
+const TIMER_3_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-3.svg");
+/// Timer 5s icon SVG (stopwatch with "5")
+const TIMER_5_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-5.svg");
+/// Timer 10s icon SVG (stopwatch with "10")
+const TIMER_10_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-10.svg");
 
 /// Create a container style with semi-transparent themed background for overlay elements
 ///
@@ -115,6 +123,61 @@ impl AppModel {
                 ..Default::default()
             })
             .into();
+        }
+
+        // Timer countdown mode - show only preview with countdown overlay and capture button
+        if let Some(remaining) = self.photo_timer_countdown {
+            // Calculate fade opacity based on elapsed time since tick start
+            // Opacity starts at 1.0 and fades to 0.0 over the second
+            let opacity = if let Some(tick_start) = self.photo_timer_tick_start {
+                let elapsed_ms = tick_start.elapsed().as_millis() as f32;
+                // Fade out over 900ms (leave 100ms fully transparent before next number)
+                (1.0 - (elapsed_ms / 900.0)).max(0.0)
+            } else {
+                1.0
+            };
+
+            // Large countdown number with fade effect
+            let countdown_text = widget::container(
+                widget::text(remaining.to_string())
+                    .size(400) // Very large to fill preview
+                    .font(cosmic::font::bold()),
+            )
+            .style(move |_theme| widget::container::Style {
+                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, opacity)),
+                ..Default::default()
+            });
+
+            let countdown_overlay = widget::container(countdown_text)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(cosmic::iced::alignment::Vertical::Center);
+
+            // Capture button (acts as abort during countdown)
+            let capture_button = self.build_capture_button();
+            let capture_area = widget::container(capture_button)
+                .width(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center);
+
+            let content = widget::column()
+                .push(
+                    cosmic::iced::widget::stack![camera_preview, countdown_overlay]
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .push(capture_area)
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+            return widget::container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme| widget::container::Style {
+                    background: Some(Background::Color(theme.cosmic().bg_color().into())),
+                    ..Default::default()
+                })
+                .into();
         }
 
         // Build top bar
@@ -405,6 +468,37 @@ impl AppModel {
                         flash_icon,
                         Some(Message::ToggleFlash),
                         self.flash_enabled,
+                    ));
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+
+                // Timer toggle button (Photo mode only)
+                let timer_active =
+                    self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
+                let timer_icon_bytes = match self.photo_timer_setting {
+                    crate::app::state::PhotoTimerSetting::Off => TIMER_OFF_ICON,
+                    crate::app::state::PhotoTimerSetting::Sec3 => TIMER_3_ICON,
+                    crate::app::state::PhotoTimerSetting::Sec5 => TIMER_5_ICON,
+                    crate::app::state::PhotoTimerSetting::Sec10 => TIMER_10_ICON,
+                };
+                let timer_icon = widget::icon::from_svg_bytes(timer_icon_bytes).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(timer_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(overlay_icon_button(
+                        timer_icon,
+                        Some(Message::CyclePhotoTimer),
+                        timer_active,
                     ));
                 }
 

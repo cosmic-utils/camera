@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Stopwatch icon - 10 second timer -->
+  <!-- Top button -->
+  <rect x="10" y="1" width="4" height="3" rx="1" fill="#FFFFFF"/>
+  <!-- Button stem -->
+  <rect x="11" y="3" width="2" height="2" fill="#FFFFFF"/>
+  <!-- Clock face (circle) -->
+  <circle cx="12" cy="13" r="8" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+  <!-- Number 1 - left side -->
+  <rect x="8" y="9" width="1.5" height="7.5" fill="#FFFFFF"/>
+  <!-- Number 0 - right side (hollow rectangle) -->
+  <rect x="11" y="9" width="5" height="1.5" fill="#FFFFFF"/>
+  <rect x="11" y="9" width="1.5" height="7.5" fill="#FFFFFF"/>
+  <rect x="14.5" y="9" width="1.5" height="7.5" fill="#FFFFFF"/>
+  <rect x="11" y="15" width="5" height="1.5" fill="#FFFFFF"/>
+</svg>

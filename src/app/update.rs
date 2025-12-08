@@ -72,6 +72,10 @@ impl AppModel {
             Message::Capture => self.handle_capture(),
             Message::ToggleFlash => self.handle_toggle_flash(),
             Message::FlashComplete => self.handle_flash_complete(),
+            Message::CyclePhotoTimer => self.handle_cycle_photo_timer(),
+            Message::PhotoTimerTick => self.handle_photo_timer_tick(),
+            Message::PhotoTimerAnimationFrame => Task::none(), // Just triggers view refresh
+            Message::AbortPhotoTimer => self.handle_abort_photo_timer(),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),
@@ -789,6 +793,23 @@ impl AppModel {
     }
 
     fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
+        // If timer countdown is active, abort it
+        if self.photo_timer_countdown.is_some() {
+            return self.handle_abort_photo_timer();
+        }
+
+        // In Photo mode with timer set, start countdown
+        if self.mode == CameraMode::Photo
+            && self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off
+        {
+            let seconds = self.photo_timer_setting.seconds();
+            info!(seconds, "Starting photo timer countdown");
+            self.photo_timer_countdown = Some(seconds);
+            self.photo_timer_tick_start = Some(std::time::Instant::now());
+            return Self::delay_task(1000, Message::PhotoTimerTick);
+        }
+
+        // Normal capture flow (with flash check)
         if self.mode == CameraMode::Photo && self.flash_enabled && !self.flash_active {
             info!("Flash enabled - showing flash before capture");
             self.flash_active = true;
@@ -807,6 +828,49 @@ impl AppModel {
         info!("Flash complete - capturing photo");
         self.flash_active = false;
         self.capture_photo()
+    }
+
+    fn handle_cycle_photo_timer(&mut self) -> Task<cosmic::Action<Message>> {
+        self.photo_timer_setting = self.photo_timer_setting.next();
+        info!(
+            timer = ?self.photo_timer_setting,
+            "Photo timer setting changed"
+        );
+        Task::none()
+    }
+
+    fn handle_photo_timer_tick(&mut self) -> Task<cosmic::Action<Message>> {
+        if let Some(remaining) = self.photo_timer_countdown {
+            if remaining <= 1 {
+                // Countdown complete - capture the photo
+                info!("Photo timer countdown complete - capturing");
+                self.photo_timer_countdown = None;
+                self.photo_timer_tick_start = None;
+                // Check if flash is enabled
+                if self.flash_enabled && !self.flash_active {
+                    info!("Flash enabled - showing flash before capture");
+                    self.flash_active = true;
+                    return Self::delay_task(1000, Message::FlashComplete);
+                }
+                return self.capture_photo();
+            } else {
+                // Continue countdown
+                self.photo_timer_countdown = Some(remaining - 1);
+                self.photo_timer_tick_start = Some(std::time::Instant::now());
+                info!(remaining = remaining - 1, "Photo timer tick");
+                return Self::delay_task(1000, Message::PhotoTimerTick);
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_abort_photo_timer(&mut self) -> Task<cosmic::Action<Message>> {
+        if self.photo_timer_countdown.is_some() {
+            info!("Photo timer countdown aborted");
+            self.photo_timer_countdown = None;
+            self.photo_timer_tick_start = None;
+        }
+        Task::none()
     }
 
     fn handle_photo_saved(

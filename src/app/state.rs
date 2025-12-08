@@ -327,6 +327,12 @@ pub struct AppModel {
     pub flash_enabled: bool,
     /// Flash is currently active (showing white overlay)
     pub flash_active: bool,
+    /// Photo timer setting (off, 3s, 5s, 10s)
+    pub photo_timer_setting: PhotoTimerSetting,
+    /// Photo timer countdown (remaining seconds, None when not counting)
+    pub photo_timer_countdown: Option<u8>,
+    /// When the current countdown second started (for fade animation)
+    pub photo_timer_tick_start: Option<Instant>,
     /// Path to last generated bug report
     pub last_bug_report_path: Option<String>,
     /// Latest gallery thumbnail (cached)
@@ -439,6 +445,42 @@ pub enum VideoPlaybackCommand {
     TogglePause,
     /// Set paused state explicitly
     SetPaused(bool),
+}
+
+/// Photo timer settings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PhotoTimerSetting {
+    /// No timer (immediate capture)
+    #[default]
+    Off,
+    /// 3 second countdown
+    Sec3,
+    /// 5 second countdown
+    Sec5,
+    /// 10 second countdown
+    Sec10,
+}
+
+impl PhotoTimerSetting {
+    /// Get the number of seconds for this setting
+    pub fn seconds(&self) -> u8 {
+        match self {
+            PhotoTimerSetting::Off => 0,
+            PhotoTimerSetting::Sec3 => 3,
+            PhotoTimerSetting::Sec5 => 5,
+            PhotoTimerSetting::Sec10 => 10,
+        }
+    }
+
+    /// Cycle to next setting: Off -> 3s -> 5s -> 10s -> Off
+    pub fn next(&self) -> Self {
+        match self {
+            PhotoTimerSetting::Off => PhotoTimerSetting::Sec3,
+            PhotoTimerSetting::Sec3 => PhotoTimerSetting::Sec5,
+            PhotoTimerSetting::Sec5 => PhotoTimerSetting::Sec10,
+            PhotoTimerSetting::Sec10 => PhotoTimerSetting::Off,
+        }
+    }
 }
 
 /// Filter types for camera preview
@@ -566,6 +608,14 @@ pub enum Message {
     ToggleFlash,
     /// Flash duration complete, now capture the photo
     FlashComplete,
+    /// Cycle photo timer setting (off -> 3s -> 5s -> 10s -> off)
+    CyclePhotoTimer,
+    /// Photo timer tick (countdown)
+    PhotoTimerTick,
+    /// Photo timer animation frame (for fade effect)
+    PhotoTimerAnimationFrame,
+    /// Abort photo timer countdown
+    AbortPhotoTimer,
     /// Photo was saved successfully with the given file path
     PhotoSaved(Result<String, String>),
     /// Clear capture animation after brief delay

@@ -54,8 +54,8 @@ use cosmic::iced::Subscription;
 use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
 pub use state::{
-    AppFlags, AppModel, CameraMode, ContextPage, FileSource, FilterType, Message, RecordingState,
-    TheatreState, VirtualCameraState,
+    AppFlags, AppModel, CameraMode, ContextPage, FileSource, FilterType, Message,
+    PhotoTimerSetting, RecordingState, TheatreState, VirtualCameraState,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -243,6 +243,9 @@ impl cosmic::Application for AppModel {
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
+            photo_timer_setting: PhotoTimerSetting::default(),
+            photo_timer_countdown: None,
+            photo_timer_tick_start: None,
             last_bug_report_path: None,
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,
@@ -857,12 +860,21 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        // Timer countdown animation subscription (30fps for smooth fade)
+        let timer_animation_sub = if self.photo_timer_countdown.is_some() {
+            cosmic::iced::time::every(std::time::Duration::from_millis(33))
+                .map(|_| Message::PhotoTimerAnimationFrame)
+        } else {
+            Subscription::none()
+        };
+
         Subscription::batch([
             config_sub,
             camera_sub,
             hotplug_sub,
             qr_detection_sub,
             file_source_preview_sub,
+            timer_animation_sub,
         ])
     }
 
