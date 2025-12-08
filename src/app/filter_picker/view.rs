@@ -33,19 +33,19 @@ impl AppModel {
         // Define available filters
         let filters: Vec<FilterType> = vec![
             FilterType::Standard,
+            FilterType::ChromaticAberration,
             FilterType::Vivid,
             FilterType::Warm,
             FilterType::Cool,
             FilterType::Mono,
-            FilterType::Sepia,
             FilterType::Noir,
+            FilterType::Sepia,
             FilterType::Fade,
             FilterType::Duotone,
             FilterType::Vignette,
             FilterType::Negative,
             FilterType::Posterize,
             FilterType::Solarize,
-            FilterType::ChromaticAberration,
             FilterType::Pencil,
         ];
 
