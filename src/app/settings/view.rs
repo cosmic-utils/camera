@@ -3,7 +3,7 @@
 //! Settings drawer view
 
 use crate::app::state::{AppModel, Message};
-use crate::config::AppTheme;
+use crate::config::{AppTheme, PhotoOutputFormat};
 use crate::constants::BitratePreset;
 use crate::fl;
 use cosmic::Element;
@@ -118,6 +118,50 @@ impl AppModel {
                 ),
             );
 
+        // Photo section (output format and HDR+ settings)
+        use crate::config::BurstModeSetting;
+        // Index 0 = Off, 1 = Auto, 2 = 4 frames, 3 = 6 frames, 4 = 8 frames, 5 = 50 frames
+        let current_hdr_index = match self.config.burst_mode_setting {
+            BurstModeSetting::Off => 0,
+            BurstModeSetting::Auto => 1,
+            BurstModeSetting::Frames4 => 2,
+            BurstModeSetting::Frames6 => 3,
+            BurstModeSetting::Frames8 => 4,
+            BurstModeSetting::Frames50 => 5,
+        };
+
+        // Photo output format index
+        let current_photo_format_index = PhotoOutputFormat::ALL
+            .iter()
+            .position(|f| *f == self.config.photo_output_format)
+            .unwrap_or(0); // Default to JPEG (index 0)
+
+        let photo_section = widget::settings::section()
+            .title(fl!("settings-photo"))
+            .add(
+                widget::settings::item::builder(fl!("settings-photo-format"))
+                    .description(fl!("settings-photo-format-description"))
+                    .control(widget::dropdown(
+                        &self.photo_output_format_dropdown_options,
+                        Some(current_photo_format_index),
+                        Message::SelectPhotoOutputFormat,
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-hdr-plus"))
+                    .description(fl!("settings-hdr-plus-description"))
+                    .control(widget::dropdown(
+                        &self.burst_mode_frame_count_dropdown_options,
+                        Some(current_hdr_index),
+                        Message::SetBurstModeFrameCount,
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-save-burst-raw"))
+                    .description(fl!("settings-save-burst-raw-description"))
+                    .toggler(self.config.save_burst_raw, |_| Message::ToggleSaveBurstRaw),
+            );
+
         // Mirror preview section
         let mirror_section = widget::settings::section().add(
             widget::settings::item::builder(fl!("settings-mirror-preview"))
@@ -159,6 +203,7 @@ impl AppModel {
         let sections = vec![
             appearance_section.into(),
             camera_section.into(),
+            photo_section.into(),
             video_section.into(),
             mirror_section.into(),
             virtual_camera_section.into(),

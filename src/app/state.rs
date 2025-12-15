@@ -279,6 +279,223 @@ impl TheatreState {
     }
 }
 
+/// Burst mode state for multi-frame burst capture
+///
+/// Tracks the state of burst mode photo capture and processing.
+/// Encapsulates all burst mode related state including the async processing
+/// communication primitives.
+#[derive(Debug)]
+pub struct BurstModeState {
+    /// Whether night mode is enabled
+    pub enabled: bool,
+    /// Current processing stage
+    pub stage: BurstModeStage,
+    /// Progress during Processing stage (0.0 - 1.0)
+    /// During Capturing, progress is derived from frame_buffer.len()
+    pub processing_progress: f32,
+    /// Frame buffer for collecting burst frames (private - use add_frame/take_frames)
+    frame_buffer: Vec<Arc<CameraFrame>>,
+    /// Target frame count for current capture (set from config at capture start)
+    pub target_frame_count: usize,
+    /// Shared atomic for processing progress updates (progress * 1000 for 0.1% precision)
+    /// Only present during Processing stage
+    progress_atomic: Option<Arc<std::sync::atomic::AtomicU32>>,
+    /// Channel receiver for processing result
+    /// Only present during Processing stage
+    result_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+}
+
+/// Burst mode processing stages
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BurstModeStage {
+    /// Waiting to start
+    #[default]
+    Idle,
+    /// Capturing burst frames
+    Capturing,
+    /// Processing frames (aligning, merging, tone mapping)
+    Processing,
+    /// Processing complete
+    Complete,
+    /// Error occurred
+    Error,
+}
+
+impl BurstModeState {
+    /// Toggle night mode enabled state, returns new state
+    pub fn toggle_enabled(&mut self) -> bool {
+        self.enabled = !self.enabled;
+        self.enabled
+    }
+
+    /// Add a frame to the capture buffer
+    ///
+    /// Returns `true` if the target frame count has been reached.
+    pub fn add_frame(&mut self, frame: Arc<CameraFrame>) -> bool {
+        self.frame_buffer.push(frame);
+        self.frame_buffer.len() >= self.target_frame_count
+    }
+
+    /// Take all frames from the buffer, leaving it empty
+    pub fn take_frames(&mut self) -> Vec<Arc<CameraFrame>> {
+        std::mem::take(&mut self.frame_buffer)
+    }
+
+    /// Check if capture/processing is in progress
+    pub fn is_active(&self) -> bool {
+        matches!(
+            self.stage,
+            BurstModeStage::Capturing | BurstModeStage::Processing
+        )
+    }
+
+    /// Check if we're actively collecting frames (derived from stage)
+    pub fn is_collecting_frames(&self) -> bool {
+        self.stage == BurstModeStage::Capturing
+    }
+
+    /// Number of frames captured so far (derived from buffer)
+    pub fn frames_captured(&self) -> usize {
+        self.frame_buffer.len()
+    }
+
+    /// Get current progress (0.0 - 1.0)
+    ///
+    /// During Capturing: derived from frame_buffer.len() / target_frame_count
+    /// During Processing: from processing_progress field
+    /// Complete: 1.0
+    /// Other stages: 0.0
+    pub fn progress(&self) -> f32 {
+        match self.stage {
+            BurstModeStage::Capturing => {
+                if self.target_frame_count == 0 {
+                    0.0
+                } else {
+                    self.frame_buffer.len() as f32 / self.target_frame_count as f32
+                }
+            }
+            BurstModeStage::Processing => self.processing_progress,
+            BurstModeStage::Complete => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Start capture - clears buffer and sets state to Capturing
+    pub fn start_capture(&mut self, target_frame_count: usize) {
+        self.frame_buffer.clear();
+        self.stage = BurstModeStage::Capturing;
+        self.processing_progress = 0.0;
+        self.target_frame_count = target_frame_count;
+    }
+
+    /// Start processing
+    pub fn start_processing(&mut self) {
+        self.stage = BurstModeStage::Processing;
+        self.processing_progress = 0.0;
+    }
+
+    /// Mark complete
+    pub fn complete(&mut self) {
+        self.stage = BurstModeStage::Complete;
+    }
+
+    /// Mark error
+    pub fn error(&mut self) {
+        self.stage = BurstModeStage::Error;
+    }
+
+    /// Reset to idle
+    pub fn reset(&mut self) {
+        self.stage = BurstModeStage::Idle;
+        self.processing_progress = 0.0;
+        self.frame_buffer.clear();
+        self.progress_atomic = None;
+        self.result_rx = None;
+    }
+
+    /// Start processing and set up communication channels.
+    /// Returns the atomic counter that the processing task should update.
+    pub fn start_processing_task(
+        &mut self,
+    ) -> (
+        Arc<std::sync::atomic::AtomicU32>,
+        std::sync::mpsc::Sender<Result<String, String>>,
+    ) {
+        self.stage = BurstModeStage::Processing;
+        self.processing_progress = 0.0;
+
+        // Create shared atomic for progress updates (progress * 1000 for 0.1% precision)
+        let progress_atomic = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        self.progress_atomic = Some(Arc::clone(&progress_atomic));
+
+        // Create channel for result
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        self.result_rx = Some(result_rx);
+
+        (progress_atomic, result_tx)
+    }
+
+    /// Poll progress from the processing task.
+    /// Updates internal progress and returns true if still processing.
+    pub fn poll_progress(&mut self) -> bool {
+        if self.stage != BurstModeStage::Processing {
+            return false;
+        }
+
+        // Update progress from atomic
+        if let Some(atomic) = &self.progress_atomic {
+            let progress_raw = atomic.load(std::sync::atomic::Ordering::Relaxed);
+            self.processing_progress = progress_raw as f32 / 1000.0;
+        }
+
+        true
+    }
+
+    /// Try to get the processing result.
+    /// Returns Some(result) if complete, None if still processing or not in processing state.
+    pub fn try_get_result(&mut self) -> Option<Result<String, String>> {
+        if let Some(rx) = &self.result_rx {
+            match rx.try_recv() {
+                Ok(result) => {
+                    // Clear processing state
+                    self.progress_atomic = None;
+                    self.result_rx = None;
+                    Some(result)
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // Channel closed unexpectedly
+                    self.progress_atomic = None;
+                    self.result_rx = None;
+                    Some(Err("Processing task terminated unexpectedly".to_string()))
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Clear processing state (called when not in Processing stage)
+    pub fn clear_processing_state(&mut self) {
+        self.progress_atomic = None;
+        self.result_rx = None;
+    }
+}
+
+impl Default for BurstModeState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            stage: BurstModeStage::default(),
+            processing_progress: 0.0,
+            frame_buffer: Vec::new(),
+            target_frame_count: 8, // Will be overwritten when capture starts
+            progress_atomic: None,
+            result_rx: None,
+        }
+    }
+}
+
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
 pub struct AppModel {
@@ -341,6 +558,8 @@ pub struct AppModel {
     pub base_exposure_time: Option<i32>,
     /// Theatre mode state (enabled, UI visibility, auto-hide)
     pub theatre: TheatreState,
+    /// Burst mode state (enabled, capture/processing progress)
+    pub burst_mode: BurstModeState,
     /// Currently selected filter
     pub selected_filter: FilterType,
     /// Flash enabled for photo capture
@@ -402,6 +621,12 @@ pub struct AppModel {
     pub bitrate_preset_dropdown_options: Vec<String>,
     /// Theme dropdown options (Match Desktop, Dark, Light)
     pub theme_dropdown_options: Vec<String>,
+    /// Burst mode merge mode dropdown options (Quality FFT, Fast Spatial)
+    pub burst_mode_merge_dropdown_options: Vec<String>,
+    /// Burst mode frame count dropdown options (Auto, 4, 6, 8 frames)
+    pub burst_mode_frame_count_dropdown_options: Vec<String>,
+    /// Photo output format dropdown options (JPEG, PNG, DNG)
+    pub photo_output_format_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -819,6 +1044,20 @@ pub enum Message {
     Capture,
     /// Toggle flash for photo capture
     ToggleFlash,
+    /// Toggle burst mode for photo capture (multi-frame HDR+ burst)
+    ToggleBurstMode,
+    /// Set burst mode frame count (0 = Auto, 1 = 4 frames, 2 = 6 frames, 3 = 8 frames)
+    SetBurstModeFrameCount(usize),
+    /// Burst mode capture progress update (overall_progress 0.0-1.0)
+    BurstModeProgress(f32),
+    /// Burst mode frames collected, ready to process
+    BurstModeFramesCollected,
+    /// Burst mode capture complete (path or error)
+    BurstModeComplete(Result<String, String>),
+    /// Poll burst mode processing progress (timer-based)
+    PollBurstModeProgress,
+    /// Reset burst mode state after completion/error
+    ResetBurstModeState,
     /// Cycle photo aspect ratio (native -> 4:3 -> 16:9 -> 1:1 -> native)
     CyclePhotoAspectRatio,
     /// Flash duration complete, now capture the photo
@@ -906,6 +1145,10 @@ pub enum Message {
     SelectAudioDevice(usize),
     /// Select video encoder
     SelectVideoEncoder(usize),
+    /// Select photo output format (JPEG, PNG, DNG)
+    SelectPhotoOutputFormat(usize),
+    /// Toggle saving raw burst frames as DNG (debugging feature)
+    ToggleSaveBurstRaw,
     /// Toggle virtual camera feature enabled
     ToggleVirtualCameraEnabled,
 

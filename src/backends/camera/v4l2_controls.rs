@@ -346,6 +346,51 @@ pub fn has_control(device_path: &str, control_id: u32) -> bool {
         .unwrap_or(false)
 }
 
+/// Exposure metadata read from camera
+#[derive(Debug, Clone, Default)]
+pub struct ExposureMetadata {
+    /// Exposure time in seconds
+    pub exposure_time: Option<f64>,
+    /// ISO sensitivity
+    pub iso: Option<u32>,
+    /// Gain value (camera-specific units)
+    pub gain: Option<i32>,
+}
+
+/// Read current exposure metadata from camera
+///
+/// Reads exposure time, ISO, and gain from V4L2 controls.
+/// Returns None for values that aren't available on the device.
+pub fn read_exposure_metadata(device_path: &str) -> ExposureMetadata {
+    let mut metadata = ExposureMetadata::default();
+
+    // Read exposure time (V4L2 reports in 100µs units)
+    if let Some(exposure_100us) = get_control(device_path, V4L2_CID_EXPOSURE_ABSOLUTE) {
+        // Convert from 100µs units to seconds
+        metadata.exposure_time = Some(exposure_100us as f64 * 0.0001);
+        debug!(
+            device_path,
+            exposure_100us,
+            exposure_seconds = metadata.exposure_time,
+            "Read exposure time"
+        );
+    }
+
+    // Read ISO sensitivity
+    if let Some(iso) = get_control(device_path, V4L2_CID_ISO_SENSITIVITY) {
+        metadata.iso = Some(iso as u32);
+        debug!(device_path, iso, "Read ISO sensitivity");
+    }
+
+    // Read gain
+    if let Some(gain) = get_control(device_path, V4L2_CID_GAIN) {
+        metadata.gain = Some(gain);
+        debug!(device_path, gain, "Read gain");
+    }
+
+    metadata
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

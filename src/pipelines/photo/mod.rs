@@ -26,11 +26,12 @@
 //! - **Memory Efficient**: Uses Arc for zero-copy frame passing
 //! - **Configurable**: Support for multiple output formats and quality settings
 
+pub mod burst_mode;
 pub mod capture;
 pub mod encoding;
 pub mod processing;
 
-pub use encoding::{EncodingFormat, EncodingQuality, PhotoEncoder};
+pub use encoding::{CameraMetadata, EncodingFormat, EncodingQuality, PhotoEncoder};
 pub use processing::{PostProcessingConfig, PostProcessor};
 
 use crate::backends::camera::types::CameraFrame;
@@ -149,6 +150,11 @@ impl PhotoPipeline {
     /// Update encoding quality
     pub fn set_encoding_quality(&mut self, quality: EncodingQuality) {
         self.encoder.set_quality(quality);
+    }
+
+    /// Set camera metadata for DNG encoding
+    pub fn set_camera_metadata(&mut self, metadata: CameraMetadata) {
+        self.encoder.set_camera_metadata(metadata);
     }
 }
 

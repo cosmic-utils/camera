@@ -60,6 +60,26 @@ enum Commands {
         #[arg(short, long)]
         audio: bool,
     },
+
+    /// Process images through computational photography pipelines
+    Process {
+        #[command(subcommand)]
+        mode: ProcessMode,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProcessMode {
+    /// Burst mode: multi-frame denoising and HDR+ pipeline
+    BurstMode {
+        /// Input images or directory containing images (PNG, DNG supported)
+        #[arg(required = true)]
+        input: Vec<PathBuf>,
+
+        /// Output directory for processed images (default: same as input or ~/Pictures/camera)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -87,6 +107,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             output,
             audio,
         }) => cli::record_video(camera, duration, output, audio),
+        Some(Commands::Process { mode }) => match mode {
+            ProcessMode::BurstMode { input, output } => cli::process_burst_mode(input, output),
+        },
         None => run_gui(cli.preview_source),
     }
 }

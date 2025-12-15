@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Moon / night mode icon - crescent moon (dimmed) -->
+  <path d="M12.1 22c-5.5 0-10-4.5-10-10S6.6 2 12.1 2c.3 0 .6 0 .9.1-.1.1-.1.1-.2.2-2.4 2.4-2.4 6.3 0 8.7s6.3 2.4 8.7 0c.1-.1.1-.1.2-.2 0 .3.1.6.1.9 0 5.5-4.5 10-10 10z" fill="#FFFFFF" fill-opacity="0.5" stroke="none"/>
+  <!-- Diagonal strike-through line -->
+  <line x1="4" y1="4" x2="20" y2="20" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+</svg>

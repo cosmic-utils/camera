@@ -124,5 +124,31 @@ tools-theatre = Theatre
 privacy-cover-closed = Privacy cover is closed
 privacy-cover-hint = Open the privacy cover to use the camera
 
+# Burst mode / HDR+
+burst-mode-hold-steady = Hold steady...
+burst-mode-frames = { $captured }/{ $total } frames
+burst-mode-processing = Processing...
+burst-mode-quality = Quality (FFT)
+burst-mode-fast = Fast (Spatial)
+
+# HDR+ dropdown options
+hdr-plus-off = Off
+hdr-plus-auto = Auto
+hdr-plus-frames-4 = 4 frames
+hdr-plus-frames-6 = 6 frames
+hdr-plus-frames-8 = 8 frames
+hdr-plus-frames-50 = 50 frames
+
+# Photo settings
+settings-photo = Photo
+settings-photo-format = Output format
+settings-photo-format-description = File format for saved photos. JPEG is compressed, PNG is lossless, DNG preserves raw data for editing.
+settings-hdr-plus = HDR+
+settings-hdr-plus-description = Multi-frame capture for improved low-light photos and dynamic range. Auto selects frame count based on scene brightness.
+settings-burst-mode-quality = HDR+ algorithm
+settings-burst-mode-quality-description = Quality uses FFT frequency domain merge for best results. Fast uses spatial merge for quicker processing.
+settings-save-burst-raw = Save raw burst frames
+settings-save-burst-raw-description = Save individual burst frames as DNG files alongside HDR+ photos. Useful for debugging or reprocessing.
+
 # About page
 about-support = Support & Feedback

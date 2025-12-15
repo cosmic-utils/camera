@@ -135,6 +135,41 @@ impl AppModel {
         Task::none()
     }
 
+    pub(crate) fn handle_select_photo_output_format(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::config::PhotoOutputFormat;
+
+        if index < PhotoOutputFormat::ALL.len() {
+            let format = PhotoOutputFormat::ALL[index];
+            info!(?format, "Selected photo output format");
+            self.config.photo_output_format = format;
+
+            if let Some(handler) = self.config_handler.as_ref() {
+                if let Err(err) = self.config.write_entry(handler) {
+                    error!(?err, "Failed to save photo output format selection");
+                }
+            }
+        }
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_save_burst_raw(&mut self) -> Task<cosmic::Action<Message>> {
+        self.config.save_burst_raw = !self.config.save_burst_raw;
+        info!(
+            save_burst_raw = self.config.save_burst_raw,
+            "Toggled save burst raw frames"
+        );
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save burst raw setting");
+            }
+        }
+        Task::none()
+    }
+
     // =========================================================================
     // System & Recovery Handlers
     // =========================================================================

@@ -10,7 +10,7 @@
 //! - Format picker overlay (format_picker module)
 
 use crate::app::qr_overlay::build_qr_overlay;
-use crate::app::state::{AppModel, CameraMode, FilterType, Message};
+use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
 use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
@@ -43,6 +43,14 @@ const ASPECT_1_1_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspe
 /// Exposure icon SVG
 const EXPOSURE_ICON: &[u8] = include_bytes!("../../resources/button_icons/exposure.svg");
 const TOOLS_GRID_ICON: &[u8] = include_bytes!("../../resources/button_icons/tools-grid.svg");
+/// Moon icon SVG (burst mode)
+const MOON_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon.svg");
+/// Moon off icon SVG (burst mode disabled, with strike-through)
+const MOON_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon-off.svg");
+
+/// Burst mode progress bar dimensions
+const BURST_MODE_PROGRESS_BAR_WIDTH: f32 = 200.0;
+const BURST_MODE_PROGRESS_BAR_HEIGHT: f32 = 8.0;
 
 /// Create a container style with semi-transparent themed background for overlay elements
 ///
@@ -129,34 +137,26 @@ impl AppModel {
             .into();
         }
 
+        // Burst mode capture/processing - show progress overlay
+        if self.burst_mode.is_active() {
+            let burst_mode_overlay = self.build_burst_mode_overlay();
+            return widget::container(
+                cosmic::iced::widget::stack![camera_preview, burst_mode_overlay]
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|theme| widget::container::Style {
+                background: Some(Background::Color(theme.cosmic().bg_color().into())),
+                ..Default::default()
+            })
+            .into();
+        }
+
         // Timer countdown mode - show only preview with countdown overlay and capture button
         if let Some(remaining) = self.photo_timer_countdown {
-            // Calculate fade opacity based on elapsed time since tick start
-            // Opacity starts at 1.0 and fades to 0.0 over the second
-            let opacity = if let Some(tick_start) = self.photo_timer_tick_start {
-                let elapsed_ms = tick_start.elapsed().as_millis() as f32;
-                // Fade out over 900ms (leave 100ms fully transparent before next number)
-                (1.0 - (elapsed_ms / 900.0)).max(0.0)
-            } else {
-                1.0
-            };
-
-            // Large countdown number with fade effect
-            let countdown_text = widget::container(
-                widget::text(remaining.to_string())
-                    .size(400) // Very large to fill preview
-                    .font(cosmic::font::bold()),
-            )
-            .style(move |_theme| widget::container::Style {
-                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, opacity)),
-                ..Default::default()
-            });
-
-            let countdown_overlay = widget::container(countdown_text)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(cosmic::iced::alignment::Horizontal::Center)
-                .align_y(cosmic::iced::alignment::Vertical::Center);
+            let countdown_overlay = self.build_timer_overlay(remaining);
 
             // Capture button (acts as abort during countdown)
             let capture_button = self.build_capture_button();
@@ -497,6 +497,36 @@ impl AppModel {
                         flash_icon,
                         Some(Message::ToggleFlash),
                         self.flash_enabled,
+                    ));
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+
+                // Burst mode toggle button
+                // - Toggles HDR+ between Auto and Off
+                // - Shows moon-off icon with strike-through when Off
+                // - Highlighted when burst mode would actually be used (based on scene brightness)
+                let is_hdr_off = !self.config.burst_mode_setting.is_enabled();
+                let moon_icon_bytes = if is_hdr_off { MOON_OFF_ICON } else { MOON_ICON };
+                let moon_icon = widget::icon::from_svg_bytes(moon_icon_bytes).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(moon_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    // Highlight when burst mode would actually be triggered
+                    let would_burst = self.would_use_burst_mode();
+                    row = row.push(overlay_icon_button(
+                        moon_icon,
+                        Some(Message::ToggleBurstMode),
+                        would_burst,
                     ));
                 }
 
@@ -1073,6 +1103,144 @@ impl AppModel {
 
         // Center the warning in the preview area
         widget::container(warning_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(cosmic::iced::alignment::Horizontal::Center)
+            .align_y(cosmic::iced::alignment::Vertical::Center)
+            .into()
+    }
+
+    /// Build the burst mode progress overlay
+    ///
+    /// Shows status text, frame count, and progress bar during burst mode capture/processing.
+    fn build_burst_mode_overlay(&self) -> Element<'_, Message> {
+        let (status_text, detail_text) = match self.burst_mode.stage {
+            BurstModeStage::Capturing => (
+                fl!("burst-mode-hold-steady"),
+                fl!(
+                    "burst-mode-frames",
+                    captured = self.burst_mode.frames_captured(),
+                    total = self.burst_mode.target_frame_count
+                ),
+            ),
+            BurstModeStage::Processing => (fl!("burst-mode-processing"), String::new()),
+            _ => (String::new(), String::new()),
+        };
+
+        // Progress percentage
+        let progress_percent = (self.burst_mode.progress() * 100.0) as u32;
+
+        // Build progress bar (simple filled bar)
+        let progress_width = BURST_MODE_PROGRESS_BAR_WIDTH;
+        let progress_height = BURST_MODE_PROGRESS_BAR_HEIGHT;
+        let filled_width = progress_width * self.burst_mode.progress();
+
+        let progress_bar = widget::container(
+            widget::row()
+                .push(
+                    widget::container(widget::Space::new(
+                        Length::Fixed(filled_width),
+                        Length::Fixed(progress_height),
+                    ))
+                    .style(|theme: &cosmic::Theme| {
+                        let accent = theme.cosmic().accent_color();
+                        widget::container::Style {
+                            background: Some(Background::Color(Color::from_rgb(
+                                accent.red,
+                                accent.green,
+                                accent.blue,
+                            ))),
+                            ..Default::default()
+                        }
+                    }),
+                )
+                .push(
+                    widget::container(widget::Space::new(
+                        Length::Fixed(progress_width - filled_width),
+                        Length::Fixed(progress_height),
+                    ))
+                    .style(|_theme| widget::container::Style {
+                        background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.3))),
+                        ..Default::default()
+                    }),
+                ),
+        )
+        .style(|theme: &cosmic::Theme| widget::container::Style {
+            border: cosmic::iced::Border {
+                radius: theme.cosmic().corner_radii.radius_xs.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        // Build the overlay content
+        let overlay_content = widget::column()
+            .push(
+                widget::text(status_text)
+                    .size(32)
+                    .font(cosmic::font::bold()),
+            )
+            .push(widget::Space::new(Length::Shrink, Length::Fixed(8.0)))
+            .push(widget::text(detail_text).size(18))
+            .push(widget::Space::new(Length::Shrink, Length::Fixed(16.0)))
+            .push(progress_bar)
+            .push(widget::Space::new(Length::Shrink, Length::Fixed(8.0)))
+            .push(widget::text(format!("{}%", progress_percent)).size(14))
+            .align_x(Alignment::Center);
+
+        // Semi-transparent background panel
+        let overlay_panel =
+            widget::container(overlay_content)
+                .padding(24)
+                .style(|theme: &cosmic::Theme| {
+                    let cosmic = theme.cosmic();
+                    let bg = cosmic.bg_color();
+                    widget::container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            bg.red, bg.green, bg.blue, 0.85,
+                        ))),
+                        border: cosmic::iced::Border {
+                            radius: cosmic.corner_radii.radius_m.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                });
+
+        widget::container(overlay_panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(cosmic::iced::alignment::Horizontal::Center)
+            .align_y(cosmic::iced::alignment::Vertical::Center)
+            .into()
+    }
+
+    /// Build the timer countdown overlay
+    ///
+    /// Shows large countdown number with fade effect during photo timer countdown.
+    fn build_timer_overlay(&self, remaining: u8) -> Element<'_, Message> {
+        // Calculate fade opacity based on elapsed time since tick start
+        // Opacity starts at 1.0 and fades to 0.0 over the second
+        let opacity = if let Some(tick_start) = self.photo_timer_tick_start {
+            let elapsed_ms = tick_start.elapsed().as_millis() as f32;
+            // Fade out over 900ms (leave 100ms fully transparent before next number)
+            (1.0 - (elapsed_ms / 900.0)).max(0.0)
+        } else {
+            1.0
+        };
+
+        // Large countdown number with fade effect
+        let countdown_text = widget::container(
+            widget::text(remaining.to_string())
+                .size(400) // Very large to fill preview
+                .font(cosmic::font::bold()),
+        )
+        .style(move |_theme| widget::container::Style {
+            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, opacity)),
+            ..Default::default()
+        });
+
+        widget::container(countdown_text)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(cosmic::iced::alignment::Horizontal::Center)

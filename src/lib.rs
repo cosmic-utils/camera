@@ -29,6 +29,7 @@ pub mod bug_report;
 pub mod config;
 pub mod constants;
 pub mod errors;
+pub mod gpu;
 pub mod i18n;
 pub mod media;
 pub mod network_manager;

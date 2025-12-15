@@ -346,3 +346,209 @@ fn get_default_video_dir() -> PathBuf {
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
         .join("camera")
 }
+
+/// Process images through the burst mode pipeline
+pub fn process_burst_mode(
+    input: Vec<PathBuf>,
+    output: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use camera::pipelines::photo::burst_mode::{
+        BurstModeConfig, process_burst_mode as run_burst_mode, save_output,
+    };
+    use camera::pipelines::photo::{CameraMetadata, EncodingFormat};
+
+    // Collect all image paths from input (can be files or directories)
+    let image_paths = collect_image_paths(&input)?;
+
+    if image_paths.is_empty() {
+        return Err("No PNG or DNG images found in input".into());
+    }
+
+    println!("Burst Mode Processing");
+    println!("=====================");
+    println!("Found {} images to process", image_paths.len());
+
+    // Determine output directory
+    let output_dir = if let Some(dir) = output {
+        dir
+    } else if input.len() == 1 && input[0].is_dir() {
+        input[0].join("output")
+    } else if let Some(first) = image_paths.first() {
+        first
+            .parent()
+            .map(|p| p.join("output"))
+            .unwrap_or_else(get_default_photo_dir)
+    } else {
+        get_default_photo_dir()
+    };
+
+    println!("Output directory: {}", output_dir.display());
+    println!();
+
+    // Create output directory
+    std::fs::create_dir_all(&output_dir)?;
+
+    // Load all frames
+    println!("Loading images...");
+    let frames = load_burst_mode_frames(&image_paths)?;
+
+    if frames.is_empty() {
+        return Err("Failed to load any images".into());
+    }
+
+    println!("Loaded {} frames", frames.len());
+    if let Some(first) = frames.first() {
+        println!("Frame size: {}x{}", first.width, first.height);
+    }
+    println!();
+
+    // Process through burst mode pipeline
+    println!("Processing...");
+    let config = BurstModeConfig::default();
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let result = rt.block_on(async {
+        let start = std::time::Instant::now();
+        let result = run_burst_mode(frames, config.clone(), None).await?;
+        let duration = start.elapsed();
+        println!("Processing time: {:.2}s", duration.as_secs_f64());
+        println!("Output size: {}x{}", result.width, result.height);
+        Ok::<_, String>(result)
+    })?;
+
+    // Save output
+    let camera_metadata = CameraMetadata {
+        camera_name: Some("Burst Mode CLI".to_string()),
+        camera_driver: None,
+        exposure_time: None,
+        iso: None,
+        gain: None,
+    };
+
+    let output_path = rt.block_on(async {
+        save_output(
+            &result,
+            output_dir,
+            None,                 // no crop
+            EncodingFormat::Jpeg, // Use JPEG for easier viewing
+            camera_metadata,
+            None, // no filter
+        )
+        .await
+    })?;
+
+    println!();
+    println!("Saved to: {}", output_path.display());
+
+    Ok(())
+}
+
+/// Collect all image paths from input (files or directories)
+fn collect_image_paths(input: &[PathBuf]) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut paths = Vec::new();
+
+    for path in input {
+        if path.is_dir() {
+            // Collect all PNG and DNG files from the directory
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let file_path = entry.path();
+                if is_supported_image(&file_path) {
+                    paths.push(file_path);
+                }
+            }
+        } else if is_supported_image(path) {
+            paths.push(path.clone());
+        }
+    }
+
+    // Sort by filename for consistent ordering
+    paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    Ok(paths)
+}
+
+/// Check if a path is a supported image file
+fn is_supported_image(path: &PathBuf) -> bool {
+    path.extension()
+        .map(|ext| {
+            let ext_lower = ext.to_string_lossy().to_lowercase();
+            ext_lower == "png" || ext_lower == "dng"
+        })
+        .unwrap_or(false)
+}
+
+/// Load a DNG file and convert to RGBA CameraFrame
+fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Error>> {
+    use camera::backends::camera::types::{CameraFrame, PixelFormat};
+    use image::GenericImageView;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    // Use the image crate's TIFF decoder for DNG (DNG is based on TIFF)
+    let decoder = image::codecs::tiff::TiffDecoder::new(reader)?;
+    let img = image::DynamicImage::from_decoder(decoder)?;
+
+    let (width, height) = img.dimensions();
+    let rgba = img.to_rgba8();
+    let data: Arc<[u8]> = Arc::from(rgba.into_raw().into_boxed_slice());
+
+    Ok(CameraFrame {
+        width,
+        height,
+        data,
+        format: PixelFormat::RGBA,
+        stride: width * 4,
+        captured_at: Instant::now(),
+    })
+}
+
+/// Load burst mode frames from image paths
+fn load_burst_mode_frames(
+    paths: &[PathBuf],
+) -> Result<Vec<Arc<CameraFrame>>, Box<dyn std::error::Error>> {
+    use camera::backends::camera::types::{CameraFrame, PixelFormat};
+    use image::GenericImageView;
+
+    let mut frames = Vec::new();
+
+    for path in paths {
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+
+        let frame = if ext == "dng" {
+            load_dng_frame(path)?
+        } else {
+            let img = image::open(path)?;
+            let (width, height) = img.dimensions();
+            let rgba = img.to_rgba8();
+            let data: Arc<[u8]> = Arc::from(rgba.into_raw().into_boxed_slice());
+
+            CameraFrame {
+                width,
+                height,
+                data,
+                format: PixelFormat::RGBA,
+                stride: width * 4,
+                captured_at: Instant::now(),
+            }
+        };
+
+        println!(
+            "  Loaded: {} ({}x{})",
+            path.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default(),
+            frame.width,
+            frame.height
+        );
+        frames.push(Arc::new(frame));
+    }
+
+    Ok(frames)
+}

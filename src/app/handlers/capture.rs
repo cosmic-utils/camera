@@ -5,9 +5,16 @@
 //! Handles photo capture, video recording, flash, zoom, and timer functionality.
 
 use crate::app::state::{AppModel, CameraMode, Message, RecordingState};
+use crate::pipelines::photo::burst_mode::BurstModeConfig;
 use cosmic::Task;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+/// Delay in ms before resetting burst mode state after successful capture
+const BURST_MODE_SUCCESS_DISPLAY_MS: u64 = 2000;
+/// Delay in ms before resetting burst mode state after an error
+const BURST_MODE_ERROR_DISPLAY_MS: u64 = 3000;
 
 impl AppModel {
     // =========================================================================
@@ -25,8 +32,46 @@ impl AppModel {
         )
     }
 
+    /// Check if burst mode would be triggered based on current scene brightness
+    ///
+    /// Returns true if Auto mode would use more than 1 frame (actual burst capture)
+    /// or if a fixed frame count > 1 is set.
+    pub fn would_use_burst_mode(&self) -> bool {
+        use crate::config::BurstModeSetting;
+
+        match self.config.burst_mode_setting {
+            BurstModeSetting::Off => false,
+            BurstModeSetting::Frames4
+            | BurstModeSetting::Frames6
+            | BurstModeSetting::Frames8
+            | BurstModeSetting::Frames50 => {
+                true // Fixed frame counts always use burst
+            }
+            BurstModeSetting::Auto => {
+                // Check scene brightness to determine if burst would be used
+                if let Some(frame) = &self.current_frame {
+                    use crate::pipelines::photo::burst_mode::burst::{
+                        calculate_adaptive_params, estimate_scene_brightness,
+                    };
+                    let (_luminance, brightness) = estimate_scene_brightness(frame);
+                    let params = calculate_adaptive_params(brightness);
+                    params.frame_count > 1
+                } else {
+                    // No frame available, assume burst would be used (conservative)
+                    true
+                }
+            }
+        }
+    }
+
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
+        // Use HDR+ burst mode if enabled in settings (Auto or fixed frame count)
+        // No need to toggle the moon button - HDR+ is automatic when enabled
+        if self.config.burst_mode_setting.is_enabled() {
+            return self.capture_burst_mode_photo();
+        }
+
         let Some(frame) = &self.current_frame else {
             info!("No frame available to capture");
             return Task::none();
@@ -48,17 +93,45 @@ impl AppModel {
             Some(crop_rect)
         };
 
+        // Get the encoding format from config
+        let encoding_format: crate::pipelines::photo::EncodingFormat =
+            self.config.photo_output_format.into();
+
+        // Get camera metadata for DNG encoding (including exposure info)
+        let camera_metadata = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|cam| {
+                let mut metadata = crate::pipelines::photo::CameraMetadata {
+                    camera_name: Some(cam.name.clone()),
+                    camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
+                    ..Default::default()
+                };
+                // Read exposure metadata from V4L2 device if available
+                if let Some(device_info) = &cam.device_info {
+                    let exposure = crate::backends::camera::v4l2_controls::read_exposure_metadata(
+                        &device_info.path,
+                    );
+                    metadata.exposure_time = exposure.exposure_time;
+                    metadata.iso = exposure.iso;
+                    metadata.gain = exposure.gain;
+                }
+                metadata
+            })
+            .unwrap_or_default();
+
         let save_task = Task::perform(
             async move {
                 use crate::pipelines::photo::{
-                    EncodingFormat, EncodingQuality, PhotoPipeline, PostProcessingConfig,
+                    EncodingQuality, PhotoPipeline, PostProcessingConfig,
                 };
                 let mut config = PostProcessingConfig::default();
                 config.filter_type = filter_type;
                 config.crop_rect = crop_rect;
                 config.zoom_level = zoom_level;
-                let pipeline =
-                    PhotoPipeline::with_config(config, EncodingFormat::Jpeg, EncodingQuality::High);
+                let mut pipeline =
+                    PhotoPipeline::with_config(config, encoding_format, EncodingQuality::High);
+                pipeline.set_camera_metadata(camera_metadata);
                 pipeline
                     .capture_and_save(frame_arc, save_dir)
                     .await
@@ -69,6 +142,193 @@ impl AppModel {
 
         let animation_task = Self::delay_task(150, Message::ClearCaptureAnimation);
         Task::batch([save_task, animation_task])
+    }
+
+    /// Capture a burst mode photo using multi-frame burst capture
+    fn capture_burst_mode_photo(&mut self) -> Task<cosmic::Action<Message>> {
+        // Validate state - prevent starting if already active
+        if self.burst_mode.is_active() {
+            warn!(
+                stage = ?self.burst_mode.stage,
+                "Cannot start burst mode capture: already active"
+            );
+            return Task::none();
+        }
+
+        // Determine frame count: use config if set, otherwise auto-detect from scene
+        let frame_count = match self.config.burst_mode_setting.frame_count() {
+            Some(count) => {
+                info!(frame_count = count, "Using configured frame count");
+                count
+            }
+            None => {
+                // Auto-detect based on scene brightness
+                let auto_count = if let Some(frame) = &self.current_frame {
+                    use crate::pipelines::photo::burst_mode::burst::{
+                        calculate_adaptive_params, estimate_scene_brightness,
+                    };
+                    let (_luminance, brightness) = estimate_scene_brightness(frame);
+                    let params = calculate_adaptive_params(brightness);
+                    info!(
+                        brightness = ?brightness,
+                        auto_frame_count = params.frame_count,
+                        "Auto-detected frame count based on scene brightness"
+                    );
+                    params.frame_count
+                } else {
+                    8 // Default fallback
+                };
+                auto_count
+            }
+        };
+
+        info!(
+            frame_count,
+            "Starting burst mode capture - collecting frames from stream..."
+        );
+        self.is_capturing = true;
+        self.burst_mode.start_capture(frame_count);
+
+        // If flash is enabled, turn it on for the entire burst capture duration
+        if self.flash_enabled {
+            info!("Flash enabled - keeping flash on during burst capture");
+            self.flash_active = true;
+        }
+
+        // Frames will be collected in handle_camera_frame
+        // When enough frames are collected, BurstModeFramesCollected message is sent
+        Task::none()
+    }
+
+    /// Handle when all burst mode frames have been collected
+    pub(crate) fn handle_burst_mode_frames_collected(&mut self) -> Task<cosmic::Action<Message>> {
+        info!(
+            frames = self.burst_mode.frames_captured(),
+            "Burst mode frames collected, starting processing"
+        );
+
+        // Turn off flash now that capture is complete (before processing)
+        if self.flash_active {
+            info!("Turning off flash - burst capture complete");
+            self.flash_active = false;
+        }
+
+        // Update state to processing
+        self.burst_mode.start_processing();
+
+        // Take the frames from the buffer
+        let frames: Vec<Arc<crate::backends::camera::types::CameraFrame>> =
+            self.burst_mode.take_frames();
+
+        if frames.len() < 2 {
+            error!("Not enough frames collected for burst mode");
+            self.burst_mode.error();
+            self.is_capturing = false;
+            return Task::none();
+        }
+
+        let save_dir = crate::app::get_photo_directory();
+
+        // Calculate crop rectangle based on aspect ratio setting (same as regular photo capture)
+        let crop_rect = if let Some(frame) = frames.first() {
+            let rect = self.photo_aspect_ratio.crop_rect(frame.width, frame.height);
+            if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
+                None
+            } else {
+                Some(rect)
+            }
+        } else {
+            None
+        };
+
+        // Get encoding format and camera metadata (including exposure info)
+        let encoding_format: crate::pipelines::photo::EncodingFormat =
+            self.config.photo_output_format.into();
+        let camera_metadata = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|cam| {
+                let mut metadata = crate::pipelines::photo::CameraMetadata {
+                    camera_name: Some(cam.name.clone()),
+                    camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
+                    ..Default::default()
+                };
+                // Read exposure metadata from V4L2 device if available
+                if let Some(device_info) = &cam.device_info {
+                    let exposure = crate::backends::camera::v4l2_controls::read_exposure_metadata(
+                        &device_info.path,
+                    );
+                    metadata.exposure_time = exposure.exposure_time;
+                    metadata.iso = exposure.iso;
+                    metadata.gain = exposure.gain;
+                }
+                metadata
+            })
+            .unwrap_or_default();
+
+        // Create burst mode config with user's settings
+        let mut config = BurstModeConfig::default();
+        config.crop_rect = crop_rect;
+        config.encoding_format = encoding_format;
+        config.camera_metadata = camera_metadata;
+        config.save_burst_raw_dng = self.config.save_burst_raw;
+
+        // Night mode effect: significantly boost shadows and brightness for low-light
+        // This makes dark scenes much brighter and more visible
+        config.shadow_boost = 0.7; // Strong shadow recovery (default is 0.2)
+        config.local_contrast = 0.3; // Enhanced local contrast (default is 0.15)
+        config.robustness = 1.5; // More aggressive denoising for dark scenes
+
+        // Get selected filter to apply after processing
+        let selected_filter = self.selected_filter;
+
+        // Start processing task - BurstModeState handles the communication channels
+        let (progress_atomic, result_tx) = self.burst_mode.start_processing_task();
+
+        // Spawn processing on a dedicated OS thread - completely separate from UI/tokio
+        // This ensures the event loop stays responsive even during blocking GPU operations
+        std::thread::spawn(move || {
+            // Create a new tokio runtime for this thread
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime for burst mode processing");
+
+            let result = rt.block_on(async move {
+                process_burst_mode_frames_with_atomic(
+                    frames,
+                    save_dir,
+                    config,
+                    progress_atomic,
+                    selected_filter,
+                )
+                .await
+            });
+            let _ = result_tx.send(result);
+        });
+
+        // Start a timer to periodically poll progress and check for completion (every 100ms)
+        Self::delay_task(100, Message::PollBurstModeProgress)
+    }
+
+    /// Poll burst mode progress and check for completion
+    pub(crate) fn handle_poll_burst_mode_progress(&mut self) -> Task<cosmic::Action<Message>> {
+        // Only poll if we're in processing stage
+        if self.burst_mode.stage != crate::app::state::BurstModeStage::Processing {
+            self.burst_mode.clear_processing_state();
+            return Task::none();
+        }
+
+        // Update progress from atomic
+        self.burst_mode.poll_progress();
+
+        // Check if result is ready (non-blocking)
+        if let Some(result) = self.burst_mode.try_get_result() {
+            return self.handle_burst_mode_complete(result);
+        }
+
+        // Schedule next poll
+        Self::delay_task(100, Message::PollBurstModeProgress)
     }
 
     pub(crate) fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
@@ -100,6 +360,63 @@ impl AppModel {
     pub(crate) fn handle_toggle_flash(&mut self) -> Task<cosmic::Action<Message>> {
         self.flash_enabled = !self.flash_enabled;
         info!(flash_enabled = self.flash_enabled, "Flash toggled");
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_burst_mode(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::config::BurstModeSetting;
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        // Toggle between Auto and Off
+        self.config.burst_mode_setting = match self.config.burst_mode_setting {
+            BurstModeSetting::Off => BurstModeSetting::Auto,
+            _ => BurstModeSetting::Off,
+        };
+
+        info!(setting = ?self.config.burst_mode_setting, "HDR+ toggled");
+
+        // Save to config
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save HDR+ setting");
+            }
+        }
+        Task::none()
+    }
+
+    pub(crate) fn handle_set_burst_mode_frame_count(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        // Don't allow changing frame count during active capture
+        if self.burst_mode.is_active() {
+            warn!("Cannot change frame count during active capture");
+            return Task::none();
+        }
+
+        use crate::config::BurstModeSetting;
+        // Index 0 = Off, 1 = Auto, 2 = 4 frames, 3 = 6 frames, 4 = 8 frames, 5 = 50 frames
+        self.config.burst_mode_setting = match index {
+            0 => BurstModeSetting::Off,
+            1 => BurstModeSetting::Auto,
+            2 => BurstModeSetting::Frames4,
+            3 => BurstModeSetting::Frames6,
+            4 => BurstModeSetting::Frames8,
+            5 => BurstModeSetting::Frames50,
+            _ => BurstModeSetting::Auto,
+        };
+        info!(
+            setting = ?self.config.burst_mode_setting,
+            "HDR+ setting changed"
+        );
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save burst mode frame count setting");
+            }
+        }
         Task::none()
     }
 
@@ -377,4 +694,126 @@ impl AppModel {
 
         Task::batch([start_signal, recording_task])
     }
+
+    /// Handle burst mode progress update
+    pub(crate) fn handle_burst_mode_progress(
+        &mut self,
+        progress: f32,
+    ) -> Task<cosmic::Action<Message>> {
+        self.burst_mode.processing_progress = progress;
+
+        debug!(
+            progress,
+            stage = ?self.burst_mode.stage,
+            "Burst mode progress"
+        );
+        Task::none()
+    }
+
+    /// Handle burst mode capture complete
+    pub(crate) fn handle_burst_mode_complete(
+        &mut self,
+        result: Result<String, String>,
+    ) -> Task<cosmic::Action<Message>> {
+        self.is_capturing = false;
+
+        match result {
+            Ok(path) => {
+                info!(path, "Burst mode capture complete");
+                self.burst_mode.complete();
+
+                // Reset burst mode state after a short delay
+                let reset_task =
+                    Self::delay_task(BURST_MODE_SUCCESS_DISPLAY_MS, Message::ResetBurstModeState);
+
+                // Trigger the same photo saved flow
+                let saved_task = Task::done(cosmic::Action::App(Message::PhotoSaved(Ok(path))));
+
+                Task::batch([saved_task, reset_task])
+            }
+            Err(e) => {
+                error!(error = %e, "Burst mode capture failed");
+                self.burst_mode.error();
+
+                // Reset after showing error
+                Self::delay_task(BURST_MODE_ERROR_DISPLAY_MS, Message::ResetBurstModeState)
+            }
+        }
+    }
+}
+
+/// Async function to process collected burst mode frames (GPU-only)
+///
+/// Uses the unified GPU pipeline for all processing:
+/// 1. Initialize GPU pipeline
+/// 2. Select reference frame (GPU sharpness)
+/// 3. Align frames (GPU)
+/// 4. Merge frames (GPU spatial or FFT)
+/// 5. Apply tone mapping (GPU)
+/// 6. Apply selected filter (GPU)
+/// 7. Apply aspect ratio crop (if configured)
+/// 8. Save output
+///
+/// Progress updates are sent via the provided atomic counter (progress * 1000).
+async fn process_burst_mode_frames_with_atomic(
+    frames: Vec<Arc<crate::backends::camera::types::CameraFrame>>,
+    save_dir: PathBuf,
+    config: BurstModeConfig,
+    progress_atomic: Arc<std::sync::atomic::AtomicU32>,
+    filter: crate::app::FilterType,
+) -> Result<String, String> {
+    use crate::pipelines::photo::burst_mode::{
+        ProgressCallback, export_burst_frames_dng, process_burst_mode, save_output,
+    };
+
+    info!(
+        frame_count = frames.len(),
+        crop_rect = ?config.crop_rect,
+        encoding_format = ?config.encoding_format,
+        save_burst_raw_dng = config.save_burst_raw_dng,
+        filter = ?filter,
+        "Processing burst mode frames (GPU-only FFT pipeline)"
+    );
+
+    // Store fields before moving config
+    let crop_rect = config.crop_rect;
+    let encoding_format = config.encoding_format;
+    let camera_metadata = config.camera_metadata.clone();
+    let save_burst_raw_dng = config.save_burst_raw_dng;
+
+    // Export raw burst frames as DNG if enabled (before processing)
+    if save_burst_raw_dng {
+        match export_burst_frames_dng(&frames, save_dir.clone(), &camera_metadata).await {
+            Ok(burst_dir) => {
+                info!(burst_dir = %burst_dir.display(), "Raw burst frames saved as DNG");
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to export raw burst frames as DNG");
+                // Continue with processing even if export fails
+            }
+        }
+    }
+
+    // Create progress callback that updates the atomic counter
+    let progress_callback: ProgressCallback = Arc::new(move |progress: f32| {
+        let progress_int = (progress * 1000.0) as u32;
+        progress_atomic.store(progress_int, std::sync::atomic::Ordering::Relaxed);
+    });
+
+    // Process using the unified GPU pipeline with progress reporting
+    let merged = process_burst_mode(frames, config, Some(progress_callback)).await?;
+
+    // Save output with optional crop, filter, and selected encoding format
+    let output_path = save_output(
+        &merged,
+        save_dir,
+        crop_rect,
+        encoding_format,
+        camera_metadata,
+        Some(filter),
+    )
+    .await?;
+
+    info!(path = %output_path.display(), "Burst mode photo saved");
+    Ok(output_path.display().to_string())
 }

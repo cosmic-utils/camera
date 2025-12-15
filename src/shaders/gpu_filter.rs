@@ -6,7 +6,8 @@
 //! It uses wgpu with software rendering fallback for systems without GPU support.
 
 use crate::app::FilterType;
-use cosmic::iced_wgpu::wgpu;
+use crate::gpu::{self, wgpu};
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// Filter parameters uniform
@@ -21,8 +22,8 @@ struct FilterParams {
 
 /// GPU filter pipeline for images
 pub struct GpuFilterPipeline {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -38,46 +39,21 @@ pub struct GpuFilterPipeline {
 impl GpuFilterPipeline {
     /// Create a new GPU filter pipeline
     ///
-    /// This will attempt to use hardware GPU acceleration, falling back to
-    /// software rendering (llvmpipe/SwiftShader) if no GPU is available.
+    /// This will attempt to use hardware GPU acceleration with low-priority queue
+    /// to avoid starving UI rendering. Falls back to software rendering if no GPU.
     pub async fn new() -> Result<Self, String> {
         info!("Initializing GPU filter pipeline");
 
-        // Request adapter - will use software rendering if no hardware GPU
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
+        // Create device with low-priority queue to avoid starving UI rendering
+        let (device, queue, gpu_info) =
+            gpu::create_low_priority_compute_device("filter_pipeline_gpu").await?;
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or("Failed to find suitable GPU adapter")?;
-
-        let adapter_info = adapter.get_info();
         info!(
-            adapter_name = %adapter_info.name,
-            adapter_backend = ?adapter_info.backend,
-            "Selected GPU adapter for filter pipeline"
+            adapter_name = %gpu_info.adapter_name,
+            adapter_backend = ?gpu_info.backend,
+            low_priority = gpu_info.low_priority_enabled,
+            "GPU device created for filter pipeline"
         );
-
-        // Request device
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("filter_pipeline_gpu"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: Default::default(),
-                },
-                None,
-            )
-            .await
-            .map_err(|e| format!("Failed to get GPU device: {}", e))?;
 
         // Create shader with shared filter functions
         let shader_source = format!(
@@ -149,7 +125,7 @@ impl GpuFilterPipeline {
             label: Some("filter_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -162,7 +138,6 @@ impl GpuFilterPipeline {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -268,14 +243,14 @@ impl GpuFilterPipeline {
 
         // Upload RGBA data to input texture
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: input_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             rgba_data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
@@ -337,7 +312,7 @@ impl GpuFilterPipeline {
             });
 
             compute_pass.set_pipeline(&self.pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.set_bind_group(0, Some(&bind_group), &[]);
 
             // Dispatch workgroups (16x16 threads per workgroup)
             let workgroups_x = (width + 15) / 16;
@@ -358,7 +333,7 @@ impl GpuFilterPipeline {
             let _ = sender.send(result);
         });
 
-        self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
         receiver
             .await

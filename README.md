@@ -120,6 +120,42 @@ camera video -c 1 -d 30 -o out.mp4   # Camera 1, custom output
 
 Press `Ctrl+C` to stop recording early.
 
+### Process Images
+
+Process images through computational photography pipelines.
+
+```bash
+camera process <MODE> [OPTIONS] <INPUT>...
+```
+
+#### Night Mode
+
+Multi-frame denoising and HDR+ pipeline for low-light photography.
+
+```bash
+camera process night-mode [OPTIONS] <INPUT>...
+```
+
+**Arguments:**
+- `<INPUT>...` - One or more image files (PNG, DNG) or a directory containing images
+
+**Options:**
+- `-o, --output <DIR>` - Output directory for processed images (default: `<input>/output` or `~/Pictures/camera`)
+
+**Examples:**
+```bash
+camera process night-mode /path/to/burst/               # Process all images in directory
+camera process night-mode img1.png img2.png img3.png    # Process specific files
+camera process night-mode /path/to/burst/ -o /output/   # Custom output directory
+```
+
+The pipeline automatically:
+- Selects the sharpest frame as reference
+- Aligns all frames to the reference using GPU-accelerated pyramid alignment
+- Merges frames using FFT-based frequency domain denoising
+- Applies tone mapping with shadow recovery
+- Outputs as DNG
+
 ### Terminal Mode (For the Brave)
 
 Ever wanted to see your face rendered in glorious Unicode? Wonder what you'd look like as a half-block character? Well, wonder no more!
@@ -185,6 +221,21 @@ just flatpak-clean  # Remove build artifacts
 ## Acknowledgments
 
 The exposure controls implementation was inspired by [cameractrls](https://github.com/soyersoyer/cameractrls), a camera controls GUI for Linux.
+
+### Night Mode Feature
+
+The night mode photo feature implements a simplified version of the HDR+ algorithm, with implementation guidance from:
+
+- **hdr-plus-swift** by Martin Marek ([GitHub](https://github.com/martin-marek/hdr-plus-swift)) - GPL-3.0
+  - Hierarchical pyramid alignment with L1/L2 hybrid cost functions
+  - FFT-based frequency domain merging
+  - Spatial domain merge algorithm
+  - Noise estimation techniques
+
+- **Google HDR+ Paper** - "Burst photography for high dynamic range and low-light imaging on mobile cameras" (Hasinoff et al., SIGGRAPH 2016)
+  - [Paper](https://www.hdrplusdata.org/hdrplus.pdf)
+
+- **Night Sight Paper** - "Handheld Mobile Photography in Very Low Light" (Liba et al., SIGGRAPH Asia 2019)
 
 ## License
 

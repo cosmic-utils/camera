@@ -19,7 +19,8 @@ impl AppModel {
     /// - Disabled: Grayed out and non-interactive during transitions
     pub fn build_capture_button(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
-        let is_disabled = self.transition_state.ui_disabled;
+        // Disable during transitions OR during burst mode capture/processing
+        let is_disabled = self.transition_state.ui_disabled || self.burst_mode.is_active();
 
         // Get corner radius from theme - use radius_xl for large buttons
         // Scale it to fit the button (max is half the button size for a circle)

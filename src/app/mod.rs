@@ -56,8 +56,9 @@ use cosmic::iced::Subscription;
 use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
 pub use state::{
-    AppFlags, AppModel, CameraMode, ContextPage, FileSource, FilterType, Message, PhotoAspectRatio,
-    PhotoTimerSetting, RecordingState, TheatreState, VirtualCameraState,
+    AppFlags, AppModel, BurstModeStage, BurstModeState, CameraMode, ContextPage, FileSource,
+    FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, RecordingState, TheatreState,
+    VirtualCameraState,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -120,7 +121,11 @@ impl cosmic::Application for AppModel {
                     fl!("about-support"),
                     "https://github.com/cosmic-utils/camera/issues",
                 ),
-            ]);
+            ])
+            .comments(
+                "Burst mode algorithm based on Google HDR+ (SIGGRAPH 2016) \
+                with implementation guidance from hdr-plus-swift by Martin Marek (GPL-3.0).",
+            );
 
         // Load configuration
         let (config_handler, config) =
@@ -258,6 +263,7 @@ impl cosmic::Application for AppModel {
             },
             base_exposure_time: None,
             theatre: TheatreState::default(),
+            burst_mode: BurstModeState::default(),
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
@@ -295,6 +301,22 @@ impl cosmic::Application for AppModel {
                 .map(|p| p.display_name().to_string())
                 .collect(),
             theme_dropdown_options: vec![fl!("match-desktop"), fl!("dark"), fl!("light")],
+            burst_mode_merge_dropdown_options: vec![
+                fl!("burst-mode-quality"),
+                fl!("burst-mode-fast"),
+            ],
+            burst_mode_frame_count_dropdown_options: vec![
+                fl!("hdr-plus-off"),
+                fl!("hdr-plus-auto"),
+                fl!("hdr-plus-frames-4"),
+                fl!("hdr-plus-frames-6"),
+                fl!("hdr-plus-frames-8"),
+                fl!("hdr-plus-frames-50"),
+            ],
+            photo_output_format_dropdown_options: crate::config::PhotoOutputFormat::ALL
+                .iter()
+                .map(|f| f.display_name().to_string())
+                .collect(),
             device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default

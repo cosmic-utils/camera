@@ -10,7 +10,8 @@
 
 use crate::app::FilterType;
 use crate::backends::camera::types::{BackendError, BackendResult, CameraFrame, PixelFormat};
-use cosmic::iced_wgpu::wgpu;
+use crate::gpu::{self, wgpu};
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Uniform data for the filter shader
@@ -27,8 +28,8 @@ struct FilterParams {
 ///
 /// Applies filters directly on RGBA textures for maximum simplicity and efficiency.
 pub struct GpuFilterRenderer {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     // RGBA input texture
     texture_rgba: Option<wgpu::Texture>,
     // RGBA output buffer (storage buffer for compute shader output)
@@ -53,46 +54,18 @@ impl GpuFilterRenderer {
     pub async fn new() -> BackendResult<Self> {
         info!("Initializing GPU filter renderer (RGBA mode)");
 
-        // Request adapter
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
+        // Create device with low-priority queue to avoid starving UI rendering
+        let (device, queue, gpu_info) =
+            gpu::create_low_priority_compute_device("virtual_camera_gpu")
+                .await
+                .map_err(|e| BackendError::InitializationFailed(e))?;
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| {
-                BackendError::InitializationFailed(
-                    "Failed to find suitable GPU adapter".to_string(),
-                )
-            })?;
-
-        let adapter_info = adapter.get_info();
         info!(
-            name = %adapter_info.name,
-            backend = ?adapter_info.backend,
-            "Selected GPU adapter for virtual camera"
+            name = %gpu_info.adapter_name,
+            backend = ?gpu_info.backend,
+            low_priority = gpu_info.low_priority_enabled,
+            "GPU device created for virtual camera filter"
         );
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("virtual_camera_gpu"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: Default::default(),
-                },
-                None,
-            )
-            .await
-            .map_err(|e| {
-                BackendError::InitializationFailed(format!("Failed to get GPU device: {}", e))
-            })?;
 
         // Create shader with shared filter functions
         let shader_source = format!(
@@ -164,7 +137,7 @@ impl GpuFilterRenderer {
             label: Some("vcam_filter_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -177,7 +150,6 @@ impl GpuFilterRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -273,14 +245,14 @@ impl GpuFilterRenderer {
 
         // Upload RGBA data
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: texture_rgba,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &frame.data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(frame.stride),
                 rows_per_image: None,
@@ -342,7 +314,7 @@ impl GpuFilterRenderer {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             let workgroups_x = (frame.width + 15) / 16;
             let workgroups_y = (frame.height + 15) / 16;
             pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
@@ -370,7 +342,7 @@ impl GpuFilterRenderer {
             let _ = tx.send(result);
         });
 
-        let _ = self.device.poll(wgpu::MaintainBase::Wait);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
         rx.recv()
             .map_err(|e| BackendError::Other(format!("Failed to map buffer: {}", e)))?

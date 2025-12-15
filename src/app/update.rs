@@ -19,7 +19,7 @@
 
 use crate::app::state::{AppModel, Message};
 use cosmic::Task;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 impl AppModel {
     /// Main message handler - routes messages to appropriate handler methods.
@@ -124,6 +124,19 @@ impl AppModel {
             // ===== Capture Operations =====
             Message::Capture => self.handle_capture(),
             Message::ToggleFlash => self.handle_toggle_flash(),
+            Message::ToggleBurstMode => self.handle_toggle_burst_mode(),
+            Message::SetBurstModeFrameCount(index) => self.handle_set_burst_mode_frame_count(index),
+            Message::BurstModeProgress(progress) => self.handle_burst_mode_progress(progress),
+            Message::BurstModeFramesCollected => self.handle_burst_mode_frames_collected(),
+            Message::BurstModeComplete(result) => self.handle_burst_mode_complete(result),
+            Message::PollBurstModeProgress => self.handle_poll_burst_mode_progress(),
+            Message::ResetBurstModeState => {
+                self.burst_mode.reset();
+                // Ensure flash is turned off when burst mode resets (safety measure)
+                self.flash_active = false;
+                debug!("Burst mode state reset");
+                Task::none()
+            }
             Message::CyclePhotoAspectRatio => self.handle_cycle_photo_aspect_ratio(),
             Message::FlashComplete => self.handle_flash_complete(),
             Message::CyclePhotoTimer => self.handle_cycle_photo_timer(),
@@ -179,6 +192,10 @@ impl AppModel {
             Message::SetAppTheme(index) => self.handle_set_app_theme(index),
             Message::SelectAudioDevice(index) => self.handle_select_audio_device(index),
             Message::SelectVideoEncoder(index) => self.handle_select_video_encoder(index),
+            Message::SelectPhotoOutputFormat(index) => {
+                self.handle_select_photo_output_format(index)
+            }
+            Message::ToggleSaveBurstRaw => self.handle_toggle_save_burst_raw(),
 
             // ===== System & Recovery =====
             Message::CameraRecoveryStarted {

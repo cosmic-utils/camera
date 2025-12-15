@@ -107,9 +107,26 @@ impl AppModel {
         let is_file_source = self.virtual_camera.is_file_source();
 
         if let Some(task) = self.transition_state.on_frame_received() {
-            self.current_frame = Some(frame);
+            self.current_frame = Some(Arc::clone(&frame));
             self.current_frame_is_file_source = is_file_source;
             return task.map(cosmic::Action::App);
+        }
+
+        // Collect frames for burst mode capture
+        if self.burst_mode.is_collecting_frames() {
+            let collection_complete = self.burst_mode.add_frame(Arc::clone(&frame));
+
+            debug!(
+                collected = self.burst_mode.frames_captured(),
+                total = self.burst_mode.target_frame_count,
+                "Burst mode frame collected"
+            );
+
+            if collection_complete {
+                self.current_frame = Some(frame);
+                self.current_frame_is_file_source = is_file_source;
+                return Task::done(cosmic::Action::App(Message::BurstModeFramesCollected));
+            }
         }
 
         self.current_frame = Some(frame);
