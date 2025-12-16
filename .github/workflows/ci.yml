@@ -206,7 +206,7 @@ jobs:
         run: just flatpak-bundle x86_64
 
       - name: Upload Flatpak bundle
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: camera-x86_64.flatpak
           path: camera-x86_64.flatpak
@@ -262,7 +262,7 @@ jobs:
         run: just flatpak-bundle aarch64
 
       - name: Upload Flatpak bundle
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: camera-aarch64.flatpak
           path: camera-aarch64.flatpak
@@ -318,7 +318,7 @@ jobs:
         run: just flatpak-bundle arm
 
       - name: Upload Flatpak bundle
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: camera-armhf.flatpak
           path: camera-armhf.flatpak
