@@ -33,7 +33,8 @@ impl AppModel {
             self.camera_cancel_flag =
                 std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-            // Reset aspect ratio to native when switching cameras
+            // Reset zoom and aspect ratio when switching cameras
+            self.zoom_level = 1.0;
             self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
 
             self.switch_camera_or_mode(self.current_camera_index, self.mode);
