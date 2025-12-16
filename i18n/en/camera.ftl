@@ -33,6 +33,8 @@ settings-camera = Camera
 settings-video = Video
 settings-device = Device
 settings-format = Format
+settings-backend = Backend
+settings-backend-description = Camera backend to use. PipeWire is recommended for most systems. Libcamera is for mobile Linux devices.
 settings-microphone = Microphone
 settings-encoder = Encoder
 settings-quality = Quality
@@ -45,6 +47,10 @@ settings-bug-reports = Bug reports
 settings-report-bug = Report bug
 settings-show-report = Show Report
 settings-resolution = Resolution
+
+# Backend options
+backend-pipewire = PipeWire
+backend-libcamera = libcamera
 settings-version = Version { $version }
 settings-version-flatpak = Version { $version } (Flatpak)
 

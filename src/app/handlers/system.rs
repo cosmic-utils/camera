@@ -402,4 +402,74 @@ impl AppModel {
         // Use iced/cosmic clipboard API - works in both native and flatpak
         cosmic::iced::clipboard::write(text).map(|_: ()| cosmic::Action::App(Message::Noop))
     }
+
+    pub(crate) fn handle_select_backend(&mut self, index: usize) -> Task<cosmic::Action<Message>> {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        // Get the backend type from the available backends list
+        let new_backend = match self.available_backends.get(index) {
+            Some(backend) => *backend,
+            None => return Task::none(),
+        };
+
+        // Don't do anything if the backend is the same
+        if new_backend == self.config.backend {
+            return Task::none();
+        }
+
+        info!(old = %self.config.backend, new = %new_backend, "Switching camera backend");
+
+        // Update config
+        self.config.backend = new_backend;
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save backend selection");
+            }
+        }
+
+        // Change the backend in the manager
+        if let Some(ref manager) = self.backend_manager {
+            if let Err(err) = manager.change_backend(new_backend) {
+                error!(?err, "Failed to change backend");
+                return Task::none();
+            }
+        }
+
+        // Clear current state and re-enumerate cameras with the new backend
+        self.available_cameras.clear();
+        self.available_formats.clear();
+        self.active_format = None;
+        self.current_frame = None;
+
+        // Re-enumerate cameras with the new backend
+        let backend = crate::backends::camera::get_backend(new_backend);
+        let cameras = backend.enumerate_cameras();
+        info!(count = cameras.len(), backend = %new_backend, "Re-enumerated cameras with new backend");
+
+        if !cameras.is_empty() {
+            self.available_cameras = cameras;
+            self.current_camera_index = 0;
+
+            // Update camera dropdown
+            self.camera_dropdown_options = self
+                .available_cameras
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+
+            // Get formats for the first camera
+            let device = &self.available_cameras[0];
+            self.available_formats = backend.get_formats(device, false);
+
+            // Select the first format if available
+            if !self.available_formats.is_empty() {
+                self.active_format = self.available_formats.first().cloned();
+            }
+
+            // Update all dropdowns
+            self.update_all_dropdowns();
+        }
+
+        Task::none()
+    }
 }
