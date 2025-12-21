@@ -2392,6 +2392,7 @@ dependencies = [
 [[package]]
 name = "freedepth"
 version = "0.1.0"
+source = "git+https://github.com/FreddyFunk/freedepth#44303105608d0ba5cb5024a3892b686777f6f930"
 dependencies = [
  "bitflags 2.10.0",
  "byteorder",
