@@ -48,11 +48,11 @@ impl AppModel {
                         Color::from_rgb(0.2, 0.5, 0.9) // Blue for virtual mode
                     }
                 }
-                CameraMode::Photo => {
+                CameraMode::Photo | CameraMode::Scene => {
                     if self.is_capturing {
                         Color::from_rgb(0.7, 0.7, 0.7) // Gray when capturing
                     } else {
-                        Color::WHITE // White for photo mode
+                        Color::WHITE // White for photo/scene mode
                     }
                 }
             }
@@ -102,7 +102,7 @@ impl AppModel {
             // Normal interactive button
             widget::button::custom(button_inner)
                 .on_press(match self.mode {
-                    CameraMode::Photo => Message::Capture,
+                    CameraMode::Photo | CameraMode::Scene => Message::Capture,
                     CameraMode::Video => Message::ToggleRecording,
                     CameraMode::Virtual => Message::ToggleVirtualCamera,
                 })

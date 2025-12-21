@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# udev rules for Microsoft Kinect
+# Install to /etc/udev/rules.d/51-kinect.rules
+# Then run: sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Alternatively, add your user to the 'plugdev' group:
+#   sudo usermod -a -G plugdev $USER
+
+# Xbox 360 Kinect Camera
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ae", MODE="0666", GROUP="plugdev"
+
+# Xbox 360 Kinect Motor
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02b0", MODE="0666", GROUP="plugdev"
+
+# Xbox 360 Kinect Audio
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ad", MODE="0666", GROUP="plugdev"
+
+# Kinect for Windows Camera
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02bf", MODE="0666", GROUP="plugdev"
+
+# Kinect for Windows Audio
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02be", MODE="0666", GROUP="plugdev"
+
+# Kinect for Windows Audio (alternate PIDs)
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02c3", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02bb", MODE="0666", GROUP="plugdev"

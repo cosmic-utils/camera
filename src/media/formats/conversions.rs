@@ -11,30 +11,42 @@ use super::Codec;
 /// Get GStreamer caps string for a codec
 pub fn codec_to_gst_caps(codec: &Codec) -> &'static str {
     match codec {
+        // Compressed
         Codec::MJPEG => "image/jpeg",
         Codec::H264 => "video/x-h264",
         Codec::H265 => "video/x-h265",
+
+        // Packed YUV 4:2:2
         Codec::YUYV => "video/x-raw,format=YUYV",
         Codec::UYVY => "video/x-raw,format=UYVY",
         Codec::YUY2 => "video/x-raw,format=YUY2",
         Codec::YVYU => "video/x-raw,format=YVYU",
         Codec::VYUY => "video/x-raw,format=VYUY",
+
+        // Planar YUV 4:2:0
         Codec::NV12 => "video/x-raw,format=NV12",
         Codec::NV21 => "video/x-raw,format=NV21",
         Codec::YV12 => "video/x-raw,format=YV12",
         Codec::I420 => "video/x-raw,format=I420",
+
+        // RGB
         Codec::RGB24 => "video/x-raw,format=RGB",
         Codec::RGB32 => "video/x-raw,format=RGBA",
         Codec::BGR24 => "video/x-raw,format=BGR",
         Codec::BGR32 => "video/x-raw,format=BGRA",
+
+        // Bayer patterns
         Codec::BayerGRBG => "video/x-bayer,format=grbg",
         Codec::BayerRGGB => "video/x-bayer,format=rggb",
         Codec::BayerBGGR => "video/x-bayer,format=bggr",
         Codec::BayerGBRG => "video/x-bayer,format=gbrg",
-        Codec::Y10B => "video/x-raw,format=GRAY10_LE32",
-        Codec::IR10 => "video/x-raw,format=GRAY10_LE32",
+
+        // Depth/IR
+        Codec::Y10B => "video/x-raw,format=GRAY16_LE", // Y10B needs special handling
+        Codec::IR10 => "video/x-raw,format=GRAY16_LE", // IR10 is 10-bit packed like Y10B
         Codec::Y16 => "video/x-raw,format=GRAY16_LE",
         Codec::GREY => "video/x-raw,format=GRAY8",
+
         Codec::Unknown => "video/x-raw",
     }
 }
@@ -58,6 +70,11 @@ mod tests {
         assert_eq!(codec_to_gst_caps(&Codec::MJPEG), "image/jpeg");
         assert_eq!(codec_to_gst_caps(&Codec::H264), "video/x-h264");
         assert_eq!(codec_to_gst_caps(&Codec::YUYV), "video/x-raw,format=YUYV");
+        assert_eq!(codec_to_gst_caps(&Codec::UYVY), "video/x-raw,format=UYVY");
+        assert_eq!(
+            codec_to_gst_caps(&Codec::BayerGRBG),
+            "video/x-bayer,format=grbg"
+        );
     }
 
     #[test]

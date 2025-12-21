@@ -8,6 +8,7 @@
 pub mod camera;
 pub mod capture;
 pub mod color;
+pub mod depth_camera;
 pub mod exposure;
 pub mod format;
 pub mod system;

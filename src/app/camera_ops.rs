@@ -49,9 +49,9 @@ impl AppModel {
         // Determine what format would be selected in the new mode
         // Note: We don't use current format as fallback to avoid cross-contamination
         let would_select_format = match new_mode {
-            CameraMode::Photo | CameraMode::Virtual => {
-                // Photo/Virtual mode: saved settings > max resolution
-                // Virtual mode uses photo settings since it's similar behavior
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Scene => {
+                // Photo/Virtual/Scene mode: saved settings > max resolution
+                // Virtual and Scene modes use photo settings since they're similar behavior
                 check_saved_settings(&self.config.photo_settings).or_else(|| {
                     format_selection::select_max_resolution_format(&formats_for_new_mode)
                 })
@@ -109,16 +109,17 @@ impl AppModel {
         };
 
         // Store in per-camera settings based on current mode
-        // Virtual mode shares settings with Photo mode
+        // Virtual and Scene modes share settings with Photo mode
         let mode_name = match self.mode {
-            CameraMode::Photo | CameraMode::Virtual => {
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Scene => {
                 self.config
                     .photo_settings
                     .insert(camera.path.clone(), format_settings);
-                if self.mode == CameraMode::Photo {
-                    "Photo"
-                } else {
-                    "Virtual"
+                match self.mode {
+                    CameraMode::Photo => "Photo",
+                    CameraMode::Virtual => "Virtual",
+                    CameraMode::Scene => "Scene",
+                    CameraMode::Video => unreachable!(),
                 }
             }
             CameraMode::Video => {
@@ -242,9 +243,11 @@ impl AppModel {
         self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
 
         // Format selection logic: both modes use saved settings, current format, or defaults
-        // Virtual mode uses the same format selection as Photo mode
+        // Virtual and Scene modes use the same format selection as Photo mode
         self.active_format = match mode {
-            CameraMode::Photo | CameraMode::Virtual => self.select_photo_format(&camera_path),
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Scene => {
+                self.select_photo_format(&camera_path)
+            }
             CameraMode::Video => self.select_video_format(&camera_path),
         };
 

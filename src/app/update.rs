@@ -179,6 +179,7 @@ impl AppModel {
             Message::ZoomOut => self.handle_zoom_out(),
             Message::ResetZoom => self.handle_reset_zoom(),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
+            Message::SceneSaved(result) => self.handle_scene_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),
             Message::RecordingStarted(path) => self.handle_recording_started(path),
@@ -264,6 +265,132 @@ impl AppModel {
             Message::PrivacyCoverStatusChanged(is_closed) => {
                 self.handle_privacy_cover_status_changed(is_closed)
             }
+
+            // ===== Depth Visualization =====
+            Message::ToggleDepthOverlay => self.handle_toggle_depth_overlay(),
+            Message::ToggleDepthGrayscale => self.handle_toggle_depth_grayscale(),
+
+            // ===== Calibration =====
+            Message::ShowCalibrationDialog => self.handle_show_calibration_dialog(),
+            Message::CloseCalibrationDialog => self.handle_close_calibration_dialog(),
+            Message::StartCalibration => self.handle_start_calibration(),
+
+            // ===== 3D Preview =====
+            Message::Toggle3DPreview => self.handle_toggle_3d_preview(),
+            Message::ToggleSceneViewMode => self.handle_toggle_scene_view_mode(),
+            Message::Preview3DMousePressed(x, y) => self.handle_preview_3d_mouse_pressed(x, y),
+            Message::Preview3DMouseMoved(x, y) => self.handle_preview_3d_mouse_moved(x, y),
+            Message::Preview3DMouseReleased => self.handle_preview_3d_mouse_released(),
+            Message::Reset3DPreviewRotation => self.handle_reset_3d_preview_rotation(),
+            Message::Zoom3DPreview(delta) => self.handle_zoom_3d_preview(delta),
+            Message::PointCloudRendered(width, height, data) => {
+                self.preview_3d.rendered_preview = Some((width, height, data));
+                Task::none()
+            }
+            Message::SecondaryDepthFrame(width, height, depth_data) => {
+                // Store depth data (unused - secondary capture was never implemented)
+                self.preview_3d.latest_depth_data = Some((width, height, depth_data));
+                info!(width, height, "Received depth frame");
+                self.handle_request_point_cloud_render()
+            }
+            Message::RequestPointCloudRender => self.handle_request_point_cloud_render(),
+
+            // ===== Motor/PTZ Controls =====
+            Message::ToggleMotorPicker => {
+                self.motor_picker_visible = !self.motor_picker_visible;
+                // Close other pickers when opening motor picker
+                if self.motor_picker_visible {
+                    self.exposure_picker_visible = false;
+                    self.color_picker_visible = false;
+                    self.tools_menu_visible = false;
+
+                    // Get initial tilt from motor control if available
+                    if self.kinect.is_device {
+                        use crate::backends::camera::depth_controller::{
+                            get_motor_tilt, is_motor_available,
+                        };
+                        if is_motor_available() {
+                            match get_motor_tilt() {
+                                Ok(tilt) => {
+                                    self.kinect.tilt_angle = tilt;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to get Kinect tilt: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::CloseMotorPicker => {
+                self.motor_picker_visible = false;
+                Task::none()
+            }
+            Message::SetPanAbsolute(value) => {
+                self.set_v4l2_pan(value);
+                Task::none()
+            }
+            Message::SetTiltAbsolute(value) => {
+                self.set_v4l2_tilt(value);
+                Task::none()
+            }
+            Message::SetZoomAbsolute(value) => {
+                self.set_v4l2_zoom(value);
+                Task::none()
+            }
+            Message::ResetPanTilt => {
+                self.reset_pan_tilt();
+                // Also reset Kinect tilt if it's a Kinect device
+                if self.kinect.is_device {
+                    return self.handle_set_kinect_tilt(0);
+                }
+                Task::none()
+            }
+
+            // ===== Kinect Controls =====
+            Message::SetKinectTilt(degrees) => self.handle_set_kinect_tilt(degrees),
+            Message::KinectStateUpdated(_tilt) => {
+                // Tilt is managed as "desired state" in UI to avoid flickering from motor feedback
+                // LED is automatically managed by freedepth
+                Task::none()
+            }
+            Message::KinectControlFailed(error) => {
+                tracing::warn!(error = %error, "Kinect control failed");
+                Task::none()
+            }
+            Message::KinectInitialized(result) => {
+                match result {
+                    Ok(tilt) => {
+                        tracing::info!(tilt, "Kinect controller initialized");
+                        self.kinect.tilt_angle = tilt;
+                    }
+                    Err(error) => {
+                        tracing::warn!(error = %error, "Failed to initialize Kinect controller");
+                    }
+                }
+                Task::none()
+            }
+
+            // ===== Native Kinect Streaming =====
+            Message::StartNativeKinectStreaming => self.handle_start_native_kinect_streaming(),
+            Message::StopNativeKinectStreaming => self.handle_stop_native_kinect_streaming(),
+
+            Message::NativeKinectStreamingStarted => {
+                info!("Native Kinect streaming started");
+                self.kinect.streaming = true;
+                // Start polling for frames
+                Task::done(cosmic::Action::App(Message::PollNativeKinectFrames))
+            }
+
+            Message::NativeKinectStreamingFailed(error) => {
+                warn!(error = %error, "Native Kinect streaming failed");
+                self.kinect.streaming = false;
+                self.preview_3d.enabled = false;
+                Task::none()
+            }
+
+            Message::PollNativeKinectFrames => self.handle_poll_native_kinect_frames(),
 
             Message::Noop => Task::none(),
         }

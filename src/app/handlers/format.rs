@@ -56,6 +56,20 @@ impl AppModel {
 
         self.mode = mode;
         self.zoom_level = 1.0; // Reset zoom when switching modes
+
+        // Handle 3D preview based on Scene mode
+        if mode == CameraMode::Scene {
+            // Enable 3D preview when entering Scene mode
+            self.preview_3d.enabled = true;
+            self.preview_3d.rotation = (0.0, 0.0);
+            self.preview_3d.base_rotation = (0.0, 0.0);
+            self.preview_3d.zoom = 0.0;
+        } else if self.preview_3d.enabled {
+            // Disable 3D preview when leaving Scene mode
+            self.preview_3d.enabled = false;
+            self.preview_3d.rendered_preview = None;
+        }
+
         self.switch_camera_or_mode(self.current_camera_index, mode);
 
         // When switching to Virtual mode with a file source, restore the file source preview

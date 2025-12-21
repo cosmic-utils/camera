@@ -423,6 +423,7 @@ pub fn process_burst_mode(
         exposure_time: None,
         iso: None,
         gain: None,
+        depth_data: None,
     };
 
     let output_path = rt.block_on(async {
@@ -503,6 +504,10 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
         format: PixelFormat::RGBA,
         stride: width * 4,
         captured_at: Instant::now(),
+        depth_data: None,
+        depth_width: 0,
+        depth_height: 0,
+        video_timestamp: None,
     })
 }
 
@@ -536,6 +541,10 @@ fn load_burst_mode_frames(
                 format: PixelFormat::RGBA,
                 stride: width * 4,
                 captured_at: Instant::now(),
+                depth_data: None,
+                depth_width: 0,
+                depth_height: 0,
+                video_timestamp: None,
             }
         };
 

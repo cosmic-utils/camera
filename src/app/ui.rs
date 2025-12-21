@@ -5,15 +5,15 @@
 //! This module contains shared UI utilities that are used by multiple view modules.
 
 use crate::app::state::AppModel;
-use crate::backends::camera::types::CameraFormat;
+use crate::backends::camera::types::{CameraFormat, SensorType};
 use crate::constants;
 use std::collections::HashMap;
 
 impl AppModel {
-    /// Group formats by resolution label and return sorted list with best resolution for each label
+    /// Group RGB formats by resolution label and return sorted list with best resolution for each label
     ///
     /// This helper is used by the format picker to organize formats by resolution categories
-    /// (SD, HD, 720p, 4K, etc.).
+    /// (SD, HD, 720p, 4K, etc.). Only includes RGB camera formats, not depth sensor formats.
     ///
     /// Returns:
     /// - A sorted list of (label, width) pairs representing unique resolution categories
@@ -25,12 +25,18 @@ impl AppModel {
         HashMap<u32, Vec<(usize, &CameraFormat)>>,
     ) {
         // Group formats by their label (SD, HD, 4K, etc.) and pick the highest resolution for each
+        // Only include RGB formats, not depth sensor formats
         let mut label_to_best_format: HashMap<
             &'static str,
             (u32, u32, Vec<(usize, &CameraFormat)>),
         > = HashMap::new();
 
         for (idx, fmt) in self.available_formats.iter().enumerate() {
+            // Skip depth sensor formats - they are shown separately
+            if fmt.sensor_type == SensorType::Depth {
+                continue;
+            }
+
             if let Some(label) = constants::get_resolution_label(fmt.width) {
                 let resolution_score = fmt.width * fmt.height;
 

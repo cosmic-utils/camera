@@ -524,6 +524,10 @@ impl VideoRecorder {
                                                 crate::backends::camera::types::PixelFormat::RGBA,
                                             stride,
                                             captured_at: std::time::Instant::now(),
+                                            depth_data: None,
+                                            depth_width: 0,
+                                            depth_height: 0,
+                                            video_timestamp: None,
                                         };
 
                                         let _ = preview_sender.send(frame).await;

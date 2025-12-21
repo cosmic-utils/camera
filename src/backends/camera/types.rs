@@ -49,6 +49,28 @@ pub struct CameraDevice {
     pub device_info: Option<DeviceInfo>, // V4L2 device information (card, driver, path, real_path)
 }
 
+/// Type of sensor (distinguishes RGB camera from depth/IR sensors)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SensorType {
+    /// Standard RGB camera (video/photo)
+    #[default]
+    Rgb,
+    /// Depth sensor (e.g., Kinect Y10B)
+    Depth,
+    /// Infrared sensor (e.g., Kinect IR)
+    Ir,
+}
+
+impl std::fmt::Display for SensorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SensorType::Rgb => write!(f, "Camera"),
+            SensorType::Depth => write!(f, "Depth"),
+            SensorType::Ir => write!(f, "IR"),
+        }
+    }
+}
+
 /// Camera format specification
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CameraFormat {
@@ -57,6 +79,7 @@ pub struct CameraFormat {
     pub framerate: Option<u32>,     // None for photo mode
     pub hardware_accelerated: bool, // True for MJPEG and raw formats with HW support
     pub pixel_format: String,       // FourCC code (e.g., "MJPG", "H264", "YUYV")
+    pub sensor_type: SensorType,    // RGB camera vs depth sensor
 }
 
 impl std::fmt::Display for CameraFormat {
@@ -75,6 +98,9 @@ pub enum PixelFormat {
     /// RGBA - 32-bit with alpha (4 bytes per pixel)
     /// This is the native format used throughout the pipeline
     RGBA,
+    /// Depth16 - 16-bit grayscale depth data
+    /// Used for depth sensors like the Kinect Y10B format
+    Depth16,
 }
 
 /// A single frame from the camera
@@ -82,10 +108,20 @@ pub enum PixelFormat {
 pub struct CameraFrame {
     pub width: u32,
     pub height: u32,
-    pub data: Arc<[u8]>,      // Zero-copy frame data (RGBA format)
-    pub format: PixelFormat,  // Pixel format of the data (always RGBA)
+    pub data: Arc<[u8]>,      // Zero-copy frame data (RGBA format for preview)
+    pub format: PixelFormat,  // Pixel format of the data (RGBA or Depth16)
     pub stride: u32,          // Row stride (bytes per row, may include padding)
     pub captured_at: Instant, // Timestamp when frame was captured (for latency diagnostics)
+    /// Optional 16-bit depth data for depth sensor frames
+    /// Contains the full precision depth values when available
+    pub depth_data: Option<Arc<[u16]>>,
+    /// Depth dimensions (may differ from RGB width/height)
+    /// Only set when depth_data is Some
+    pub depth_width: u32,
+    pub depth_height: u32,
+    /// Video frame timestamp from hardware (for synchronizing depth/color at different frame rates)
+    /// Only used by Kinect native backend where depth (30fps) and color (10fps high-res) differ
+    pub video_timestamp: Option<u32>,
 }
 
 /// Frame receiver type for preview streams
