@@ -274,6 +274,10 @@ mod tests {
             format: PixelFormat::RGBA,
             stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
             captured_at: std::time::Instant::now(),
+            depth_data: None,
+            depth_width: 0,
+            depth_height: 0,
+            video_timestamp: None,
         };
 
         let (gray, w, h) = convert_rgba_to_gray(&frame);

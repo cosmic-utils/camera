@@ -496,6 +496,126 @@ impl Default for BurstModeState {
     }
 }
 
+/// Kinect device state
+///
+/// Consolidates all Kinect-specific state including device detection,
+/// motor control, calibration, and native backend streaming.
+#[derive(Default)]
+pub struct KinectState {
+    /// Whether the current camera is a Kinect device
+    pub is_device: bool,
+    /// Current tilt angle (see freedepth::TILT_MIN_DEGREES/TILT_MAX_DEGREES)
+    pub tilt_angle: i8,
+    /// Path to the Kinect depth device (found when 3D mode enabled on RGB)
+    pub depth_device_path: Option<String>,
+    /// Native depth camera backend for simultaneous RGB+depth streaming
+    pub native_backend: Option<crate::backends::camera::NativeDepthBackend>,
+    /// Whether native Kinect streaming is active
+    pub streaming: bool,
+    /// Current calibration info from depth device (for display)
+    /// Uses generic RegistrationSummary for device-agnostic access
+    pub calibration_info: Option<freedepth::RegistrationSummary>,
+    /// Whether calibration dialog is visible
+    pub calibration_dialog_visible: bool,
+    /// Registration data for depth-to-RGB alignment (used by scene capture)
+    pub registration_data: Option<crate::pipelines::scene::RegistrationData>,
+}
+
+impl KinectState {
+    /// Check if native backend should be shut down
+    pub fn shutdown_backend(&mut self) {
+        if self.native_backend.is_some() {
+            tracing::info!("KinectState: shutting down native Kinect backend");
+            self.native_backend = None; // Drop will handle LED cleanup
+            self.streaming = false;
+        }
+    }
+}
+
+/// 3D preview state for depth camera visualization
+///
+/// Consolidates all state related to 3D point cloud/mesh rendering
+/// including rotation, zoom, and render caching.
+#[derive(Clone)]
+pub struct Preview3DState {
+    /// Whether to show 3D preview (for depth cameras)
+    pub enabled: bool,
+    /// Scene view mode (point cloud or mesh)
+    pub view_mode: SceneViewMode,
+    /// Current rotation angles (pitch, yaw in radians)
+    pub rotation: (f32, f32),
+    /// Base rotation when drag started (for path independence)
+    pub base_rotation: (f32, f32),
+    /// Whether the mouse is currently dragging to rotate
+    pub dragging: bool,
+    /// Mouse position when drag started
+    pub drag_start_pos: Option<(f32, f32)>,
+    /// Last mouse position during drag
+    pub last_mouse_pos: Option<(f32, f32)>,
+    /// Zoom level (1.0 = default, higher = closer)
+    pub zoom: f32,
+    /// Rendered point cloud RGBA data (width, height, data)
+    pub rendered_preview: Option<(u32, u32, Arc<Vec<u8>>)>,
+    /// Most recent depth data (width, height, depth_u16_data)
+    pub latest_depth_data: Option<(u32, u32, Arc<[u16]>)>,
+    /// Last video frame timestamp rendered in scene view
+    pub last_render_video_timestamp: Option<u32>,
+    /// Last time a scene render was requested (for throttling)
+    pub last_render_request_time: Option<Instant>,
+}
+
+impl Default for Preview3DState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            view_mode: SceneViewMode::default(),
+            rotation: (0.0, 0.0),
+            base_rotation: (0.0, 0.0),
+            dragging: false,
+            drag_start_pos: None,
+            last_mouse_pos: None,
+            zoom: 1.0,
+            rendered_preview: None,
+            latest_depth_data: None,
+            last_render_video_timestamp: None,
+            last_render_request_time: None,
+        }
+    }
+}
+
+impl Preview3DState {
+    /// Reset rotation to default view
+    pub fn reset_rotation(&mut self) {
+        self.rotation = (0.0, 0.0);
+        self.base_rotation = (0.0, 0.0);
+    }
+
+    /// Start drag operation
+    pub fn start_drag(&mut self, x: f32, y: f32) {
+        self.dragging = true;
+        self.drag_start_pos = Some((x, y));
+        self.base_rotation = self.rotation;
+    }
+
+    /// End drag operation
+    pub fn end_drag(&mut self) {
+        self.dragging = false;
+        self.drag_start_pos = None;
+        self.last_mouse_pos = None;
+    }
+}
+
+/// Depth visualization settings
+///
+/// Controls how depth data is displayed in the camera preview.
+#[derive(Debug, Clone, Default)]
+pub struct DepthVisualizationState {
+    /// Whether to show depth overlay on camera preview
+    pub overlay_enabled: bool,
+    /// Whether to use grayscale instead of colormap
+    pub grayscale_mode: bool,
+}
+
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
 pub struct AppModel {
@@ -649,6 +769,29 @@ pub struct AppModel {
     // ===== Privacy Cover Detection =====
     /// Whether the camera privacy cover is closed (blocking the camera)
     pub privacy_cover_closed: bool,
+
+    // ===== Kinect State =====
+    /// Kinect device state (detection, motor, calibration, native streaming)
+    pub kinect: KinectState,
+
+    // ===== Motor/PTZ Controls =====
+    /// Whether motor controls picker is visible
+    pub motor_picker_visible: bool,
+
+    // ===== Depth Visualization =====
+    /// Depth visualization settings (overlay, grayscale mode)
+    pub depth_viz: DepthVisualizationState,
+
+    // ===== 3D Preview =====
+    /// 3D preview state (rotation, zoom, rendering)
+    pub preview_3d: Preview3DState,
+}
+
+impl Drop for AppModel {
+    fn drop(&mut self) {
+        // Ensure Kinect native backend is shut down (LED will be turned off)
+        self.kinect.shutdown_backend();
+    }
 }
 
 /// State for smooth blur transitions when changing camera settings
@@ -671,6 +814,18 @@ pub enum CameraMode {
     Video,
     /// Virtual camera mode - streams filtered video to a PipeWire virtual camera
     Virtual,
+    /// Scene mode - 3D point cloud view for depth cameras (Kinect, RealSense, etc.)
+    Scene,
+}
+
+/// Scene mode view type (point cloud vs mesh)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SceneViewMode {
+    /// Point cloud - individual points rendered (default)
+    #[default]
+    PointCloud,
+    /// Mesh - triangulated surface with RGB texture
+    Mesh,
 }
 
 /// File source for virtual camera streaming
@@ -1038,6 +1193,16 @@ pub enum Message {
     /// Reset pan/tilt to center position
     ResetPanTilt,
 
+    // ===== Depth Camera Controls =====
+    /// Set depth camera tilt angle (see freedepth::TILT_MIN_DEGREES/TILT_MAX_DEGREES)
+    SetKinectTilt(i8),
+    /// Kinect state updated (tilt) - response from async operation
+    KinectStateUpdated(i8),
+    /// Kinect control operation failed
+    KinectControlFailed(String),
+    /// Kinect controller initialized (called after lazy init when motor picker opens)
+    KinectInitialized(Result<i8, String>),
+
     // ===== Format Selection =====
     /// Switch between Photo/Video mode
     SetMode(CameraMode),
@@ -1097,6 +1262,8 @@ pub enum Message {
     ResetZoom,
     /// Photo was saved successfully with the given file path
     PhotoSaved(Result<String, String>),
+    /// Scene was captured successfully with the scene directory path
+    SceneSaved(Result<String, String>),
     /// Clear capture animation after brief delay
     ClearCaptureAnimation,
     /// Toggle video recording
@@ -1211,6 +1378,54 @@ pub enum Message {
     // ===== Privacy Cover Detection =====
     /// Privacy cover status changed (true = cover closed/camera blocked)
     PrivacyCoverStatusChanged(bool),
+
+    // ===== Depth Visualization =====
+    /// Toggle depth overlay visibility
+    ToggleDepthOverlay,
+    /// Toggle grayscale depth mode (grayscale instead of colormap)
+    ToggleDepthGrayscale,
+
+    // ===== Calibration =====
+    /// Show calibration status dialog (explains current calibration state)
+    ShowCalibrationDialog,
+    /// Close calibration dialog
+    CloseCalibrationDialog,
+    /// Start calibration procedure
+    StartCalibration,
+
+    // ===== 3D Preview =====
+    /// Toggle 3D point cloud preview (for depth cameras)
+    Toggle3DPreview,
+    /// Toggle scene view mode (point cloud vs mesh)
+    ToggleSceneViewMode,
+    /// 3D preview mouse pressed (start dragging)
+    Preview3DMousePressed(f32, f32),
+    /// 3D preview mouse moved (update rotation while dragging)
+    Preview3DMouseMoved(f32, f32),
+    /// 3D preview mouse released (stop dragging)
+    Preview3DMouseReleased,
+    /// Reset 3D preview rotation to default view
+    Reset3DPreviewRotation,
+    /// Zoom 3D preview (delta: positive = zoom in, negative = zoom out)
+    Zoom3DPreview(f32),
+    /// Point cloud preview rendered (width, height, rgba_data)
+    PointCloudRendered(u32, u32, Arc<Vec<u8>>),
+    /// Request point cloud render (triggered on rotation change while 3D mode active)
+    RequestPointCloudRender,
+    /// Secondary depth frame received (for 3D preview on RGB camera)
+    SecondaryDepthFrame(u32, u32, Arc<[u16]>),
+
+    // ===== Native Kinect Streaming =====
+    /// Start native Kinect streaming (bypasses V4L2 for simultaneous RGB+depth)
+    StartNativeKinectStreaming,
+    /// Stop native Kinect streaming
+    StopNativeKinectStreaming,
+    /// Native Kinect streaming started successfully
+    NativeKinectStreamingStarted,
+    /// Native Kinect streaming failed to start
+    NativeKinectStreamingFailed(String),
+    /// Poll native Kinect backend for new frames
+    PollNativeKinectFrames,
 
     /// No-op message for async tasks that don't need a response
     Noop,

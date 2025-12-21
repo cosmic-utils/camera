@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- 3D Depth icon: perspective cube with dots and depth arrow -->
+
+  <!-- Top plane (perspective trapezoid) -->
+  <path d="M6 4 L18 4 L20 6 L4 6 Z" fill="#FFFFFF"/>
+
+  <!-- Bottom plane (perspective trapezoid) -->
+  <path d="M4 18 L20 18 L18 20 L6 20 Z" fill="#FFFFFF"/>
+
+  <!-- Corner dots forming 3D cube outline -->
+  <!-- Top corners -->
+  <circle cx="5" cy="5" r="1.2" fill="#FFFFFF"/>
+  <circle cx="19" cy="5" r="1.2" fill="#FFFFFF"/>
+
+  <!-- Upper middle dots -->
+  <circle cx="4" cy="8" r="1.2" fill="#FFFFFF"/>
+  <circle cx="20" cy="8" r="1.2" fill="#FFFFFF"/>
+
+  <!-- Middle dots -->
+  <circle cx="3.5" cy="11" r="1.2" fill="#FFFFFF"/>
+  <circle cx="20.5" cy="11" r="1.2" fill="#FFFFFF"/>
+
+  <!-- Lower middle dots -->
+  <circle cx="4" cy="14" r="1.2" fill="#FFFFFF"/>
+  <circle cx="20" cy="14" r="1.2" fill="#FFFFFF"/>
+
+  <!-- Bottom corners -->
+  <circle cx="5" cy="17" r="1.2" fill="#FFFFFF"/>
+  <circle cx="19" cy="17" r="1.2" fill="#FFFFFF"/>
+
+  <!-- Double-headed vertical arrow (depth indicator) -->
+  <!-- Arrow shaft -->
+  <line x1="12" y1="7.5" x2="12" y2="16.5" stroke="#FFFFFF" stroke-width="2"/>
+  <!-- Top arrowhead -->
+  <path d="M12 7 L9.5 10 L14.5 10 Z" fill="#FFFFFF"/>
+  <!-- Bottom arrowhead -->
+  <path d="M12 17 L9.5 14 L14.5 14 Z" fill="#FFFFFF"/>
+</svg>

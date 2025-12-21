@@ -10,6 +10,11 @@ git-description = Git commit {$hash} on {$date}
 mode-video = VIDEO
 mode-photo = PHOTO
 mode-virtual = VIRTUAL
+mode-scene = SCENE
+
+# Scene view modes
+scene-view-points = Points
+scene-view-mesh = Mesh
 
 # Virtual camera
 virtual-camera-title = Virtual camera (experimental)
@@ -53,6 +58,7 @@ device-info-card = Card
 device-info-driver = Driver
 device-info-path = Path
 device-info-real-path = Real Path
+device-info-status = Status
 
 # Bitrate presets
 preset-low = Low
@@ -65,6 +71,8 @@ initializing-camera = Initializing camera...
 # Format picker
 format-resolution = Resolution:
 format-framerate = Frame Rate:
+format-depth = Depth Sensor:
+depth-required-for-3d = 3D preview requires depth format - select Y10B format in settings
 
 # Status indicators
 indicator-res = RES
@@ -119,6 +127,18 @@ tools-exposure = Exposure
 tools-color = Color
 tools-filter = Filter
 tools-theatre = Theatre
+tools-kinect = Kinect
+
+# Kinect controls
+kinect-title = Motor Controls
+kinect-tilt = Tilt Angle
+kinect-led = LED
+kinect-led-off = Off
+kinect-led-green = Green
+kinect-led-red = Red
+kinect-led-yellow = Yellow
+kinect-led-blink-green = Blink Green
+kinect-led-blink-red-yellow = Blink Red/Yellow
 
 # PTZ controls
 ptz-title = Camera Controls

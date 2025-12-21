@@ -54,6 +54,15 @@ fn try_create_pipewire_pipeline(
     // Log requested format
     log_requested_format(caps_filter);
 
+    // Y10B depth format should be handled by V4L2 direct capture in the backend
+    // This is a safety fallback in case GStreamer pipeline is called directly
+    if pixel_format == Some("Y10B") {
+        warn!("Y10B depth format reached GStreamer pipeline - should use V4L2 direct capture");
+        return Err(
+            "Y10B depth sensor format requires V4L2 direct capture (not GStreamer).".into(),
+        );
+    }
+
     // Build PipeWire pipeline based on pixel format
     let pipewire_pipeline =
         build_pipewire_pipeline_string(&pw_path_prop, caps_filter, pixel_format);
