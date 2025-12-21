@@ -41,7 +41,7 @@ libc = "0.2.179"
 dng = "1.5"
 async-stream = "0.3"
 v4l = "0.14"
-freedepth = { path = "../freedepth" }  # Multi-device depth camera library
+freedepth = { git = "https://github.com/FreddyFunk/freedepth" }  # Multi-device depth camera library
 las = { version = "0.9", features = ["laz"] }  # LAZ point cloud export
 
 # Separate wgpu for compute pipelines (independent from libcosmic's wgpu for UI)
