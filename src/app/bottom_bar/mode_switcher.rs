@@ -80,6 +80,37 @@ impl AppModel {
             .push(styled_mode_button(photo_button, is_disabled))
             .spacing(spacing.space_xxs);
 
+        // Show Scene button when camera provides depth data
+        let has_depth = self
+            .current_frame
+            .as_ref()
+            .map(|f| f.depth_data.is_some())
+            .unwrap_or(false)
+            || self.kinect.is_device;
+
+        if has_depth {
+            let scene_label = fl!("mode-scene");
+            let scene_button = if is_disabled {
+                widget::button::text(scene_label).class(if self.mode == CameraMode::Scene {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Text
+                })
+            } else {
+                widget::button::text(scene_label)
+                    .on_press(Message::SetMode(CameraMode::Scene))
+                    .class(if self.mode == CameraMode::Scene {
+                        cosmic::theme::Button::Suggested
+                    } else {
+                        cosmic::theme::Button::Text
+                    })
+            };
+
+            row = row
+                .push(widget::horizontal_space().width(spacing.space_xs))
+                .push(styled_mode_button(scene_button, is_disabled));
+        }
+
         // Only show Virtual button when the feature is enabled
         if self.config.virtual_camera_enabled {
             let virtual_label = fl!("mode-virtual");

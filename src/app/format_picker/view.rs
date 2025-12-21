@@ -153,6 +153,8 @@ impl AppModel {
 
         // Build picker panel with semi-transparent themed background
         // Uses picker_panel_style which caps roundness at "slightly rounded"
+        // Note: Depth formats are not shown in the picker - they are automatically
+        // captured alongside RGB at matching resolution/framerate when available
         let picker_panel = widget::container(
             widget::column()
                 .push(res_row)

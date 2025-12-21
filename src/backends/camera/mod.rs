@@ -29,11 +29,19 @@
 //!       └────────┘
 //! ```
 
+pub mod depth_controller;
+pub mod depth_native;
 pub mod manager;
 pub mod pipewire;
 pub mod types;
 pub mod v4l2_controls;
+pub mod v4l2_depth;
 
+pub use depth_controller::{DepthController, is_depth_camera};
+pub use depth_native::{
+    DEPTH_PATH_PREFIX, NativeDepthBackend, can_use_native_backend, depth_device_index,
+    enumerate_depth_cameras, get_depth_formats, is_depth_native_device, rgb_to_rgba,
+};
 pub use manager::CameraBackendManager;
 pub use types::*;
 

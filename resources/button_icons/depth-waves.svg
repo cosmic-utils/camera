@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Measurement icon: ruler with tick marks and distance arrow -->
+
+  <!-- Double-headed arrow with end caps -->
+  <!-- Left end cap -->
+  <line x1="2" y1="4" x2="2" y2="10" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <!-- Right end cap -->
+  <line x1="22" y1="4" x2="22" y2="10" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <!-- Arrow line -->
+  <line x1="2" y1="7" x2="22" y2="7" stroke="#FFFFFF" stroke-width="1.5"/>
+  <!-- Left arrowhead -->
+  <path d="M2 7 L6 4.5 L6 9.5 Z" fill="#FFFFFF"/>
+  <!-- Right arrowhead -->
+  <path d="M22 7 L18 4.5 L18 9.5 Z" fill="#FFFFFF"/>
+
+  <!-- Ruler body -->
+  <rect x="2" y="13" width="20" height="8" rx="1" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+
+  <!-- Ruler tick marks (from left to right) -->
+  <line x1="4" y1="13" x2="4" y2="17" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="6" y1="13" x2="6" y2="15.5" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="8" y1="13" x2="8" y2="17" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="10" y1="13" x2="10" y2="15.5" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="12" y1="13" x2="12" y2="17" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="14" y1="13" x2="14" y2="15.5" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="16" y1="13" x2="16" y2="17" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="18" y1="13" x2="18" y2="15.5" stroke="#FFFFFF" stroke-width="1.2"/>
+  <line x1="20" y1="13" x2="20" y2="17" stroke="#FFFFFF" stroke-width="1.2"/>
+</svg>

@@ -99,10 +99,8 @@ impl AppModel {
                 })
                 .map(|f| {
                     let desc = get_codec_short_description(&f.pixel_format);
-                    (
-                        f.pixel_format.clone(),
-                        format!("{} - {}", f.pixel_format, desc),
-                    )
+                    let detail = get_codec_display_detail(&f.pixel_format);
+                    (f.pixel_format.clone(), format!("{} ({})", desc, detail))
                 })
                 .collect::<HashSet<_>>()
                 .into_iter()
@@ -156,9 +154,10 @@ impl AppModel {
             .map(|f| {
                 let framerate = f.framerate.unwrap_or(0);
                 let codec_desc = get_codec_short_description(&f.pixel_format);
+                let codec_detail = get_codec_display_detail(&f.pixel_format);
                 format!(
                     "{}x{} @ {}fps - {} ({})",
-                    f.width, f.height, framerate, f.pixel_format, codec_desc
+                    f.width, f.height, framerate, codec_desc, codec_detail
                 )
             })
             .collect();
@@ -176,4 +175,9 @@ fn pixel_format_rank(pixel_format: &str) -> u32 {
 /// Get short codec description for dropdowns
 pub fn get_codec_short_description(pixel_format: &str) -> &'static str {
     Codec::from_fourcc(pixel_format).short_description()
+}
+
+/// Get codec display detail for parentheses in dropdowns
+pub fn get_codec_display_detail(pixel_format: &str) -> &'static str {
+    Codec::from_fourcc(pixel_format).display_detail()
 }

@@ -35,6 +35,8 @@
 //!
 //! - [`photo`]: Async photo capture with filters and JPEG encoding
 //! - [`video`]: Video recording with GStreamer and hardware acceleration
+//! - [`scene`]: 3D scene capture with depth, color, point cloud, and mesh export
 
 pub mod photo;
+pub mod scene;
 pub mod video;

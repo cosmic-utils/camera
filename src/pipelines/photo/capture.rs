@@ -117,6 +117,10 @@ mod tests {
             format: PixelFormat::RGBA,
             stride: 1920 * 4, // RGBA stride
             captured_at: std::time::Instant::now(),
+            depth_data: None,
+            depth_width: 0,
+            depth_height: 0,
+            video_timestamp: None,
         };
 
         let captured = PhotoCapture::capture_from_frame(frame).unwrap();
