@@ -232,7 +232,14 @@ pub fn query_control(device_path: &str, control_id: u32) -> Option<ControlInfo> 
         reserved: [0; 2],
     };
 
-    let result = unsafe { libc::ioctl(fd, VIDIOC_QUERYCTRL, &mut qctrl as *mut V4l2Queryctrl) };
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_ioctl,
+            fd,
+            VIDIOC_QUERYCTRL,
+            &mut qctrl as *mut V4l2Queryctrl,
+        )
+    };
 
     if result < 0 {
         return None;
@@ -260,7 +267,14 @@ pub fn get_control(device_path: &str, control_id: u32) -> Option<i32> {
         value: 0,
     };
 
-    let result = unsafe { libc::ioctl(fd, VIDIOC_G_CTRL, &mut ctrl as *mut V4l2Control) };
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_ioctl,
+            fd,
+            VIDIOC_G_CTRL,
+            &mut ctrl as *mut V4l2Control,
+        )
+    };
 
     if result < 0 {
         debug!(device_path, control_id, "Failed to get V4L2 control");
@@ -280,7 +294,14 @@ pub fn set_control(device_path: &str, control_id: u32, value: i32) -> Result<(),
         value,
     };
 
-    let result = unsafe { libc::ioctl(fd, VIDIOC_S_CTRL, &mut ctrl as *mut V4l2Control) };
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_ioctl,
+            fd,
+            VIDIOC_S_CTRL,
+            &mut ctrl as *mut V4l2Control,
+        )
+    };
 
     if result < 0 {
         let errno = std::io::Error::last_os_error();
@@ -326,7 +347,14 @@ pub fn query_menu_items(device_path: &str, control_id: u32, max_index: i32) -> V
             reserved: 0,
         };
 
-        let result = unsafe { libc::ioctl(fd, VIDIOC_QUERYMENU, &mut qmenu as *mut V4l2Querymenu) };
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_ioctl,
+                fd,
+                VIDIOC_QUERYMENU,
+                &mut qmenu as *mut V4l2Querymenu,
+            )
+        };
 
         if result >= 0 {
             items.push(MenuItem {
