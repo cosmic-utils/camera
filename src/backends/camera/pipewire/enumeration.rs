@@ -273,7 +273,14 @@ fn get_v4l2_driver(device_path: &str) -> Option<String> {
         reserved: [0; 3],
     };
 
-    let result = unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut cap as *mut V4l2Capability) };
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_ioctl,
+            fd,
+            VIDIOC_QUERYCAP,
+            &mut cap as *mut V4l2Capability,
+        )
+    };
 
     if result < 0 {
         debug!(device_path, "Failed to query V4L2 capability");
