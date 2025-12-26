@@ -2,14 +2,26 @@
 
 //! Format selection and preference logic
 
-use crate::backends::camera::types::CameraFormat;
+use crate::backends::camera::types::{CameraFormat, SensorType};
 use crate::media::Codec;
 use tracing::info;
+
+/// Filter formats to only include RGB (non-depth) formats
+///
+/// Auto-selection always prefers RGB camera formats over depth sensor formats.
+/// Depth data is captured automatically alongside RGB when available.
+fn filter_rgb_formats(formats: &[CameraFormat]) -> Vec<&CameraFormat> {
+    formats
+        .iter()
+        .filter(|f| f.sensor_type == SensorType::Rgb)
+        .collect()
+}
 
 /// Select format with maximum resolution (for Photo mode)
 ///
 /// Photo mode: ALWAYS select maximum resolution, regardless of codec.
 /// The user wants the highest quality photo possible.
+/// Always prefers RGB formats over depth sensor formats.
 ///
 /// Framerate preference:
 /// - Prefer 30-60 fps range (at least 30 fps, capped at 60 fps)
@@ -19,20 +31,22 @@ use tracing::info;
 /// Raw formats: YUYV > UYVY > YUY2 > NV12 > YV12 > I420
 /// Encoded formats: H.264 > HW-accelerated MJPEG > HW-accelerated > MJPEG > First
 pub fn select_max_resolution_format(formats: &[CameraFormat]) -> Option<CameraFormat> {
-    if formats.is_empty() {
+    // Filter to RGB formats only - depth formats are handled separately
+    let rgb_formats = filter_rgb_formats(formats);
+    if rgb_formats.is_empty() {
         return None;
     }
 
-    info!("Photo mode: selecting maximum resolution with optimal framerate");
+    info!("Photo mode: selecting maximum resolution with optimal framerate (RGB only)");
 
-    // Find max resolution (by total pixels)
-    let max_pixels = formats.iter().map(|f| f.width * f.height).max()?;
+    // Find max resolution (by total pixels) among RGB formats
+    let max_pixels = rgb_formats.iter().map(|f| f.width * f.height).max()?;
 
-    // Get all formats with max resolution
-    let max_res_formats: Vec<_> = formats
+    // Get all RGB formats with max resolution
+    let max_res_formats: Vec<_> = rgb_formats
         .iter()
         .filter(|f| f.width * f.height == max_pixels)
-        .cloned()
+        .map(|f| (*f).clone())
         .collect();
 
     // Filter to formats with 30-60 fps range (preferred range for photo mode)
@@ -123,12 +137,19 @@ pub fn is_raw_format(pixel_format: &str) -> bool {
 
 /// Select format for first-time video mode usage
 /// Selects highest resolution with at least 25 fps, preferring highest framerate up to 60 fps
+/// Always prefers RGB formats over depth sensor formats.
 pub fn select_first_time_video_format(formats: &[CameraFormat]) -> Option<CameraFormat> {
     use std::collections::HashMap;
 
-    // Group formats by resolution
+    // Filter to RGB formats only - depth formats are handled separately
+    let rgb_formats = filter_rgb_formats(formats);
+    if rgb_formats.is_empty() {
+        return None;
+    }
+
+    // Group RGB formats by resolution
     let mut resolution_groups: HashMap<(u32, u32), Vec<&CameraFormat>> = HashMap::new();
-    for format in formats {
+    for format in &rgb_formats {
         if let Some(fps) = format.framerate {
             // Only consider formats with at least 25 fps
             if fps >= 25 {
@@ -141,8 +162,8 @@ pub fn select_first_time_video_format(formats: &[CameraFormat]) -> Option<Camera
     }
 
     if resolution_groups.is_empty() {
-        // No formats with >= 25 fps, fall back to any format
-        return formats.first().cloned();
+        // No RGB formats with >= 25 fps, fall back to first RGB format
+        return rgb_formats.first().map(|f| (*f).clone());
     }
 
     // Find the highest resolution (by pixel count)
@@ -173,7 +194,7 @@ pub fn select_first_time_video_format(formats: &[CameraFormat]) -> Option<Camera
         .map(|(f, _)| *f)
         .cloned();
 
-    best_format.or_else(|| formats.first().cloned())
+    best_format.or_else(|| rgb_formats.first().map(|f| (*f).clone()))
 }
 
 /// Find a format matching specific criteria
@@ -200,6 +221,7 @@ mod tests {
             framerate: Some(30),
             hardware_accelerated: hw_accel,
             pixel_format: pixel_format.to_string(),
+            sensor_type: SensorType::Rgb,
         }
     }
 
@@ -216,6 +238,7 @@ mod tests {
             framerate: Some(fps),
             hardware_accelerated: hw_accel,
             pixel_format: pixel_format.to_string(),
+            sensor_type: SensorType::Rgb,
         }
     }
 

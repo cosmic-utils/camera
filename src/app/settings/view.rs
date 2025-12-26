@@ -242,7 +242,13 @@ impl AppModel {
                 info_column = info_column.push(info_row(fl!("device-info-card"), &info.card));
             }
             if !info.driver.is_empty() {
-                info_column = info_column.push(info_row(fl!("device-info-driver"), &info.driver));
+                // Show freedepth when native Kinect streaming is active
+                let driver_display = if self.kinect.streaming {
+                    "freedepth (native USB)"
+                } else {
+                    &info.driver
+                };
+                info_column = info_column.push(info_row(fl!("device-info-driver"), driver_display));
             }
             if !info.path.is_empty() {
                 info_column = info_column.push(info_row(fl!("device-info-path"), &info.path));
@@ -250,6 +256,11 @@ impl AppModel {
             if !info.real_path.is_empty() && info.real_path != info.path {
                 info_column =
                     info_column.push(info_row(fl!("device-info-real-path"), &info.real_path));
+            }
+            // Show streaming status when native Kinect streaming is active
+            if self.kinect.streaming {
+                info_column =
+                    info_column.push(info_row(fl!("device-info-status"), "RGB + Depth streaming"));
             }
         } else {
             info_column =

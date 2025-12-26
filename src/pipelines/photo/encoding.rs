@@ -100,6 +100,20 @@ pub struct CameraMetadata {
     pub iso: Option<u32>,
     /// Gain value (camera-specific units)
     pub gain: Option<i32>,
+    /// Optional 16-bit depth data for depth sensors (e.g., Kinect)
+    /// When present, DNG encoder will include depth as a second IFD (SubImage)
+    pub depth_data: Option<DepthDataInfo>,
+}
+
+/// Depth data information for DNG encoding
+#[derive(Debug, Clone)]
+pub struct DepthDataInfo {
+    /// Raw 16-bit depth values
+    pub values: Vec<u16>,
+    /// Width of depth image
+    pub width: u32,
+    /// Height of depth image
+    pub height: u32,
 }
 
 /// Photo encoder
@@ -253,7 +267,96 @@ impl PhotoEncoder {
 
         Ok(buffer)
     }
+}
 
+/// Encode 16-bit depth data as grayscale PNG (lossless)
+///
+/// This is used for depth sensor data (e.g., Kinect Y10B format) to preserve
+/// full 16-bit precision in a standard image format.
+///
+/// # Arguments
+/// * `depth_data` - 16-bit depth values (width * height values)
+/// * `width` - Frame width in pixels
+/// * `height` - Frame height in pixels
+///
+/// # Returns
+/// * `Ok(Vec<u8>)` - PNG encoded bytes
+/// * `Err(String)` - Error message
+pub fn encode_depth_png(depth_data: &[u16], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    use image::ImageEncoder;
+    use image::codecs::png::PngEncoder;
+
+    let expected_len = (width * height) as usize;
+    if depth_data.len() != expected_len {
+        return Err(format!(
+            "Depth data size mismatch: got {} values, expected {} for {}x{}",
+            depth_data.len(),
+            expected_len,
+            width,
+            height
+        ));
+    }
+
+    // Convert u16 slice to bytes (little-endian)
+    let bytes: Vec<u8> = depth_data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+
+    let mut buffer = Vec::new();
+    let encoder = PngEncoder::new(&mut buffer);
+
+    encoder
+        .write_image(&bytes, width, height, image::ExtendedColorType::L16)
+        .map_err(|e| format!("Depth PNG encoding failed: {}", e))?;
+
+    debug!(
+        width,
+        height,
+        depth_values = depth_data.len(),
+        png_size = buffer.len(),
+        "Encoded depth data to 16-bit PNG"
+    );
+
+    Ok(buffer)
+}
+
+/// Save depth data to PNG file
+///
+/// # Arguments
+/// * `depth_data` - 16-bit depth values
+/// * `width` - Frame width
+/// * `height` - Frame height
+/// * `output_dir` - Directory to save the file
+///
+/// # Returns
+/// * `Ok(PathBuf)` - Path to saved file
+/// * `Err(String)` - Error message
+pub async fn save_depth_png(
+    depth_data: Vec<u16>,
+    width: u32,
+    height: u32,
+    output_dir: PathBuf,
+) -> Result<PathBuf, String> {
+    // Generate filename with timestamp and "depth" prefix
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("DEPTH_{}.png", timestamp);
+    let filepath = output_dir.join(&filename);
+
+    info!(path = %filepath.display(), "Saving depth image");
+
+    let filepath_clone = filepath.clone();
+    tokio::task::spawn_blocking(move || {
+        let png_data = encode_depth_png(&depth_data, width, height)?;
+        std::fs::write(&filepath_clone, &png_data)
+            .map_err(|e| format!("Failed to save depth image: {}", e))?;
+        Ok::<_, String>(())
+    })
+    .await
+    .map_err(|e| format!("Save task error: {}", e))??;
+
+    info!(path = %filepath.display(), "Depth image saved successfully");
+    Ok(filepath)
+}
+
+impl PhotoEncoder {
     /// Encode image as DNG (Digital Negative raw format)
     ///
     /// Creates a simple linear DNG file with RGB data stored as strips.
@@ -344,12 +447,12 @@ impl PhotoEncoder {
             ifd.insert(tiff_tags::Software, IfdValue::Ascii(software_with_gain));
         }
 
-        // Create an Offsets implementation for the raw data
-        struct RgbOffsets {
+        // Create an Offsets implementation for data
+        struct DataOffsets {
             data: Vec<u8>,
         }
 
-        impl Offsets for RgbOffsets {
+        impl Offsets for DataOffsets {
             fn size(&self) -> u32 {
                 self.data.len() as u32
             }
@@ -359,17 +462,68 @@ impl PhotoEncoder {
             }
         }
 
-        let offsets: Arc<dyn Offsets + Send + Sync> = Arc::new(RgbOffsets { data: raw_data });
+        let offsets: Arc<dyn Offsets + Send + Sync> = Arc::new(DataOffsets { data: raw_data });
 
         // Add strip data using Offsets
         ifd.insert(tiff_tags::StripOffsets, IfdValue::Offsets(offsets));
         ifd.insert(tiff_tags::StripByteCounts, IfdValue::Long(raw_data_len));
 
+        // Collect all IFDs
+        let mut ifds = vec![ifd];
+
+        // Add depth data as second IFD if present
+        if let Some(depth_info) = &camera_metadata.depth_data {
+            debug!(
+                depth_width = depth_info.width,
+                depth_height = depth_info.height,
+                depth_values = depth_info.values.len(),
+                "Adding depth data to DNG as second IFD"
+            );
+
+            let mut depth_ifd = Ifd::default();
+
+            // Required TIFF tags for 16-bit grayscale
+            depth_ifd.insert(tiff_tags::ImageWidth, IfdValue::Long(depth_info.width));
+            depth_ifd.insert(tiff_tags::ImageLength, IfdValue::Long(depth_info.height));
+            depth_ifd.insert(tiff_tags::BitsPerSample, IfdValue::Short(16)); // 16-bit
+            depth_ifd.insert(tiff_tags::Compression, IfdValue::Short(1)); // No compression
+            depth_ifd.insert(tiff_tags::PhotometricInterpretation, IfdValue::Short(1)); // BlackIsZero (grayscale)
+            depth_ifd.insert(tiff_tags::SamplesPerPixel, IfdValue::Short(1)); // Grayscale = 1 sample
+            depth_ifd.insert(tiff_tags::RowsPerStrip, IfdValue::Long(depth_info.height)); // One strip
+            depth_ifd.insert(tiff_tags::PlanarConfiguration, IfdValue::Short(1)); // Chunky
+
+            // Mark as depth image (NewSubfileType = 4 for depth map, but we'll use ImageDescription)
+            // SubfileType 0 = full-resolution image
+            depth_ifd.insert(tiff_tags::NewSubfileType, IfdValue::Long(0));
+
+            // Add description to identify as depth data
+            depth_ifd.insert(
+                tiff_tags::ImageDescription,
+                IfdValue::Ascii("Depth Map (16-bit)".to_string()),
+            );
+
+            // Convert u16 depth values to bytes (little-endian for TIFF)
+            let depth_bytes: Vec<u8> = depth_info
+                .values
+                .iter()
+                .flat_map(|&v| v.to_le_bytes())
+                .collect();
+            let depth_data_len = depth_bytes.len() as u32;
+
+            let depth_offsets: Arc<dyn Offsets + Send + Sync> =
+                Arc::new(DataOffsets { data: depth_bytes });
+
+            depth_ifd.insert(tiff_tags::StripOffsets, IfdValue::Offsets(depth_offsets));
+            depth_ifd.insert(tiff_tags::StripByteCounts, IfdValue::Long(depth_data_len));
+
+            ifds.push(depth_ifd);
+        }
+
         // Write the DNG file to a buffer
         let mut buffer = Vec::new();
         let cursor = Cursor::new(&mut buffer);
 
-        DngWriter::write_dng(cursor, true, FileType::Dng, vec![ifd])
+        DngWriter::write_dng(cursor, true, FileType::Dng, ifds)
             .map_err(|e| format!("DNG encoding failed: {:?}", e))?;
 
         Ok(buffer)
