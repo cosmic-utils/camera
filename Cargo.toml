@@ -35,7 +35,7 @@ rfd = "0.16"
 zbus = "5.12.0"
 uuid = { version = "1.19.0", features = ["v4"] }
 clap = { version = "4.5", features = ["derive"] }
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.29"
 libc = "0.2.178"
 dng = "1.5"
