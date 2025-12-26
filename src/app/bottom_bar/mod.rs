@@ -25,28 +25,36 @@ impl AppModel {
     /// Build the complete bottom bar widget
     ///
     /// Assembles gallery button, mode switcher, and camera switcher
-    /// into a centered horizontal layout.
+    /// into a layout where the mode switcher is horizontally centered,
+    /// aligning with the capture button above.
     pub fn build_bottom_bar(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
 
-        // Build the centered group: gallery button + mode selector + camera switch button
-        let mut centered_group = widget::row();
+        // Use three-column layout to ensure mode switcher is truly centered:
+        // [left Fill + gallery] [mode_switcher] [camera_switcher + right Fill]
+        // This ensures center alignment regardless of asymmetric button widths
 
-        centered_group = centered_group.push(self.build_gallery_button());
-
-        centered_group = centered_group
-            .push(widget::horizontal_space().width(spacing.space_m))
-            .push(self.build_mode_switcher())
+        // Left section: Fill space + gallery button (right-aligned within the fill)
+        let left_section = widget::row()
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(self.build_gallery_button())
             .push(widget::horizontal_space().width(spacing.space_m))
             .align_y(Alignment::Center);
 
-        centered_group = centered_group.push(self.build_camera_switcher());
+        // Center section: mode switcher (truly centered in window)
+        let center_section = self.build_mode_switcher();
 
-        // Center the entire group in the bottom bar
+        // Right section: camera switcher + Fill space (left-aligned within the fill)
+        let right_section = widget::row()
+            .push(widget::horizontal_space().width(spacing.space_m))
+            .push(self.build_camera_switcher())
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .align_y(Alignment::Center);
+
         let bottom_row = widget::row()
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
-            .push(centered_group)
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(left_section)
+            .push(center_section)
+            .push(right_section)
             .padding(spacing.space_xs)
             .align_y(Alignment::Center);
 
