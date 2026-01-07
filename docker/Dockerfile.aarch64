@@ -13,10 +13,13 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
     echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
 
 # Install base tools (before adding aarch64 architecture)
+# Note: libglib2.0-dev-bin must be installed here (amd64) to prevent
+# conflicts when installing libglib2.0-dev:arm64 later
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
+    libglib2.0-dev-bin \
     && rm -rf /var/lib/apt/lists/*
 
 # Add aarch64 architecture and install cross-compilation toolchain and dependencies

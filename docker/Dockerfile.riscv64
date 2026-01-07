@@ -13,10 +13,13 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
     echo 'deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
 
 # Install base tools (before adding riscv64 architecture)
+# Note: libglib2.0-dev-bin must be installed here (amd64) to prevent
+# conflicts when installing libglib2.0-dev:riscv64 later
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
+    libglib2.0-dev-bin \
     && rm -rf /var/lib/apt/lists/*
 
 # Add riscv64 architecture and install cross-compilation toolchain and dependencies

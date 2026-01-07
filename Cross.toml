@@ -2,7 +2,7 @@
 # https://github.com/cross-rs/cross
 
 [target.aarch64-unknown-linux-gnu]
-# Use custom Dockerfile based on Ubuntu 22.04 (which has libseat-dev)
+# Use custom Dockerfile based on Ubuntu 24.04 with aarch64 cross-compilation
 dockerfile = "docker/Dockerfile.aarch64"
 
 [target.aarch64-unknown-linux-gnu.env]
@@ -20,7 +20,7 @@ passthrough = [
 ]
 
 [target.riscv64gc-unknown-linux-gnu]
-# Use custom Dockerfile based on Ubuntu 22.04 (which has libseat-dev)
+# Use custom Dockerfile based on Ubuntu 24.04 with riscv64 cross-compilation
 dockerfile = "docker/Dockerfile.riscv64"
 
 [target.riscv64gc-unknown-linux-gnu.env]
