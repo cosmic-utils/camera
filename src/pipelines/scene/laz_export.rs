@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(target_arch = "x86_64")]
+
 //! LAS point cloud export
 //!
 //! Exports depth + color data as an uncompressed LAS point cloud file.
 //! Applies depth-to-RGB registration for correct color alignment.
 
 use super::{CameraIntrinsics, RegistrationData, SceneCaptureConfig};
-use crate::shaders::depth::kinect;
+use crate::shaders::kinect_intrinsics as kinect;
 use las::{Builder, Color, Point, Writer};
 use std::path::PathBuf;
 use tracing::{debug, info};
@@ -84,7 +86,6 @@ fn export_las_sync(
         let center_idx = 240 * 640 + 320;
         info!(
             target_offset = reg.target_offset,
-            reg_x_val_scale = reg.reg_x_val_scale,
             table_len = reg.registration_table.len(),
             shift_len = reg.depth_to_rgb_shift.len(),
             center_reg_x = reg

@@ -173,3 +173,36 @@ impl std::fmt::Display for BackendError {
 }
 
 impl std::error::Error for BackendError {}
+
+/// Processed video/color frame data ready for rendering
+///
+/// Used by depth camera backends to provide color frame output.
+/// Note: Pixel format varies by backend:
+/// - NativeDepthBackend: RGB (3 bytes per pixel)
+/// - V4l2KernelDepthBackend: RGBA (4 bytes per pixel)
+#[derive(Debug, Clone)]
+pub struct VideoFrameData {
+    /// Frame width
+    pub width: u32,
+    /// Frame height
+    pub height: u32,
+    /// Pixel data (format varies by backend)
+    pub data: Vec<u8>,
+    /// Frame timestamp
+    pub timestamp: u32,
+}
+
+/// Processed depth frame data ready for 3D rendering
+///
+/// Used by depth camera backends to provide depth frame output
+#[derive(Debug, Clone)]
+pub struct DepthFrameData {
+    /// Frame width
+    pub width: u32,
+    /// Frame height
+    pub height: u32,
+    /// Depth values in millimeters (u16 per pixel)
+    pub depth_mm: Vec<u16>,
+    /// Frame timestamp
+    pub timestamp: u32,
+}

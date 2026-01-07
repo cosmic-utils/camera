@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+
 //! Native depth camera backend for simultaneous RGB and depth streaming
 //!
 //! This backend uses freedepth's KinectStreamer to bypass V4L2 and
@@ -27,11 +29,13 @@ use std::time::{Duration, Instant};
 use std::sync::mpsc::Receiver;
 
 use freedepth::{
-    DEPTH_INVALID_THRESHOLD_MM, DEPTH_MAX_USABLE_MM, DEPTH_MIN_USABLE_MM, DepthFormat, DepthFrame,
-    DepthRegistration, KinectStreamer, Resolution, VideoFormat, VideoFrame,
+    DepthFormat, DepthFrame, DepthRegistration, KinectStreamer, Resolution, VideoFormat, VideoFrame,
 };
 use tracing::{debug, info, warn};
 
+use super::format_converters::{
+    self, ir_8bit_to_rgb, ir_10bit_to_rgb, ir_10bit_unpacked_to_rgb, DepthVisualizationOptions,
+};
 use super::CameraBackend;
 use super::types::*;
 
@@ -209,31 +213,6 @@ pub struct NativeDepthBackend {
     registration: Option<Box<dyn DepthRegistration>>,
 }
 
-/// Processed video frame data ready for rendering
-#[derive(Clone)]
-pub struct VideoFrameData {
-    /// Frame width
-    pub width: u32,
-    /// Frame height
-    pub height: u32,
-    /// RGB pixel data (3 bytes per pixel)
-    pub rgb_data: Vec<u8>,
-    /// Frame timestamp
-    pub timestamp: u32,
-}
-
-/// Processed depth frame data ready for 3D rendering
-#[derive(Clone)]
-pub struct DepthFrameData {
-    /// Frame width
-    pub width: u32,
-    /// Frame height
-    pub height: u32,
-    /// Depth values in millimeters (u16 per pixel)
-    pub depth_mm: Vec<u16>,
-    /// Frame timestamp
-    pub timestamp: u32,
-}
 
 impl NativeDepthBackend {
     /// Create a new native depth camera backend
@@ -314,7 +293,7 @@ impl NativeDepthBackend {
 
         // Register USB device for global motor control access
         if let Some(usb) = streamer.usb_device() {
-            super::depth_controller::set_motor_usb_device(usb);
+            super::motor_control::set_motor_usb_device(usb);
         }
 
         self.streamer = Some(streamer);
@@ -359,7 +338,7 @@ impl NativeDepthBackend {
         }
 
         // Clear global motor control reference
-        super::depth_controller::clear_motor_usb_device();
+        super::motor_control::clear_motor_usb_device();
 
         // Stop streamer (this rebinds the driver)
         if let Some(mut streamer) = self.streamer.take() {
@@ -388,16 +367,24 @@ impl NativeDepthBackend {
     pub fn get_video_frame(&self) -> Option<VideoFrameData> {
         if self.depth_only_mode.load(Ordering::Relaxed) {
             // In depth-only mode, convert depth to RGB visualization
+            use crate::shaders::depth::{is_depth_grayscale_mode, is_depth_only_mode};
+
             let depth_frame = self.last_depth_frame.lock().ok()?.clone()?;
-            let rgb_data = depth_to_rgb_visualization(
+            let viz_options = DepthVisualizationOptions {
+                grayscale: is_depth_grayscale_mode(),
+                quantize: is_depth_only_mode(), // Use quantization in depth-only mode
+                ..DepthVisualizationOptions::kinect()
+            };
+            let rgb_data = format_converters::depth_to_rgb(
                 &depth_frame.depth_mm,
                 depth_frame.width,
                 depth_frame.height,
+                &viz_options,
             );
             Some(VideoFrameData {
                 width: depth_frame.width,
                 height: depth_frame.height,
-                rgb_data,
+                data: rgb_data,
                 timestamp: depth_frame.timestamp,
             })
         } else {
@@ -578,8 +565,9 @@ fn process_video_frame(frame: &VideoFrame) -> Option<VideoFrameData> {
             ir_8bit_to_rgb(&frame.data, frame.width, frame.height)
         }
         VideoFormat::Ir10BitPacked => {
-            // 10-bit packed IR - unpack and convert to grayscale RGB
-            ir_10bit_packed_to_rgb(&frame.data, frame.width, frame.height)
+            // 10-bit packed IR - unpack using freedepth and convert to grayscale RGB
+            let unpacked = freedepth::unpack_10bit_ir(&frame.data, frame.width, frame.height);
+            ir_10bit_unpacked_to_rgb(&unpacked, frame.width, frame.height)
         }
         VideoFormat::Ir10Bit => {
             // 10-bit unpacked IR (stored as u16) - convert to grayscale RGB
@@ -590,7 +578,7 @@ fn process_video_frame(frame: &VideoFrame) -> Option<VideoFrameData> {
     Some(VideoFrameData {
         width: frame.width,
         height: frame.height,
-        rgb_data,
+        data: rgb_data,
         timestamp: frame.timestamp,
     })
 }
@@ -622,71 +610,6 @@ fn try_gpu_yuv_to_rgb(yuv_data: &[u8], width: u32, height: u32) -> Option<Vec<u8
     Some(rgb)
 }
 
-/// Convert IR 8-bit grayscale data to RGB
-///
-/// Simply expands each grayscale byte to RGB triplet.
-fn ir_8bit_to_rgb(data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let pixel_count = (width * height) as usize;
-    let mut rgb = Vec::with_capacity(pixel_count * 3);
-
-    for &gray in data.iter().take(pixel_count) {
-        rgb.extend_from_slice(&[gray, gray, gray]);
-    }
-
-    // Handle missing pixels (if any)
-    while rgb.len() < pixel_count * 3 {
-        rgb.extend_from_slice(&[0, 0, 0]);
-    }
-
-    rgb
-}
-
-/// Convert IR 10-bit unpacked data (u16) to RGB grayscale
-///
-/// The data is stored as little-endian u16 values (10-bit in lower bits).
-fn ir_10bit_to_rgb(data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let pixel_count = (width * height) as usize;
-    let mut rgb = Vec::with_capacity(pixel_count * 3);
-
-    // Interpret data as u16 (little-endian)
-    for chunk in data.chunks_exact(2).take(pixel_count) {
-        let val = u16::from_le_bytes([chunk[0], chunk[1]]);
-        let gray = (val >> 2) as u8; // 10-bit to 8-bit
-        rgb.extend_from_slice(&[gray, gray, gray]);
-    }
-
-    // Handle missing pixels (if any)
-    while rgb.len() < pixel_count * 3 {
-        rgb.extend_from_slice(&[0, 0, 0]);
-    }
-
-    rgb
-}
-
-/// Convert IR 10-bit packed data to RGB grayscale
-///
-/// Uses freedepth's unpack_10bit_ir to unpack the data, then converts to RGB.
-fn ir_10bit_packed_to_rgb(packed_data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    // Use freedepth's unpacking function
-    let unpacked = freedepth::unpack_10bit_ir(packed_data, width, height);
-
-    let pixel_count = (width * height) as usize;
-    let mut rgb = Vec::with_capacity(pixel_count * 3);
-
-    // Convert 10-bit (0-1023) to 8-bit grayscale RGB
-    for &val in unpacked.iter().take(pixel_count) {
-        let gray = (val >> 2) as u8; // 10-bit to 8-bit
-        rgb.extend_from_slice(&[gray, gray, gray]);
-    }
-
-    // Handle any missing pixels
-    while rgb.len() < pixel_count * 3 {
-        rgb.extend_from_slice(&[0, 0, 0]);
-    }
-
-    rgb
-}
-
 /// Process a depth frame from freedepth format to mm values
 ///
 /// Uses the device-calibrated depth converter for accurate raw-to-mm conversion.
@@ -709,66 +632,6 @@ fn process_depth_frame(
     })
 }
 
-/// Convert depth data to RGB visualization using turbo colormap or grayscale
-///
-/// Uses the depth visualization settings from the shaders module.
-fn depth_to_rgb_visualization(depth_mm: &[u16], width: u32, height: u32) -> Vec<u8> {
-    use crate::shaders::depth::{is_depth_grayscale_mode, is_depth_only_mode};
-
-    // Turbo colormap: perceptually uniform rainbow (blue=near, red=far)
-    fn turbo(t: f32) -> [u8; 3] {
-        let r = (0.13572138
-            + t * (4.6153926
-                + t * (-42.66032 + t * (132.13108 + t * (-152.54825 + t * 59.28144)))))
-            .clamp(0.0, 1.0);
-        let g = (0.09140261
-            + t * (2.19418 + t * (4.84296 + t * (-14.18503 + t * (4.27805 + t * 2.53377)))))
-            .clamp(0.0, 1.0);
-        let b = (0.1066733
-            + t * (12.64194 + t * (-60.58204 + t * (109.99648 + t * (-82.52904 + t * 20.43388)))))
-            .clamp(0.0, 1.0);
-        [(r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8]
-    }
-
-    // Depth range from freedepth (usable range for visualization)
-    let min_depth_mm = DEPTH_MIN_USABLE_MM as f32;
-    let max_depth_mm = DEPTH_MAX_USABLE_MM as f32;
-
-    let grayscale = is_depth_grayscale_mode();
-    let quantize = is_depth_only_mode();
-    let pixel_count = (width * height) as usize;
-    let mut rgb = Vec::with_capacity(pixel_count * 3);
-
-    for &depth in depth_mm.iter().take(pixel_count) {
-        if depth == 0 || depth > DEPTH_INVALID_THRESHOLD_MM {
-            // Invalid depth - black
-            rgb.extend_from_slice(&[0, 0, 0]);
-        } else {
-            // Normalize to 0.0-1.0 range
-            let mut t = ((depth as f32) - min_depth_mm) / (max_depth_mm - min_depth_mm);
-            t = t.clamp(0.0, 1.0);
-
-            // Quantize to bands for smoother visualization
-            if quantize {
-                let bands = 32.0;
-                t = (t * bands).floor() / bands;
-            }
-
-            if grayscale {
-                // Grayscale: near=bright, far=dark (invert t)
-                let gray = ((1.0 - t) * 255.0) as u8;
-                rgb.extend_from_slice(&[gray, gray, gray]);
-            } else {
-                // Colormap: turbo (blue=near, red=far)
-                let color = turbo(t);
-                rgb.extend_from_slice(&color);
-            }
-        }
-    }
-
-    rgb
-}
-
 /// Check if native depth camera backend can be used
 ///
 /// Returns true if:
@@ -781,8 +644,8 @@ pub fn can_use_native_backend() -> bool {
     }
 }
 
-// Re-export rgb_to_rgba from centralized location
-pub use crate::shaders::depth::rgb_to_rgba;
+// Re-export rgb_to_rgba from centralized format converters
+pub use super::format_converters::rgb_to_rgba;
 
 impl CameraBackend for NativeDepthBackend {
     fn enumerate_cameras(&self) -> Vec<CameraDevice> {
@@ -932,7 +795,7 @@ impl CameraBackend for NativeDepthBackend {
             .ok_or_else(|| BackendError::Other("No video frame available".to_string()))?;
 
         // Convert RGB to RGBA
-        let rgba_data = rgb_to_rgba(&video_frame.rgb_data);
+        let rgba_data = rgb_to_rgba(&video_frame.data);
 
         // Get depth frame and its dimensions
         let depth_frame = self.get_depth_frame();

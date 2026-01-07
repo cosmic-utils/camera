@@ -15,7 +15,12 @@ use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
 use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
 use crate::fl;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use crate::shaders::depth::{DEPTH_MAX_MM_U16, DEPTH_MIN_MM_U16};
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+const DEPTH_MAX_MM_U16: u16 = 10000;
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+const DEPTH_MIN_MM_U16: u16 = 400;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
@@ -673,7 +678,7 @@ impl AppModel {
                     row = row.push(overlay_icon_button(
                         view_icon,
                         Some(Message::ToggleSceneViewMode),
-                        is_mesh,
+                        false, // Never highlight - toggle state shown by icon change
                     ));
                 }
             }
@@ -1564,6 +1569,7 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
 
         // Get calibration info
+        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
         let (status_text, detail_text, has_device_calibration) =
             if let Some(ref calib) = self.kinect.calibration_info {
                 if calib.from_device {
@@ -1598,6 +1604,12 @@ impl AppModel {
                     false,
                 )
             };
+        #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+        let (status_text, detail_text, has_device_calibration) = (
+            "No Calibration Data",
+            "freedepth feature not enabled.".to_string(),
+            false,
+        );
 
         // Icon - check mark for device calibration, warning for default
         let status_icon = if has_device_calibration {

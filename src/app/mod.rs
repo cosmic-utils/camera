@@ -531,7 +531,7 @@ impl cosmic::Application for AppModel {
 
     /// Register subscriptions for this application.
     fn subscription(&self) -> Subscription<Self::Message> {
-        use cosmic::iced::futures::{SinkExt, StreamExt};
+        use cosmic::iced::futures::SinkExt;
 
         let config_sub = self
             .core()
@@ -653,9 +653,9 @@ impl cosmic::Application for AppModel {
                             // Create camera pipeline using PipeWire backend
                             // For Y10B depth formats, use V4L2 direct capture with GPU unpacking
                             use crate::backends::camera::pipewire::PipeWirePipeline;
-                            use crate::backends::camera::types::{
-                                CameraDevice, CameraFormat, CameraFrame, PixelFormat, SensorType,
-                            };
+                            use crate::backends::camera::types::{CameraDevice, CameraFormat, SensorType};
+                            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                            use crate::backends::camera::types::{CameraFrame, PixelFormat};
 
                             let (sender, mut receiver) =
                                 cosmic::iced::futures::channel::mpsc::channel(100);
@@ -694,9 +694,11 @@ impl cosmic::Application for AppModel {
                             // For depth camera devices, use native freedepth backend (bypasses V4L2)
                             // For depth formats (Y10B), use V4L2 direct capture with GPU processing
                             // For regular formats, use GStreamer via PipeWire
+                            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                             use crate::backends::camera::v4l2_depth::V4l2DepthPipeline;
                             use crate::backends::camera::{
                                 NativeDepthBackend, is_depth_native_device,
+                                V4l2KernelDepthBackend, is_kernel_depth_device,
                             };
 
                             // Enum to hold active pipeline - fields are used for ownership semantics
@@ -704,17 +706,37 @@ impl cosmic::Application for AppModel {
                             #[allow(dead_code)]
                             enum ActivePipeline {
                                 GStreamer(PipeWirePipeline),
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                                 Depth(V4l2DepthPipeline),
                                 DepthCamera(NativeDepthBackend),
+                                KernelDepth(V4l2KernelDepthBackend),
                             }
 
-                            // Check if this is a depth camera device - use native backend
-                            let is_depth_cam = is_depth_native_device(&device.path);
-                            if is_depth_cam {
+                            // Check if this is a kernel depth device first (highest priority)
+                            let is_kernel_depth = is_kernel_depth_device(&device.path);
+                            // Then check for freedepth device (only when kernel driver not present)
+                            let is_depth_cam = !is_kernel_depth && is_depth_native_device(&device.path);
+                            if is_kernel_depth {
+                                info!(device = %device.name, path = %device.path, "Using V4L2 kernel depth backend");
+                            } else if is_depth_cam {
                                 info!(device = %device.name, path = %device.path, "Using native depth camera backend (freedepth)");
                             }
 
-                            let pipeline_opt: Option<ActivePipeline> = if is_depth_cam {
+                            let pipeline_opt: Option<ActivePipeline> = if is_kernel_depth {
+                                // Kernel depth camera backend - uses V4L2 with depth controls
+                                use crate::backends::camera::CameraBackend;
+                                let mut kernel_backend = V4l2KernelDepthBackend::new();
+                                match kernel_backend.initialize(&device, &format) {
+                                    Ok(()) => {
+                                        info!("V4L2 kernel depth pipeline started successfully");
+                                        Some(ActivePipeline::KernelDepth(kernel_backend))
+                                    }
+                                    Err(e) => {
+                                        error!(error = %e, "Failed to start kernel depth backend");
+                                        None
+                                    }
+                                }
+                            } else if is_depth_cam {
                                 // Native depth camera backend - bypasses V4L2 entirely
                                 // Use initialize() which properly sets depth_only_mode for Y10B format
                                 use crate::backends::camera::CameraBackend;
@@ -722,6 +744,7 @@ impl cosmic::Application for AppModel {
                                 match depth_backend.initialize(&device, &format) {
                                     Ok(()) => {
                                         // Set up registration data for depth-to-RGB alignment
+                                        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                                         if let Some(registration) = depth_backend.get_registration()
                                         {
                                             // Use shared helper for GPU shader registration
@@ -735,104 +758,124 @@ impl cosmic::Application for AppModel {
                                         None
                                     }
                                 }
-                            } else if is_depth_format {
-                                info!("Creating V4L2 depth pipeline for Y10B format");
-                                use crate::shaders::depth::{
-                                    is_depth_colormap_enabled, is_depth_only_mode, unpack_y10b_gpu,
-                                };
+                            } else {
+                                // Check for Y10B depth format (only with freedepth)
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                                if is_depth_format {
+                                    info!("Creating V4L2 depth pipeline for Y10B format");
+                                    use crate::shaders::depth::{
+                                        is_depth_colormap_enabled, is_depth_only_mode, unpack_y10b_gpu,
+                                    };
 
-                                // Create depth frame channel
-                                let (depth_sender, mut depth_receiver) =
-                                    cosmic::iced::futures::channel::mpsc::channel(10);
+                                    // Create depth frame channel
+                                    let (depth_sender, mut depth_receiver) =
+                                        cosmic::iced::futures::channel::mpsc::channel(10);
 
-                                // Create V4L2 depth pipeline
-                                match V4l2DepthPipeline::new(&device, &format, depth_sender) {
-                                    Ok(depth_pipeline) => {
-                                        info!("V4L2 depth pipeline created successfully");
+                                    // Create V4L2 depth pipeline
+                                    match V4l2DepthPipeline::new(&device, &format, depth_sender) {
+                                        Ok(depth_pipeline) => {
+                                            info!("V4L2 depth pipeline created successfully");
 
-                                        // Spawn task to process depth frames with GPU shader
-                                        let depth_width = format.width;
-                                        let depth_height = format.height;
-                                        let mut frame_sender_clone = sender.clone();
+                                            // Spawn task to process depth frames with GPU shader
+                                            let depth_width = format.width;
+                                            let depth_height = format.height;
+                                            let mut frame_sender_clone = sender.clone();
 
-                                        tokio::spawn(async move {
-                                            use futures::StreamExt;
-                                            info!("Depth frame processing task started");
+                                            tokio::spawn(async move {
+                                                use futures::StreamExt;
+                                                info!("Depth frame processing task started");
 
-                                            while let Some(depth_frame) =
-                                                depth_receiver.next().await
-                                            {
-                                                // Process with GPU shader
-                                                // Check visualization modes from shared state
-                                                let use_colormap = is_depth_colormap_enabled();
-                                                let depth_only = is_depth_only_mode();
-                                                match unpack_y10b_gpu(
-                                                    &depth_frame.raw_data,
-                                                    depth_width,
-                                                    depth_height,
-                                                    use_colormap,
-                                                    depth_only,
-                                                )
-                                                .await
+                                                while let Some(depth_frame) =
+                                                    depth_receiver.next().await
                                                 {
-                                                    Ok(result) => {
-                                                        // Create CameraFrame with RGBA preview and depth data
-                                                        let camera_frame = CameraFrame {
-                                                            width: result.width,
-                                                            height: result.height,
-                                                            data: std::sync::Arc::from(
-                                                                result
-                                                                    .rgba_preview
-                                                                    .into_boxed_slice(),
-                                                            ),
-                                                            format: PixelFormat::Depth16,
-                                                            stride: result.width * 4,
-                                                            captured_at: depth_frame.captured_at,
-                                                            depth_data: Some(std::sync::Arc::from(
-                                                                result.depth_u16.into_boxed_slice(),
-                                                            )),
-                                                            depth_width: result.width,
-                                                            depth_height: result.height,
-                                                            video_timestamp: None,
-                                                        };
+                                                    // Process with GPU shader
+                                                    // Check visualization modes from shared state
+                                                    let use_colormap = is_depth_colormap_enabled();
+                                                    let depth_only = is_depth_only_mode();
+                                                    match unpack_y10b_gpu(
+                                                        &depth_frame.raw_data,
+                                                        depth_width,
+                                                        depth_height,
+                                                        use_colormap,
+                                                        depth_only,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(result) => {
+                                                            // Create CameraFrame with RGBA preview and depth data
+                                                            let camera_frame = CameraFrame {
+                                                                width: result.width,
+                                                                height: result.height,
+                                                                data: std::sync::Arc::from(
+                                                                    result
+                                                                        .rgba_preview
+                                                                        .into_boxed_slice(),
+                                                                ),
+                                                                format: PixelFormat::Depth16,
+                                                                stride: result.width * 4,
+                                                                captured_at: depth_frame.captured_at,
+                                                                depth_data: Some(std::sync::Arc::from(
+                                                                    result.depth_u16.into_boxed_slice(),
+                                                                )),
+                                                                depth_width: result.width,
+                                                                depth_height: result.height,
+                                                                video_timestamp: None,
+                                                            };
 
-                                                        // Send to preview channel
-                                                        if frame_sender_clone
-                                                            .try_send(camera_frame)
-                                                            .is_err()
-                                                        {
-                                                            tracing::debug!(
-                                                                "Preview channel full, dropping depth frame"
-                                                            );
+                                                            // Send to preview channel
+                                                            if frame_sender_clone
+                                                                .try_send(camera_frame)
+                                                                .is_err()
+                                                            {
+                                                                tracing::debug!(
+                                                                    "Preview channel full, dropping depth frame"
+                                                                );
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::warn!(error = %e, "Failed to unpack Y10B frame with GPU");
                                                         }
                                                     }
-                                                    Err(e) => {
-                                                        tracing::warn!(error = %e, "Failed to unpack Y10B frame with GPU");
-                                                    }
                                                 }
-                                            }
 
-                                            info!("Depth frame processing task ended");
-                                        });
+                                                info!("Depth frame processing task ended");
+                                            });
 
-                                        // Keep depth_pipeline alive so capture thread continues
-                                        Some(ActivePipeline::Depth(depth_pipeline))
+                                            // Keep depth_pipeline alive so capture thread continues
+                                            Some(ActivePipeline::Depth(depth_pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to create V4L2 depth pipeline");
+                                            None
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!(error = %e, "Failed to create V4L2 depth pipeline");
-                                        None
+                                } else {
+                                    // Regular format - use GStreamer via PipeWire
+                                    match PipeWirePipeline::new(&device, &format, sender.clone()) {
+                                        Ok(pipeline) => {
+                                            info!("Pipeline created successfully");
+                                            Some(ActivePipeline::GStreamer(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to initialize pipeline");
+                                            None
+                                        }
                                     }
                                 }
-                            } else {
-                                // Regular format - use GStreamer via PipeWire
-                                match PipeWirePipeline::new(&device, &format, sender) {
-                                    Ok(pipeline) => {
-                                        info!("Pipeline created successfully");
-                                        Some(ActivePipeline::GStreamer(pipeline))
-                                    }
-                                    Err(e) => {
-                                        error!(error = %e, "Failed to initialize pipeline");
-                                        None
+
+                                // When freedepth is not available, use GStreamer
+                                #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+                                {
+                                    // Regular format - use GStreamer via PipeWire
+                                    match PipeWirePipeline::new(&device, &format, sender) {
+                                        Ok(pipeline) => {
+                                            info!("Pipeline created successfully");
+                                            Some(ActivePipeline::GStreamer(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to initialize pipeline");
+                                            None
+                                        }
                                     }
                                 }
                             };
@@ -840,7 +883,47 @@ impl cosmic::Application for AppModel {
                             if let Some(pipeline) = pipeline_opt {
                                 info!("Waiting for frames from pipeline...");
 
-                                // For Kinect, we poll frames directly instead of using a channel
+                                // For kernel depth devices, poll frames directly via V4L2
+                                if let ActivePipeline::KernelDepth(ref kernel_backend) = pipeline {
+
+                                    info!("Starting kernel depth frame polling loop");
+                                    loop {
+                                        // Check cancel flag
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!("Cancel flag set - kernel depth subscription being cancelled");
+                                            break;
+                                        }
+
+                                        // Check if output is closed
+                                        if output.is_closed() {
+                                            info!("Output channel closed - kernel depth subscription being cancelled");
+                                            break;
+                                        }
+
+                                        // Poll for frame via CameraBackend trait
+                                        if let Some(frame) = kernel_backend.get_frame() {
+                                            frame_count += 1;
+
+                                            if frame_count % 30 == 0 {
+                                                info!(
+                                                    frame = frame_count,
+                                                    width = frame.width,
+                                                    height = frame.height,
+                                                    "Received kernel depth frame"
+                                                );
+                                            }
+
+                                            // Send frame to UI
+                                            let _ = output.try_send(Message::CameraFrame(Arc::new(frame)));
+                                        }
+
+                                        // Small sleep to avoid busy-waiting (~30fps)
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(16)).await;
+                                    }
+                                }
+
+                                // For freedepth Kinect, poll frames directly instead of using a channel
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                                 if let ActivePipeline::DepthCamera(ref depth_backend) = pipeline {
                                     use crate::shaders::depth::{
                                         depth_mm_to_rgba, is_depth_colormap_enabled,
@@ -897,7 +980,7 @@ impl cosmic::Application for AppModel {
                                                 } else {
                                                     // Normal RGB preview
                                                     (
-                                                        rgb_to_rgba(&video_frame.rgb_data),
+                                                        rgb_to_rgba(&video_frame.data),
                                                         video_frame.width,
                                                         video_frame.height,
                                                     )
@@ -955,6 +1038,7 @@ impl cosmic::Application for AppModel {
                                             .await;
                                     }
                                 } else {
+                                    use cosmic::iced::futures::StreamExt;
                                     // GStreamer or Depth pipeline - use channel-based receiver
                                     loop {
                                         // Check cancel flag first (set when switching cameras/modes)
@@ -1042,6 +1126,69 @@ impl cosmic::Application for AppModel {
                                             }
                                             Err(_) => {
                                                 // Timeout - continue loop to check if channel is closed
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Non-freedepth: GStreamer pipeline only
+                                #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+                                {
+                                    use cosmic::iced::futures::StreamExt;
+                                    // GStreamer pipeline - use channel-based receiver
+                                    loop {
+                                        // Check cancel flag first
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!("Cancel flag set - subscription being cancelled");
+                                            break;
+                                        }
+
+                                        if output.is_closed() {
+                                            info!("Output channel closed - subscription being cancelled");
+                                            break;
+                                        }
+
+                                        match tokio::time::timeout(
+                                            tokio::time::Duration::from_millis(16),
+                                            receiver.next(),
+                                        )
+                                        .await
+                                        {
+                                            Ok(Some(frame)) => {
+                                                frame_count += 1;
+                                                let latency_us = frame.captured_at.elapsed().as_micros();
+
+                                                if frame_count % 30 == 0 {
+                                                    info!(
+                                                        frame = frame_count,
+                                                        width = frame.width,
+                                                        height = frame.height,
+                                                        latency_ms = latency_us as f64 / 1000.0,
+                                                        "Received frame from pipeline"
+                                                    );
+                                                }
+
+                                                match output.try_send(Message::CameraFrame(Arc::new(frame))) {
+                                                    Ok(()) => {
+                                                        if frame_count % 30 == 0 {
+                                                            tracing::debug!(frame = frame_count, "Frame forwarded to UI");
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(frame = frame_count, error = ?e, "Frame dropped");
+                                                        if e.is_disconnected() {
+                                                            info!("Output channel disconnected");
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                info!("Pipeline frame stream ended");
+                                                break;
+                                            }
+                                            Err(_) => {
                                                 continue;
                                             }
                                         }

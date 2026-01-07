@@ -9,14 +9,46 @@
 //! - Point cloud with color (LAZ format)
 //! - 3D mesh with texture (GLTF format)
 
+#[cfg(target_arch = "x86_64")]
 mod gltf_export;
+#[cfg(target_arch = "x86_64")]
 mod laz_export;
 
+#[cfg(target_arch = "x86_64")]
 pub use gltf_export::export_mesh_gltf;
+#[cfg(target_arch = "x86_64")]
 pub use laz_export::export_point_cloud_las;
 
+#[cfg(not(target_arch = "x86_64"))]
+pub async fn export_mesh_gltf(
+    _rgb_data: &[u8],
+    _rgb_width: u32,
+    _rgb_height: u32,
+    _depth_data: &[u16],
+    _depth_width: u32,
+    _depth_height: u32,
+    _output_path: &std::path::PathBuf,
+    _config: &SceneCaptureConfig,
+) -> Result<(), String> {
+    Err("freedepth feature not enabled".to_string())
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub async fn export_point_cloud_las(
+    _rgb_data: &[u8],
+    _rgb_width: u32,
+    _rgb_height: u32,
+    _depth_data: &[u16],
+    _depth_width: u32,
+    _depth_height: u32,
+    _output_path: &std::path::PathBuf,
+    _config: &SceneCaptureConfig,
+) -> Result<(), String> {
+    Err("freedepth feature not enabled".to_string())
+}
+
 use crate::pipelines::photo::encoding::EncodingFormat;
-use crate::shaders::depth::kinect;
+use crate::shaders::kinect_intrinsics as kinect;
 use image::{GrayImage, RgbImage, RgbaImage};
 use std::path::PathBuf;
 use tracing::{debug, info};
@@ -45,8 +77,6 @@ pub struct RegistrationData {
     pub depth_to_rgb_shift: Vec<i32>,
     /// Target offset from pad_info
     pub target_offset: u32,
-    /// Scale factor for x values (typically 256)
-    pub reg_x_val_scale: i32,
     /// X scale factor for high-res RGB (1.0 for 640, 2.0 for 1280)
     pub reg_scale_x: f32,
     /// Y scale factor for high-res RGB (same as X to maintain aspect ratio)
@@ -87,8 +117,9 @@ impl RegistrationData {
 
         // Calculate RGB coordinates using registration formula from libfreenect
         // Base coordinates are in 640x480 space
+        // reg_x_val_scale is always 256 (freedepth::REG_X_VAL_SCALE)
         let rgb_x_scaled = reg[0] + shift;
-        let rgb_x_base = rgb_x_scaled / self.reg_x_val_scale;
+        let rgb_x_base = rgb_x_scaled / 256;
         let rgb_y_base = reg[1] - self.target_offset as i32;
 
         // Scale to actual RGB resolution (for 1280x1024, scale by 2.0)
@@ -225,7 +256,6 @@ pub async fn capture_scene(
         depth_width,
         depth_height,
         &mesh_path,
-        &mesh_path, // Unused - we use vertex colors now
         &config,
     )
     .await?;

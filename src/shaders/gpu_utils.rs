@@ -8,7 +8,10 @@
 //! - Workgroup dispatch calculations
 
 use crate::gpu::wgpu;
+#[cfg(target_arch = "x86_64")]
 use crate::shaders::point_cloud::RegistrationData;
+#[cfg(not(target_arch = "x86_64"))]
+use crate::shaders::RegistrationData;
 
 /// Create the standard bind group layout for depth processors.
 ///

@@ -70,7 +70,9 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            libclang-dev \
+            libusb-1.0-0-dev
 
       - name: Install just
         uses: extractions/setup-just@v3
@@ -147,7 +149,9 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            libclang-dev \
+            libusb-1.0-0-dev
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
@@ -161,7 +165,7 @@ jobs:
           if [ "${{ matrix.use_cross }}" = "true" ]; then
             cross build --target ${{ matrix.target }}
           else
-            just build-debug --target ${{ matrix.target }}
+            cargo build --target ${{ matrix.target }}
           fi
 
   flatpak-x86_64:

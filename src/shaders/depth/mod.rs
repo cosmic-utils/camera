@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+
 //! GPU-accelerated depth processing for Y10B format
 //!
 //! This module provides GPU-based unpacking of Y10B depth sensor data (Kinect)
@@ -12,36 +14,8 @@ mod visualization;
 pub use constants::*;
 pub use visualization::{depth_mm_to_rgba, rgb_to_rgba};
 
-/// Kinect camera intrinsics and depth coefficients
-///
-/// These constants are used across the depth processing pipeline for:
-/// - Point cloud rendering (unprojection from 2D to 3D)
-/// - Mesh generation
-/// - Scene export (LAZ, GLTF)
-///
-/// Reference resolution: 640x480 (medium resolution depth mode)
-pub mod kinect {
-    /// Focal length X (pixels) at 640x480 base resolution
-    pub const FX: f32 = 594.21;
-    /// Focal length Y (pixels) at 640x480 base resolution
-    pub const FY: f32 = 591.04;
-    /// Principal point X (pixels) at 640x480 base resolution
-    pub const CX: f32 = 339.5;
-    /// Principal point Y (pixels) at 640x480 base resolution
-    pub const CY: f32 = 242.7;
-
-    /// Disparity-to-depth coefficient A
-    /// Used in formula: depth_m = 1.0 / (raw * DEPTH_COEFF_A + DEPTH_COEFF_B)
-    pub const DEPTH_COEFF_A: f32 = -0.0030711;
-    /// Disparity-to-depth coefficient B
-    /// Used in formula: depth_m = 1.0 / (raw * DEPTH_COEFF_A + DEPTH_COEFF_B)
-    pub const DEPTH_COEFF_B: f32 = 3.3309495;
-
-    /// Base width for intrinsics calculation
-    pub const BASE_WIDTH: f32 = 640.0;
-    /// Base height for intrinsics calculation
-    pub const BASE_HEIGHT: f32 = 480.0;
-}
+/// Kinect camera intrinsics - re-exported from kinect_intrinsics module
+pub use crate::shaders::kinect_intrinsics as kinect;
 
 pub use processor::{DepthProcessor, unpack_y10b_gpu};
 

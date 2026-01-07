@@ -12,7 +12,6 @@
 //! mesh, and yuv_convert processors.
 
 use crate::gpu::wgpu;
-use std::sync::Arc;
 
 /// Cached resource dimensions - avoids reallocation when dimensions match
 ///
@@ -82,58 +81,6 @@ pub async fn read_buffer_async(
     Ok(data)
 }
 
-/// Helper for texture-to-buffer copy and async readback
-///
-/// Copies texture contents to a staging buffer and reads back to CPU.
-///
-/// # Arguments
-/// * `device` - The wgpu device
-/// * `queue` - The wgpu queue
-/// * `texture` - Source texture to read from
-/// * `staging_buffer` - Staging buffer for readback (must be MAP_READ)
-/// * `width` - Texture width
-/// * `height` - Texture height
-///
-/// # Returns
-/// The texture contents as a Vec<u8> (RGBA format, 4 bytes per pixel)
-pub async fn read_texture_async(
-    device: &Arc<wgpu::Device>,
-    queue: &Arc<wgpu::Queue>,
-    texture: &wgpu::Texture,
-    staging_buffer: &wgpu::Buffer,
-    width: u32,
-    height: u32,
-) -> Result<Vec<u8>, String> {
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("texture_readback_encoder"),
-    });
-
-    encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: staging_buffer,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-
-    queue.submit(std::iter::once(encoder.finish()));
-    read_buffer_async(device, staging_buffer).await
-}
-
 /// Calculate compute shader dispatch size (workgroups needed)
 ///
 /// Given a dimension and workgroup size, returns the number of workgroups
@@ -192,65 +139,6 @@ macro_rules! gpu_processor_singleton {
             Ok(guard)
         }
     };
-}
-
-/// Create a storage buffer with the given size
-///
-/// # Arguments
-/// * `device` - The wgpu device
-/// * `size` - Buffer size in bytes
-/// * `label` - Debug label for the buffer
-pub fn create_storage_buffer(device: &wgpu::Device, size: u64, label: &str) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
-}
-
-/// Create a staging buffer for GPU readback
-///
-/// # Arguments
-/// * `device` - The wgpu device
-/// * `size` - Buffer size in bytes
-/// * `label` - Debug label for the buffer
-pub fn create_staging_buffer(device: &wgpu::Device, size: u64, label: &str) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some(label),
-        size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
-}
-
-/// Create an RGBA storage texture
-///
-/// # Arguments
-/// * `device` - The wgpu device
-/// * `width` - Texture width
-/// * `height` - Texture height
-/// * `label` - Debug label for the texture
-pub fn create_rgba_storage_texture(
-    device: &wgpu::Device,
-    width: u32,
-    height: u32,
-    label: &str,
-) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(label),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    })
 }
 
 #[cfg(test)]

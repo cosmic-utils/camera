@@ -410,43 +410,14 @@ impl DepthProcessor {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Map and read back both buffers
-        let rgba_slice = staging_rgba_buffer.slice(..);
-        let depth_slice = staging_depth_buffer.slice(..);
-
-        let (rgba_sender, rgba_receiver) = futures::channel::oneshot::channel();
-        let (depth_sender, depth_receiver) = futures::channel::oneshot::channel();
-
-        rgba_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = rgba_sender.send(result);
-        });
-        depth_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = depth_sender.send(result);
-        });
-
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-
-        rgba_receiver
-            .await
-            .map_err(|_| "Failed to receive RGBA buffer mapping")?
-            .map_err(|e| format!("Failed to map RGBA buffer: {:?}", e))?;
-
-        depth_receiver
-            .await
-            .map_err(|_| "Failed to receive depth buffer mapping")?
-            .map_err(|e| format!("Failed to map depth buffer: {:?}", e))?;
-
-        // Read RGBA data
-        let rgba_preview = rgba_slice.get_mapped_range().to_vec();
+        // Read back both buffers using shared helper
+        use crate::shaders::gpu_processor::read_buffer_async;
+        let rgba_preview = read_buffer_async(&self.device, &staging_rgba_buffer).await?;
+        let depth_data = read_buffer_async(&self.device, &staging_depth_buffer).await?;
 
         // Read depth data (stored as u32, extract lower 16 bits)
-        let depth_data = depth_slice.get_mapped_range();
         let depth_u32: &[u32] = bytemuck::cast_slice(&depth_data);
         let depth_u16: Vec<u16> = depth_u32.iter().map(|&d| d as u16).collect();
-
-        drop(depth_data);
-        staging_rgba_buffer.unmap();
-        staging_depth_buffer.unmap();
 
         Ok(DepthUnpackResult {
             rgba_preview,

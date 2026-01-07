@@ -22,25 +22,36 @@ pub use enumeration::{enumerate_pipewire_cameras, get_pipewire_formats, is_pipew
 pub use pipeline::PipeWirePipeline;
 
 use super::CameraBackend;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use super::depth_controller::DepthController;
-use super::depth_native::{
-    NativeDepthBackend, enumerate_depth_cameras, get_depth_formats, is_depth_native_device,
-};
+use super::{NativeDepthBackend, is_depth_native_device};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+use super::{enumerate_depth_cameras, get_depth_formats};
 use super::types::*;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use super::v4l2_depth::{DepthFrameReceiver, DepthFrameSender, V4l2DepthPipeline};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use crate::shaders::depth::{is_depth_colormap_enabled, is_depth_only_mode, unpack_y10b_gpu};
 use std::path::PathBuf;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+use tracing::warn;
+
+use super::V4l2KernelDepthBackend;
 
 /// Active capture pipeline (GStreamer, V4L2 depth, or native depth camera)
 enum ActivePipeline {
     /// Standard GStreamer pipeline via PipeWire
     GStreamer(pipeline::PipeWirePipeline),
-    /// Direct V4L2 depth capture for Y10B format
+    /// Direct V4L2 depth capture for Y10B format (freedepth only)
+    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
     Depth(V4l2DepthPipeline),
     /// Native depth camera backend (freedepth - bypasses V4L2 entirely)
     DepthCamera(NativeDepthBackend),
+    /// V4L2 kernel depth backend (uses kernel driver with depth controls)
+    KernelDepth(V4l2KernelDepthBackend),
 }
 
 /// PipeWire backend implementation
@@ -73,12 +84,15 @@ impl PipeWireBackend {
     }
 
     /// Check if format is Y10B depth sensor
+    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
     fn is_depth_format(format: &CameraFormat) -> bool {
         format.pixel_format == "Y10B"
     }
 
     /// Internal method to create preview pipeline
     fn create_pipeline(&mut self) -> BackendResult<()> {
+        use super::is_kernel_depth_device;
+
         let device = self
             .current_device
             .clone()
@@ -90,21 +104,58 @@ impl PipeWireBackend {
 
         debug!(
             device_path = %device.path,
-            is_depth_camera = is_depth_native_device(&device.path),
+            is_kernel_depth = is_kernel_depth_device(&device.path),
+            is_freedepth = is_depth_native_device(&device.path),
             "create_pipeline checking device type"
         );
 
-        // Check if this is a depth camera device - use native backend
+        // Check if this is a kernel depth device - use V4L2 kernel backend
+        if is_kernel_depth_device(&device.path) {
+            info!(device = %device.name, "Using V4L2 kernel depth backend");
+            return self.create_kernel_depth_pipeline(&device, &format);
+        }
+
+        // Check if this is a freedepth depth camera device (only when no kernel driver)
+        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
         if is_depth_native_device(&device.path) {
             info!(device = %device.name, "Using native depth camera backend (freedepth)");
-            self.create_depth_camera_pipeline(&device, &format)
-        } else if Self::is_depth_format(&format) {
-            // Y10B depth format - use V4L2 direct capture
-            self.create_depth_pipeline(&device, &format)
-        } else {
-            // Standard format - use GStreamer via PipeWire
-            self.create_gstreamer_pipeline(&device, &format)
+            return self.create_depth_camera_pipeline(&device, &format);
         }
+
+        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+        {
+            if Self::is_depth_format(&format) {
+                // Y10B depth format - use V4L2 direct capture
+                return self.create_depth_pipeline(&device, &format);
+            }
+        }
+        // Standard format - use GStreamer via PipeWire
+        self.create_gstreamer_pipeline(&device, &format)
+    }
+
+    /// Create kernel depth camera pipeline via V4L2 with depth controls
+    fn create_kernel_depth_pipeline(
+        &mut self,
+        device: &CameraDevice,
+        format: &CameraFormat,
+    ) -> BackendResult<()> {
+        use super::V4l2KernelDepthBackend;
+
+        info!(
+            device = %device.name,
+            format = %format,
+            "Creating kernel depth camera pipeline"
+        );
+
+        // Create kernel depth backend
+        let mut kernel_backend = V4l2KernelDepthBackend::new();
+        kernel_backend.initialize(device, format)?;
+
+        // Use the KernelDepth pipeline variant
+        self.active_pipeline = Some(ActivePipeline::KernelDepth(kernel_backend));
+
+        info!("Kernel depth camera pipeline created successfully");
+        Ok(())
     }
 
     /// Create native depth camera pipeline via freedepth
@@ -150,6 +201,7 @@ impl PipeWireBackend {
     }
 
     /// Create V4L2 depth pipeline for Y10B format
+    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
     fn create_depth_pipeline(
         &mut self,
         device: &CameraDevice,
@@ -245,18 +297,38 @@ impl PipeWireBackend {
 
 impl CameraBackend for PipeWireBackend {
     fn enumerate_cameras(&self) -> Vec<CameraDevice> {
-        info!("Enumerating cameras (PipeWire + native depth cameras)");
+        use super::{V4l2KernelDepthBackend, has_kernel_depth_driver};
+
+        info!("Enumerating cameras (PipeWire + depth cameras)");
 
         let mut cameras = Vec::new();
 
-        // First, enumerate depth cameras via freedepth (native USB)
-        let depth_cameras = enumerate_depth_cameras();
-        if !depth_cameras.is_empty() {
-            info!(
-                count = depth_cameras.len(),
-                "Found depth cameras via freedepth"
-            );
-            cameras.extend(depth_cameras);
+        // Check if kernel depth driver is available - if so, use it exclusively
+        // and skip freedepth entirely
+        if has_kernel_depth_driver() {
+            info!("Kernel depth driver detected - using V4L2 kernel backend for depth cameras");
+            let kernel_backend = V4l2KernelDepthBackend::new();
+            let kernel_cameras = kernel_backend.enumerate_cameras();
+            if !kernel_cameras.is_empty() {
+                info!(
+                    count = kernel_cameras.len(),
+                    "Found depth cameras via kernel driver"
+                );
+                cameras.extend(kernel_cameras);
+            }
+        } else {
+            // No kernel driver - use freedepth on x86_64 (if feature enabled)
+            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+            {
+                let depth_cameras = enumerate_depth_cameras();
+                if !depth_cameras.is_empty() {
+                    info!(
+                        count = depth_cameras.len(),
+                        "Found depth cameras via freedepth (no kernel driver)"
+                    );
+                    cameras.extend(depth_cameras);
+                }
+            }
         }
 
         // Then enumerate other cameras via PipeWire (excludes depth camera V4L2 devices)
@@ -270,9 +342,19 @@ impl CameraBackend for PipeWireBackend {
     }
 
     fn get_formats(&self, device: &CameraDevice, _video_mode: bool) -> Vec<CameraFormat> {
-        // Use native formats for depth camera devices
+        use super::{V4l2KernelDepthBackend, is_kernel_depth_device};
+
+        // Check for kernel depth device first
+        if is_kernel_depth_device(&device.path) {
+            info!(device_path = %device.path, "Getting formats for kernel depth camera device");
+            let kernel_backend = V4l2KernelDepthBackend::new();
+            return kernel_backend.get_formats(device, _video_mode);
+        }
+
+        // Use native formats for freedepth depth camera devices (only if no kernel driver)
+        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
         if is_depth_native_device(&device.path) {
-            info!(device_path = %device.path, "Getting formats for native depth camera device");
+            info!(device_path = %device.path, "Getting formats for freedepth depth camera device");
             return get_depth_formats(device);
         }
 
@@ -316,9 +398,13 @@ impl CameraBackend for PipeWireBackend {
         if let Some(pipeline) = self.active_pipeline.take() {
             match pipeline {
                 ActivePipeline::GStreamer(p) => p.stop()?,
+                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                 ActivePipeline::Depth(p) => p.stop()?,
                 ActivePipeline::DepthCamera(mut d) => {
                     d.shutdown()?;
+                }
+                ActivePipeline::KernelDepth(mut k) => {
+                    k.shutdown()?;
                 }
             }
         }
@@ -394,6 +480,7 @@ impl CameraBackend for PipeWireBackend {
 
         match &self.active_pipeline {
             Some(ActivePipeline::GStreamer(pipeline)) => pipeline.capture_frame(),
+            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
             Some(ActivePipeline::Depth(_)) => {
                 // For depth sensor, capture is handled via the frame stream
                 // The UI should use the last received frame
@@ -405,6 +492,10 @@ impl CameraBackend for PipeWireBackend {
                 // Capture from native depth camera backend
                 depth.capture_photo()
             }
+            Some(ActivePipeline::KernelDepth(kernel)) => {
+                // Capture from kernel depth camera backend
+                kernel.capture_photo()
+            }
             None => Err(BackendError::Other("Pipeline not initialized".to_string())),
         }
     }
@@ -414,11 +505,15 @@ impl CameraBackend for PipeWireBackend {
 
         match &mut self.active_pipeline {
             Some(ActivePipeline::GStreamer(pipeline)) => pipeline.start_recording(output_path),
+            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
             Some(ActivePipeline::Depth(_)) => Err(BackendError::Other(
                 "Video recording not supported for depth sensor".to_string(),
             )),
             Some(ActivePipeline::DepthCamera(_)) => Err(BackendError::Other(
                 "Video recording not yet implemented for native depth camera backend".to_string(),
+            )),
+            Some(ActivePipeline::KernelDepth(_)) => Err(BackendError::Other(
+                "Video recording not yet implemented for kernel depth camera backend".to_string(),
             )),
             None => Err(BackendError::Other("Pipeline not initialized".to_string())),
         }
@@ -429,8 +524,10 @@ impl CameraBackend for PipeWireBackend {
 
         match &mut self.active_pipeline {
             Some(ActivePipeline::GStreamer(pipeline)) => pipeline.stop_recording(),
+            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
             Some(ActivePipeline::Depth(_)) => Err(BackendError::NoRecordingInProgress),
             Some(ActivePipeline::DepthCamera(_)) => Err(BackendError::NoRecordingInProgress),
+            Some(ActivePipeline::KernelDepth(_)) => Err(BackendError::NoRecordingInProgress),
             None => Err(BackendError::Other("Pipeline not initialized".to_string())),
         }
     }
@@ -438,8 +535,10 @@ impl CameraBackend for PipeWireBackend {
     fn is_recording(&self) -> bool {
         match &self.active_pipeline {
             Some(ActivePipeline::GStreamer(pipeline)) => pipeline.is_recording(),
+            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
             Some(ActivePipeline::Depth(_)) => false,
             Some(ActivePipeline::DepthCamera(_)) => false,
+            Some(ActivePipeline::KernelDepth(_)) => false,
             None => false,
         }
     }

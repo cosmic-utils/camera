@@ -79,6 +79,8 @@ pub struct Render3DParams {
     pub point_size: f32,
     /// Depth discontinuity threshold in meters (mesh only, 0.0 for point cloud)
     pub depth_discontinuity_threshold: f32,
+    /// Color filter mode (0 = none, 1-14 = various filters)
+    pub filter_mode: u32,
 }
 
 impl Default for Render3DParams {
@@ -113,6 +115,7 @@ impl Default for Render3DParams {
             reg_y_offset: 0,
             point_size: 2.0,
             depth_discontinuity_threshold: 0.1,
+            filter_mode: 0,
         }
     }
 }

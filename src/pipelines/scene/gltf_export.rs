@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(target_arch = "x86_64")]
+
 //! GLTF mesh export
 //!
 //! Exports depth + color data as a GLB (binary glTF) mesh with a texture.
@@ -7,7 +9,7 @@
 //! Origin is at the Kinect camera position.
 
 use super::{CameraIntrinsics, RegistrationData, SceneCaptureConfig};
-use crate::shaders::depth::kinect;
+use crate::shaders::kinect_intrinsics as kinect;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -23,7 +25,6 @@ pub async fn export_mesh_gltf(
     depth_width: u32,
     depth_height: u32,
     output_path: &PathBuf,
-    _texture_path: &PathBuf, // Legacy parameter, texture is embedded in GLB
     config: &SceneCaptureConfig,
 ) -> Result<(), String> {
     let rgb_data = rgb_data.to_vec();

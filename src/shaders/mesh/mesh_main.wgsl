@@ -5,47 +5,48 @@
 // Requires geometry.wgsl to be prepended for shared functions:
 // rotation_matrix, unproject, project_to_screen, unpack_rgba, DEPTH_INVALID_16BIT
 
-struct MeshParams {
-    // Depth input dimensions (used for iteration and unprojection)
-    input_width: u32,
-    input_height: u32,
-    // Output dimensions
-    output_width: u32,
-    output_height: u32,
-    // RGB input dimensions (may differ from depth)
-    rgb_width: u32,
-    rgb_height: u32,
-    // Camera intrinsics (Kinect defaults)
+// Unified 3D rendering parameters (shared layout with point cloud shader)
+struct Render3DParams {
+    // === Dimensions ===
+    input_width: u32,      // Depth input width
+    input_height: u32,     // Depth input height
+    output_width: u32,     // Output image width
+    output_height: u32,    // Output image height
+    rgb_width: u32,        // RGB input width (may differ from depth)
+    rgb_height: u32,       // RGB input height
+
+    // === Camera intrinsics ===
     fx: f32,  // Focal length X (594.21 for Kinect)
     fy: f32,  // Focal length Y (591.04 for Kinect)
     cx: f32,  // Principal point X (339.5 for Kinect 640x480)
     cy: f32,  // Principal point Y (242.7 for Kinect 640x480)
-    // Depth format flag: 0 = millimeters, 1 = disparity (10-bit shifted to 16-bit)
-    depth_format: u32,
-    // Depth conversion coefficients (only used for disparity format)
-    depth_coeff_a: f32,
-    depth_coeff_b: f32,
-    min_depth: f32,
-    max_depth: f32,
-    // Rotation (radians)
-    pitch: f32,
-    yaw: f32,
-    // Rendering
-    fov: f32,
-    view_distance: f32,
-    // Registration parameters
-    use_registration_tables: u32,
-    target_offset: u32,
-    reg_x_val_scale: i32,
-    mirror: u32,
-    // High-res RGB scaling for registration
-    // Registration tables are built for 640x480 RGB (from 1280x960 crop, scaled 0.5x)
-    // For 1280x1024: scale both X and Y by 2.0 to get 1280x960, top-aligned in 1024
+
+    // === Depth format and conversion ===
+    depth_format: u32,     // 0 = millimeters, 1 = disparity (10-bit shifted to 16-bit)
+    depth_coeff_a: f32,    // Disparity coefficient A (-0.0030711 for Kinect)
+    depth_coeff_b: f32,    // Disparity coefficient B (3.3309495 for Kinect)
+    min_depth: f32,        // Minimum valid depth in meters
+    max_depth: f32,        // Maximum valid depth in meters
+
+    // === View transform ===
+    pitch: f32,            // Rotation around X axis (radians)
+    yaw: f32,              // Rotation around Y axis (radians)
+    fov: f32,              // Field of view for perspective projection
+    view_distance: f32,    // Camera distance from origin
+
+    // === Registration parameters ===
+    use_registration_tables: u32,  // 1 = use lookup tables, 0 = use simple shift
+    target_offset: u32,            // Y offset from pad_info
+    reg_x_val_scale: i32,          // Fixed-point scale factor (256)
+    mirror: u32,                   // 1 = mirror horizontally, 0 = normal
     reg_scale_x: f32,              // X scale factor (1.0 for 640, 2.0 for 1280)
-    reg_scale_y: f32,              // Y scale factor (same as X to maintain aspect)
+    reg_scale_y: f32,              // Y scale factor
     reg_y_offset: i32,             // Y offset (0 for top-aligned crop)
-    // Mesh-specific parameters
-    depth_discontinuity_threshold: f32,  // 0.1m - don't connect points with larger depth diff
+
+    // === Mode-specific parameters ===
+    point_size: f32,                    // Point size in pixels (point cloud only)
+    depth_discontinuity_threshold: f32, // Mesh discontinuity threshold (mesh only, 0 for point cloud)
+    filter_mode: u32,                   // Color filter mode (0 = none, 1-14 = various filters)
 }
 
 // Input: RGB data (RGBA format)
@@ -66,7 +67,7 @@ var<storage, read_write> depth_buffer: array<atomic<u32>>;
 
 // Parameters
 @group(0) @binding(4)
-var<uniform> params: MeshParams;
+var<uniform> params: Render3DParams;
 
 // Registration table: 640*480 [x_scaled, y] pairs for depth-RGB alignment
 @group(0) @binding(5)
@@ -112,6 +113,7 @@ fn get_depth_meters(x: u32, y: u32) -> f32 {
 }
 
 // Get RGB color for a depth pixel
+// Returns alpha = 0 if registration fails (coords out of bounds)
 fn get_color(x: u32, y: u32, depth_m: f32) -> vec4<f32> {
     var rgb_x: u32;
     var rgb_y: u32;
@@ -133,9 +135,11 @@ fn get_color(x: u32, y: u32, depth_m: f32) -> vec4<f32> {
         let rgb_x_i = i32(f32(rgb_x_base) * params.reg_scale_x);
         let rgb_y_i = i32(f32(rgb_y_base) * params.reg_scale_y) + params.reg_y_offset;
 
+        // Skip pixels that fall outside the RGB image bounds
+        // Return alpha = 0 to signal invalid color
         if (rgb_x_i < 0 || rgb_x_i >= i32(params.rgb_width) ||
             rgb_y_i < 0 || rgb_y_i >= i32(params.rgb_height)) {
-            return vec4<f32>(0.5, 0.5, 0.5, 1.0);
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
 
         rgb_x = u32(rgb_x_i);
@@ -249,7 +253,16 @@ fn rasterize_triangle(
                 let old = atomicMax(&depth_buffer[idx], depth_int);
 
                 if (depth_int >= old) {
-                    textureStore(output_texture, vec2<i32>(px, py), color);
+                    // Apply color filter if enabled (filter_mode 1-12)
+                    var final_color = color;
+                    if (params.filter_mode > 0u && params.filter_mode <= 12u) {
+                        let tex_coords = vec2<f32>(
+                            f32(px) / f32(params.output_width),
+                            f32(py) / f32(params.output_height)
+                        );
+                        final_color = vec4<f32>(apply_filter(color.rgb, params.filter_mode, tex_coords), color.a);
+                    }
+                    textureStore(output_texture, vec2<i32>(px, py), final_color);
                 }
             }
         }
@@ -296,6 +309,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let c10 = get_color(x, y - 1u, d10);
     let c01 = get_color(x - 1u, y, d01);
     let c11 = get_color(x, y, d11);
+
+    // Skip quad if any corner has invalid color (alpha = 0 from failed registration)
+    if (c00.a == 0.0 || c10.a == 0.0 || c01.a == 0.0 || c11.a == 0.0) {
+        return;
+    }
 
     // Project to screen
     let s00 = project_to_screen(p00);
