@@ -206,13 +206,21 @@ flatpak-runtime-version:
 # Generate cargo-sources.json for Flatpak
 flatpak-cargo-sources:
     #!/usr/bin/env bash
+    set -e
     echo "Generating cargo-sources.json..."
     if ! command -v python3 &> /dev/null; then
         echo "Error: python3 not found!"
         exit 1
     fi
-    [ -f flatpak-cargo-generator.py ] || curl -sLo flatpak-cargo-generator.py \
-        https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+    if [ ! -f flatpak-cargo-generator.py ]; then
+        echo "Downloading flatpak-cargo-generator.py..."
+        curl -fLo flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+    fi
+    if [ ! -f flatpak-cargo-generator.py ]; then
+        echo "Error: Failed to download flatpak-cargo-generator.py!"
+        exit 1
+    fi
     if python3 -c "import aiohttp, toml" 2>/dev/null; then
         python3 flatpak-cargo-generator.py ./Cargo.lock -o cargo-sources.json
     else
