@@ -66,6 +66,11 @@ impl AppModel {
 
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
+        // Handle scene mode capture separately
+        if self.mode == CameraMode::Scene {
+            return self.capture_scene();
+        }
+
         // Use HDR+ burst mode if enabled in settings (Auto or fixed frame count)
         // No need to toggle the moon button - HDR+ is automatic when enabled
         if self.config.burst_mode_setting.is_enabled() {
@@ -80,13 +85,24 @@ impl AppModel {
         info!("Capturing photo...");
         self.is_capturing = true;
 
+        // Extract all values from frame before we need to call mutable methods
         let frame_arc = Arc::clone(frame);
+        let frame_width = frame.width;
+        let frame_height = frame.height;
+        let depth_info = frame.depth_data.as_ref().map(|depth_arc| {
+            crate::pipelines::photo::encoding::DepthDataInfo {
+                values: depth_arc.to_vec(),
+                width: frame_width,
+                height: frame_height,
+            }
+        });
+
         let save_dir = crate::app::get_photo_directory();
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
 
         // Calculate crop rectangle based on aspect ratio setting
-        let crop_rect = self.photo_aspect_ratio.crop_rect(frame.width, frame.height);
+        let crop_rect = self.photo_aspect_ratio.crop_rect(frame_width, frame_height);
         let crop_rect = if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
             None
         } else {
@@ -97,7 +113,7 @@ impl AppModel {
         let encoding_format: crate::pipelines::photo::EncodingFormat =
             self.config.photo_output_format.into();
 
-        // Get camera metadata for DNG encoding (including exposure info)
+        // Get camera metadata for DNG encoding (including exposure info and depth data)
         let camera_metadata = self
             .available_cameras
             .get(self.current_camera_index)
@@ -105,6 +121,7 @@ impl AppModel {
                 let mut metadata = crate::pipelines::photo::CameraMetadata {
                     camera_name: Some(cam.name.clone()),
                     camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
+                    depth_data: depth_info.clone(),
                     ..Default::default()
                 };
                 // Read exposure metadata from V4L2 device if available
@@ -118,7 +135,13 @@ impl AppModel {
                 }
                 metadata
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                // Create metadata with just depth data if no camera info available
+                crate::pipelines::photo::CameraMetadata {
+                    depth_data: depth_info,
+                    ..Default::default()
+                }
+            });
 
         let save_task = Task::perform(
             async move {
@@ -483,29 +506,79 @@ impl AppModel {
     }
 
     pub(crate) fn handle_zoom_in(&mut self) -> Task<cosmic::Action<Message>> {
-        // Zoom in by 0.1x, max 10x
-        let new_zoom = (self.zoom_level + 0.1).min(10.0);
-        if (new_zoom - self.zoom_level).abs() > 0.001 {
-            self.zoom_level = new_zoom;
-            debug!(zoom = self.zoom_level, "Zoom in");
+        // Try hardware zoom first if available
+        if self.available_exposure_controls.zoom_absolute.available {
+            let range = &self.available_exposure_controls.zoom_absolute;
+            if let Some(current) = self.get_v4l2_zoom_value() {
+                // Step by ~10% of range or at least 1
+                let step = ((range.max - range.min) / 10).max(1);
+                let new_zoom = (current + step).min(range.max);
+                if new_zoom != current {
+                    self.set_v4l2_zoom(new_zoom);
+                    // Update zoom_level to reflect hardware zoom for display
+                    // Map hardware range to 1.0-10.0 display range
+                    let normalized = (new_zoom - range.min) as f32 / (range.max - range.min) as f32;
+                    self.zoom_level = 1.0 + normalized * 9.0;
+                    debug!(
+                        hardware_zoom = new_zoom,
+                        display_zoom = self.zoom_level,
+                        "Hardware zoom in"
+                    );
+                }
+            }
+        } else {
+            // Fallback to shader zoom
+            let new_zoom = (self.zoom_level + 0.1).min(10.0);
+            if (new_zoom - self.zoom_level).abs() > 0.001 {
+                self.zoom_level = new_zoom;
+                debug!(zoom = self.zoom_level, "Shader zoom in");
+            }
         }
         Task::none()
     }
 
     pub(crate) fn handle_zoom_out(&mut self) -> Task<cosmic::Action<Message>> {
-        // Zoom out by 0.1x, min 1.0x
-        let new_zoom = (self.zoom_level - 0.1).max(1.0);
-        if (new_zoom - self.zoom_level).abs() > 0.001 {
-            self.zoom_level = new_zoom;
-            debug!(zoom = self.zoom_level, "Zoom out");
+        // Try hardware zoom first if available
+        if self.available_exposure_controls.zoom_absolute.available {
+            let range = &self.available_exposure_controls.zoom_absolute;
+            if let Some(current) = self.get_v4l2_zoom_value() {
+                // Step by ~10% of range or at least 1
+                let step = ((range.max - range.min) / 10).max(1);
+                let new_zoom = (current - step).max(range.min);
+                if new_zoom != current {
+                    self.set_v4l2_zoom(new_zoom);
+                    // Update zoom_level to reflect hardware zoom for display
+                    let normalized = (new_zoom - range.min) as f32 / (range.max - range.min) as f32;
+                    self.zoom_level = 1.0 + normalized * 9.0;
+                    debug!(
+                        hardware_zoom = new_zoom,
+                        display_zoom = self.zoom_level,
+                        "Hardware zoom out"
+                    );
+                }
+            }
+        } else {
+            // Fallback to shader zoom
+            let new_zoom = (self.zoom_level - 0.1).max(1.0);
+            if (new_zoom - self.zoom_level).abs() > 0.001 {
+                self.zoom_level = new_zoom;
+                debug!(zoom = self.zoom_level, "Shader zoom out");
+            }
         }
         Task::none()
     }
 
     pub(crate) fn handle_reset_zoom(&mut self) -> Task<cosmic::Action<Message>> {
+        // Reset hardware zoom if available
+        if self.available_exposure_controls.zoom_absolute.available {
+            let default = self.available_exposure_controls.zoom_absolute.default;
+            self.set_v4l2_zoom(default);
+            debug!(hardware_zoom = default, "Hardware zoom reset");
+        }
+        // Always reset shader zoom
         if (self.zoom_level - 1.0).abs() > 0.001 {
             self.zoom_level = 1.0;
-            debug!("Zoom reset to 1.0");
+            debug!("Shader zoom reset to 1.0");
         }
         Task::none()
     }
@@ -521,6 +594,137 @@ impl AppModel {
             }
             Err(err) => {
                 error!(error = %err, "Failed to save photo");
+            }
+        }
+        Task::none()
+    }
+
+    /// Capture a scene (depth + color + preview + point cloud + mesh)
+    pub(crate) fn capture_scene(&mut self) -> Task<cosmic::Action<Message>> {
+        let Some(frame) = &self.current_frame else {
+            info!("No frame available for scene capture");
+            return Task::none();
+        };
+
+        let Some((dw, dh, dd)) = &self.preview_3d.latest_depth_data else {
+            info!("No depth data available for scene capture");
+            return Task::none();
+        };
+
+        // Extract all data first before calling mutable methods
+        let rgb_data = frame.data.to_vec();
+        let rgb_width = frame.width;
+        let rgb_height = frame.height;
+        let has_depth_data = frame.depth_data.is_some();
+        let depth_data = dd.to_vec();
+        let depth_width = *dw;
+        let depth_height = *dh;
+
+        // Extract point cloud preview if available
+        let (preview_data, preview_width, preview_height) =
+            if let Some((pw, ph, pdata)) = &self.preview_3d.rendered_preview {
+                (Some(pdata.as_ref().clone()), *pw, *ph)
+            } else {
+                (None, 0, 0)
+            };
+
+        info!("Capturing scene...");
+        self.is_capturing = true;
+
+        let save_dir = crate::app::get_photo_directory();
+
+        // Get the encoding format from config
+        let image_format: crate::pipelines::photo::EncodingFormat =
+            self.config.photo_output_format.into();
+
+        // Determine depth format based on camera type
+        let depth_format = if self.kinect.is_device && has_depth_data {
+            // Kinect native depth is in millimeters
+            crate::shaders::DepthFormat::Millimeters
+        } else {
+            // V4L2 Y10B depth is disparity
+            crate::shaders::DepthFormat::Disparity16
+        };
+        let mirror = self.config.mirror_preview;
+
+        let save_task = Task::perform(
+            async move {
+                use crate::pipelines::scene::{
+                    CameraIntrinsics, SceneCaptureConfig, capture_scene,
+                };
+
+                // Get registration data from the shader processor (same data used for preview)
+                let registration_data =
+                    match crate::shaders::get_point_cloud_registration_data().await {
+                        Ok(Some(shader_reg)) => {
+                            // Calculate registration scale factors for high-res RGB
+                            // Same logic as in point_cloud/processor.rs and mesh/processor.rs
+                            let reg_scale_x = rgb_width as f32 / 640.0;
+                            let reg_scale_y = reg_scale_x; // Same as X to maintain aspect ratio
+                            let reg_y_offset = 0i32; // Top-aligned crop
+
+                            // Convert from shader RegistrationData to scene RegistrationData
+                            Some(crate::pipelines::scene::RegistrationData {
+                                registration_table: shader_reg.registration_table,
+                                depth_to_rgb_shift: shader_reg.depth_to_rgb_shift,
+                                target_offset: shader_reg.target_offset,
+                                reg_scale_x,
+                                reg_scale_y,
+                                reg_y_offset,
+                            })
+                        }
+                        Ok(None) => {
+                            tracing::warn!("No registration data available from shader processor");
+                            None
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to get registration data: {}", e);
+                            None
+                        }
+                    };
+
+                let config = SceneCaptureConfig {
+                    image_format,
+                    intrinsics: CameraIntrinsics::default(),
+                    depth_format,
+                    mirror,
+                    registration: registration_data,
+                };
+
+                capture_scene(
+                    &rgb_data,
+                    rgb_width,
+                    rgb_height,
+                    &depth_data,
+                    depth_width,
+                    depth_height,
+                    preview_data.as_deref(),
+                    preview_width,
+                    preview_height,
+                    save_dir,
+                    config,
+                )
+                .await
+                .map(|result| result.scene_dir.display().to_string())
+            },
+            |result| cosmic::Action::App(Message::SceneSaved(result)),
+        );
+
+        let animation_task = Self::delay_task(150, Message::ClearCaptureAnimation);
+        Task::batch([save_task, animation_task])
+    }
+
+    pub(crate) fn handle_scene_saved(
+        &mut self,
+        result: Result<String, String>,
+    ) -> Task<cosmic::Action<Message>> {
+        match result {
+            Ok(path) => {
+                info!(path = %path, "Scene saved successfully");
+                return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
+            }
+            Err(err) => {
+                error!(error = %err, "Failed to save scene");
             }
         }
         Task::none()

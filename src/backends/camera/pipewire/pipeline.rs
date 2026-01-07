@@ -265,6 +265,10 @@ impl PipeWirePipeline {
                         format: PixelFormat::RGBA,  // Pipeline outputs RGBA
                         stride,
                         captured_at: frame_start, // Use frame_start as capture timestamp
+                        depth_data: None,         // Regular RGB frames have no depth
+                        depth_width: 0,
+                        depth_height: 0,
+                        video_timestamp: None,    // PipeWire doesn't provide Kinect-style timestamps
                     };
 
                     // Send frame to the app (non-blocking using try_send)

@@ -58,8 +58,8 @@ use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
 pub use state::{
     AppFlags, AppModel, BurstModeStage, BurstModeState, CameraMode, ContextPage, FileSource,
-    FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, RecordingState, TheatreState,
-    VirtualCameraState,
+    FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, RecordingState, SceneViewMode,
+    TheatreState, VirtualCameraState,
 };
 use std::sync::Arc;
 use tracing::{error, info, warn};
@@ -327,6 +327,12 @@ impl cosmic::Application for AppModel {
             last_qr_detection_time: None,
             // Privacy cover detection
             privacy_cover_closed: false,
+            // Kinect state (device, motor, calibration, native backend)
+            kinect: crate::app::state::KinectState::default(),
+            // Depth visualization settings
+            depth_viz: crate::app::state::DepthVisualizationState::default(),
+            // 3D preview state (rotation, zoom, rendering)
+            preview_3d: crate::app::state::Preview3DState::default(),
         };
 
         // Make context drawer overlay the content instead of reserving space
@@ -489,6 +495,12 @@ impl cosmic::Application for AppModel {
             return Task::none();
         }
 
+        // Close motor picker if open
+        if self.motor_picker_visible {
+            self.motor_picker_visible = false;
+            return Task::none();
+        }
+
         // Close tools menu if open
         if self.tools_menu_visible {
             self.tools_menu_visible = false;
@@ -517,7 +529,7 @@ impl cosmic::Application for AppModel {
 
     /// Register subscriptions for this application.
     fn subscription(&self) -> Subscription<Self::Message> {
-        use cosmic::iced::futures::{SinkExt, StreamExt};
+        use cosmic::iced::futures::SinkExt;
 
         let config_sub = self
             .core()
@@ -637,8 +649,13 @@ impl cosmic::Application for AppModel {
                             }
 
                             // Create camera pipeline using PipeWire backend
+                            // For Y10B depth formats, use V4L2 direct capture with GPU unpacking
                             use crate::backends::camera::pipewire::PipeWirePipeline;
-                            use crate::backends::camera::types::{CameraDevice, CameraFormat};
+                            use crate::backends::camera::types::{
+                                CameraDevice, CameraFormat, SensorType,
+                            };
+                            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                            use crate::backends::camera::types::{CameraFrame, PixelFormat};
 
                             let (sender, mut receiver) =
                                 cosmic::iced::futures::channel::mpsc::channel(100);
@@ -658,120 +675,546 @@ impl cosmic::Application for AppModel {
                                     .and_then(|c| c.device_info.clone()),
                             };
 
+                            let pixel_format_str = pixel_format.unwrap_or("MJPEG");
+                            let is_depth_format = pixel_format_str == "Y10B";
+                            let sensor_type = if is_depth_format {
+                                SensorType::Depth
+                            } else {
+                                SensorType::Rgb
+                            };
                             let format = CameraFormat {
                                 width: width.unwrap_or(640),
                                 height: height.unwrap_or(480),
                                 framerate,
                                 hardware_accelerated: true, // Assume HW acceleration available
-                                pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
+                                pixel_format: pixel_format_str.to_string(),
+                                sensor_type,
                             };
 
-                            let pipeline_opt = match PipeWirePipeline::new(&device, &format, sender)
-                            {
-                                Ok(pipeline) => {
-                                    info!("Pipeline created successfully");
-                                    Some(pipeline)
+                            // For depth camera devices, use native freedepth backend (bypasses V4L2)
+                            // For depth formats (Y10B), use V4L2 direct capture with GPU processing
+                            // For regular formats, use GStreamer via PipeWire
+                            #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                            use crate::backends::camera::v4l2_depth::V4l2DepthPipeline;
+                            use crate::backends::camera::{
+                                NativeDepthBackend, V4l2KernelDepthBackend, is_depth_native_device,
+                                is_kernel_depth_device,
+                            };
+
+                            // Enum to hold active pipeline - fields are used for ownership semantics
+                            // (keeping pipeline alive to continue capture)
+                            #[allow(dead_code)]
+                            enum ActivePipeline {
+                                GStreamer(PipeWirePipeline),
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                                Depth(V4l2DepthPipeline),
+                                DepthCamera(NativeDepthBackend),
+                                KernelDepth(V4l2KernelDepthBackend),
+                            }
+
+                            // Check if this is a kernel depth device first (highest priority)
+                            let is_kernel_depth = is_kernel_depth_device(&device.path);
+                            // Then check for freedepth device (only when kernel driver not present)
+                            let is_depth_cam =
+                                !is_kernel_depth && is_depth_native_device(&device.path);
+                            if is_kernel_depth {
+                                info!(device = %device.name, path = %device.path, "Using V4L2 kernel depth backend");
+                            } else if is_depth_cam {
+                                info!(device = %device.name, path = %device.path, "Using native depth camera backend (freedepth)");
+                            }
+
+                            let pipeline_opt: Option<ActivePipeline> = if is_kernel_depth {
+                                // Kernel depth camera backend - uses V4L2 with depth controls
+                                use crate::backends::camera::CameraBackend;
+                                let mut kernel_backend = V4l2KernelDepthBackend::new();
+                                match kernel_backend.initialize(&device, &format) {
+                                    Ok(()) => {
+                                        info!("V4L2 kernel depth pipeline started successfully");
+                                        Some(ActivePipeline::KernelDepth(kernel_backend))
+                                    }
+                                    Err(e) => {
+                                        error!(error = %e, "Failed to start kernel depth backend");
+                                        None
+                                    }
                                 }
-                                Err(e) => {
-                                    error!(error = %e, "Failed to initialize pipeline");
-                                    None
+                            } else if is_depth_cam {
+                                // Native depth camera backend - bypasses V4L2 entirely
+                                // Use initialize() which properly sets depth_only_mode for Y10B format
+                                use crate::backends::camera::CameraBackend;
+                                let mut depth_backend = NativeDepthBackend::new();
+                                match depth_backend.initialize(&device, &format) {
+                                    Ok(()) => {
+                                        // Set up registration data for depth-to-RGB alignment
+                                        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                                        if let Some(registration) = depth_backend.get_registration()
+                                        {
+                                            // Use shared helper for GPU shader registration
+                                            crate::app::handlers::depth_camera::setup_shader_registration_data(registration);
+                                        }
+                                        info!("Native Kinect pipeline started successfully");
+                                        Some(ActivePipeline::DepthCamera(depth_backend))
+                                    }
+                                    Err(e) => {
+                                        error!(error = %e, "Failed to start native Kinect backend");
+                                        None
+                                    }
+                                }
+                            } else {
+                                // Check for Y10B depth format (only with freedepth)
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                                if is_depth_format {
+                                    info!("Creating V4L2 depth pipeline for Y10B format");
+                                    use crate::shaders::depth::{
+                                        is_depth_colormap_enabled, is_depth_only_mode,
+                                        unpack_y10b_gpu,
+                                    };
+
+                                    // Create depth frame channel
+                                    let (depth_sender, mut depth_receiver) =
+                                        cosmic::iced::futures::channel::mpsc::channel(10);
+
+                                    // Create V4L2 depth pipeline
+                                    match V4l2DepthPipeline::new(&device, &format, depth_sender) {
+                                        Ok(depth_pipeline) => {
+                                            info!("V4L2 depth pipeline created successfully");
+
+                                            // Spawn task to process depth frames with GPU shader
+                                            let depth_width = format.width;
+                                            let depth_height = format.height;
+                                            let mut frame_sender_clone = sender.clone();
+
+                                            tokio::spawn(async move {
+                                                use futures::StreamExt;
+                                                info!("Depth frame processing task started");
+
+                                                while let Some(depth_frame) =
+                                                    depth_receiver.next().await
+                                                {
+                                                    // Process with GPU shader
+                                                    // Check visualization modes from shared state
+                                                    let use_colormap = is_depth_colormap_enabled();
+                                                    let depth_only = is_depth_only_mode();
+                                                    match unpack_y10b_gpu(
+                                                        &depth_frame.raw_data,
+                                                        depth_width,
+                                                        depth_height,
+                                                        use_colormap,
+                                                        depth_only,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(result) => {
+                                                            // Create CameraFrame with RGBA preview and depth data
+                                                            let camera_frame = CameraFrame {
+                                                                width: result.width,
+                                                                height: result.height,
+                                                                data: std::sync::Arc::from(
+                                                                    result
+                                                                        .rgba_preview
+                                                                        .into_boxed_slice(),
+                                                                ),
+                                                                format: PixelFormat::Depth16,
+                                                                stride: result.width * 4,
+                                                                captured_at: depth_frame
+                                                                    .captured_at,
+                                                                depth_data: Some(
+                                                                    std::sync::Arc::from(
+                                                                        result
+                                                                            .depth_u16
+                                                                            .into_boxed_slice(),
+                                                                    ),
+                                                                ),
+                                                                depth_width: result.width,
+                                                                depth_height: result.height,
+                                                                video_timestamp: None,
+                                                            };
+
+                                                            // Send to preview channel
+                                                            if frame_sender_clone
+                                                                .try_send(camera_frame)
+                                                                .is_err()
+                                                            {
+                                                                tracing::debug!(
+                                                                    "Preview channel full, dropping depth frame"
+                                                                );
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::warn!(error = %e, "Failed to unpack Y10B frame with GPU");
+                                                        }
+                                                    }
+                                                }
+
+                                                info!("Depth frame processing task ended");
+                                            });
+
+                                            // Keep depth_pipeline alive so capture thread continues
+                                            Some(ActivePipeline::Depth(depth_pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to create V4L2 depth pipeline");
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    // Regular format - use GStreamer via PipeWire
+                                    match PipeWirePipeline::new(&device, &format, sender.clone()) {
+                                        Ok(pipeline) => {
+                                            info!("Pipeline created successfully");
+                                            Some(ActivePipeline::GStreamer(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to initialize pipeline");
+                                            None
+                                        }
+                                    }
+                                }
+
+                                // When freedepth is not available, use GStreamer
+                                #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+                                {
+                                    // Regular format - use GStreamer via PipeWire
+                                    match PipeWirePipeline::new(&device, &format, sender) {
+                                        Ok(pipeline) => {
+                                            info!("Pipeline created successfully");
+                                            Some(ActivePipeline::GStreamer(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to initialize pipeline");
+                                            None
+                                        }
+                                    }
                                 }
                             };
 
                             if let Some(pipeline) = pipeline_opt {
                                 info!("Waiting for frames from pipeline...");
-                                // Keep pipeline alive and forward frames
-                                loop {
-                                    // Check cancel flag first (set when switching cameras/modes)
-                                    if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                                        info!(
-                                            "Cancel flag set - PipeWire subscription being cancelled"
-                                        );
-                                        break;
-                                    }
 
-                                    // Check if subscription is still active before processing next frame
-                                    if output.is_closed() {
-                                        info!(
-                                            "Output channel closed - PipeWire subscription being cancelled"
-                                        );
-                                        break;
-                                    }
+                                // For kernel depth devices, poll frames directly via V4L2
+                                if let ActivePipeline::KernelDepth(ref kernel_backend) = pipeline {
+                                    info!("Starting kernel depth frame polling loop");
+                                    loop {
+                                        // Check cancel flag
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!(
+                                                "Cancel flag set - kernel depth subscription being cancelled"
+                                            );
+                                            break;
+                                        }
 
-                                    // Wait for next frame with a timeout to periodically check cancellation
-                                    // Use 16ms timeout (~60fps) to reduce frame delivery jitter
-                                    match tokio::time::timeout(
-                                        tokio::time::Duration::from_millis(16),
-                                        receiver.next(),
-                                    )
-                                    .await
-                                    {
-                                        Ok(Some(frame)) => {
+                                        // Check if output is closed
+                                        if output.is_closed() {
+                                            info!(
+                                                "Output channel closed - kernel depth subscription being cancelled"
+                                            );
+                                            break;
+                                        }
+
+                                        // Poll for frame via CameraBackend trait
+                                        if let Some(frame) = kernel_backend.get_frame() {
                                             frame_count += 1;
-                                            // Calculate frame latency (time from capture to subscription delivery)
-                                            let latency_us =
-                                                frame.captured_at.elapsed().as_micros();
 
                                             if frame_count % 30 == 0 {
                                                 info!(
                                                     frame = frame_count,
                                                     width = frame.width,
                                                     height = frame.height,
-                                                    latency_ms = latency_us as f64 / 1000.0,
-                                                    "Received frame from pipeline"
+                                                    "Received kernel depth frame"
                                                 );
                                             }
 
-                                            // Warn if latency exceeds 2 frame periods (>33ms at 60fps)
-                                            if latency_us > 33_000 {
-                                                tracing::warn!(
-                                                    frame = frame_count,
-                                                    latency_ms = latency_us as f64 / 1000.0,
-                                                    "High frame latency detected - possible stuttering"
-                                                );
-                                            }
-
-                                            // Use try_send to avoid blocking the subscription when UI is busy
-                                            // Dropping frames is fine for live preview - we want the latest frame
-                                            match output
-                                                .try_send(Message::CameraFrame(Arc::new(frame)))
-                                            {
-                                                Ok(_) => {
-                                                    if frame_count % 30 == 0 {
-                                                        info!(
-                                                            frame = frame_count,
-                                                            "Frame forwarded to UI"
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    // Always log dropped frames for diagnostics
-                                                    tracing::warn!(
-                                                        frame = frame_count,
-                                                        error = ?e,
-                                                        "Frame dropped (UI channel full) - stuttering likely"
-                                                    );
-                                                    // Check if channel is closed (subscription cancelled)
-                                                    if e.is_disconnected() {
-                                                        info!(
-                                                            "Output channel disconnected - PipeWire subscription being cancelled"
-                                                        );
-                                                        break;
-                                                    }
-                                                }
-                                            }
+                                            // Send frame to UI
+                                            let _ = output
+                                                .try_send(Message::CameraFrame(Arc::new(frame)));
                                         }
-                                        Ok(None) => {
-                                            info!("PipeWire pipeline frame stream ended");
+
+                                        // Small sleep to avoid busy-waiting (~30fps)
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(16))
+                                            .await;
+                                    }
+                                }
+
+                                // For freedepth Kinect, poll frames directly instead of using a channel
+                                #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                                if let ActivePipeline::DepthCamera(ref depth_backend) = pipeline {
+                                    use crate::shaders::depth::{
+                                        depth_mm_to_rgba, is_depth_colormap_enabled,
+                                        is_depth_grayscale_mode, is_depth_only_mode, rgb_to_rgba,
+                                    };
+
+                                    info!("Starting Kinect frame polling loop");
+                                    loop {
+                                        // Check cancel flag
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!(
+                                                "Cancel flag set - Kinect subscription being cancelled"
+                                            );
                                             break;
                                         }
-                                        Err(_) => {
-                                            // Timeout - continue loop to check if channel is closed
-                                            continue;
+
+                                        // Check if output is closed
+                                        if output.is_closed() {
+                                            info!(
+                                                "Output channel closed - Kinect subscription being cancelled"
+                                            );
+                                            break;
+                                        }
+
+                                        // Poll for video frame
+                                        if let Some(video_frame) = depth_backend.get_video_frame() {
+                                            frame_count += 1;
+
+                                            // Get depth frame for depth overlay or 3D preview
+                                            let depth_frame = depth_backend.get_depth_frame();
+
+                                            // Check if depth colormap should be shown instead of RGB
+                                            // Show depth when: UI toggle enabled, OR Y10B format selected (depth_only_mode)
+                                            let use_colormap = is_depth_colormap_enabled();
+                                            let depth_only = is_depth_only_mode();
+                                            let format_is_depth =
+                                                depth_backend.is_depth_only_mode();
+
+                                            // Decide frame data: depth colormap or RGB
+                                            let grayscale = is_depth_grayscale_mode();
+                                            let (rgba_data, frame_width, frame_height) =
+                                                if (use_colormap || depth_only || format_is_depth)
+                                                    && depth_frame.is_some()
+                                                {
+                                                    let df = depth_frame.as_ref().unwrap();
+                                                    let visualization = depth_mm_to_rgba(
+                                                        &df.depth_mm,
+                                                        df.width,
+                                                        df.height,
+                                                        depth_only || format_is_depth,
+                                                        grayscale,
+                                                    );
+                                                    (visualization, df.width, df.height)
+                                                } else {
+                                                    // Normal RGB preview
+                                                    (
+                                                        rgb_to_rgba(&video_frame.data),
+                                                        video_frame.width,
+                                                        video_frame.height,
+                                                    )
+                                                };
+
+                                            // Get depth dimensions before consuming depth_frame
+                                            let (depth_width, depth_height) = depth_frame
+                                                .as_ref()
+                                                .map(|d| (d.width, d.height))
+                                                .unwrap_or((0, 0));
+
+                                            let frame = CameraFrame {
+                                                width: frame_width,
+                                                height: frame_height,
+                                                data: std::sync::Arc::from(
+                                                    rgba_data.into_boxed_slice(),
+                                                ),
+                                                format: PixelFormat::RGBA,
+                                                stride: frame_width * 4,
+                                                captured_at: std::time::Instant::now(),
+                                                depth_data: depth_frame.map(|d| {
+                                                    std::sync::Arc::from(
+                                                        d.depth_mm.into_boxed_slice(),
+                                                    )
+                                                }),
+                                                depth_width,
+                                                depth_height,
+                                                video_timestamp: Some(video_frame.timestamp),
+                                            };
+
+                                            if frame_count % 30 == 0 {
+                                                info!(
+                                                    frame = frame_count,
+                                                    width = frame.width,
+                                                    height = frame.height,
+                                                    has_depth = frame.depth_data.is_some(),
+                                                    depth_pixels = frame
+                                                        .depth_data
+                                                        .as_ref()
+                                                        .map(|d| d.len())
+                                                        .unwrap_or(0),
+                                                    use_colormap = use_colormap,
+                                                    depth_only = depth_only,
+                                                    "Received Kinect frame"
+                                                );
+                                            }
+
+                                            // Send frame to UI
+                                            let _ = output
+                                                .try_send(Message::CameraFrame(Arc::new(frame)));
+                                        }
+
+                                        // Small sleep to avoid busy-waiting (~30fps)
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(16))
+                                            .await;
+                                    }
+                                } else {
+                                    use cosmic::iced::futures::StreamExt;
+                                    // GStreamer or Depth pipeline - use channel-based receiver
+                                    loop {
+                                        // Check cancel flag first (set when switching cameras/modes)
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!(
+                                                "Cancel flag set - PipeWire subscription being cancelled"
+                                            );
+                                            break;
+                                        }
+
+                                        // Check if subscription is still active before processing next frame
+                                        if output.is_closed() {
+                                            info!(
+                                                "Output channel closed - PipeWire subscription being cancelled"
+                                            );
+                                            break;
+                                        }
+
+                                        // Wait for next frame with a timeout to periodically check cancellation
+                                        // Use 16ms timeout (~60fps) to reduce frame delivery jitter
+                                        match tokio::time::timeout(
+                                            tokio::time::Duration::from_millis(16),
+                                            receiver.next(),
+                                        )
+                                        .await
+                                        {
+                                            Ok(Some(frame)) => {
+                                                frame_count += 1;
+                                                // Calculate frame latency (time from capture to subscription delivery)
+                                                let latency_us =
+                                                    frame.captured_at.elapsed().as_micros();
+
+                                                if frame_count % 30 == 0 {
+                                                    info!(
+                                                        frame = frame_count,
+                                                        width = frame.width,
+                                                        height = frame.height,
+                                                        latency_ms = latency_us as f64 / 1000.0,
+                                                        "Received frame from pipeline"
+                                                    );
+                                                }
+
+                                                // Warn if latency exceeds 2 frame periods (>33ms at 60fps)
+                                                if latency_us > 33_000 {
+                                                    tracing::warn!(
+                                                        frame = frame_count,
+                                                        latency_ms = latency_us as f64 / 1000.0,
+                                                        "High frame latency detected - possible stuttering"
+                                                    );
+                                                }
+
+                                                // Use try_send to avoid blocking the subscription when UI is busy
+                                                // Dropping frames is fine for live preview - we want the latest frame
+                                                match output
+                                                    .try_send(Message::CameraFrame(Arc::new(frame)))
+                                                {
+                                                    Ok(_) => {
+                                                        if frame_count % 30 == 0 {
+                                                            info!(
+                                                                frame = frame_count,
+                                                                "Frame forwarded to UI"
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        // Always log dropped frames for diagnostics
+                                                        tracing::warn!(
+                                                                frame = frame_count,
+                                                                error = ?e,
+                                                            "Frame dropped (UI channel full) - stuttering likely"
+                                                        );
+                                                        // Check if channel is closed (subscription cancelled)
+                                                        if e.is_disconnected() {
+                                                            info!(
+                                                                "Output channel disconnected - PipeWire subscription being cancelled"
+                                                            );
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                info!("PipeWire pipeline frame stream ended");
+                                                break;
+                                            }
+                                            Err(_) => {
+                                                // Timeout - continue loop to check if channel is closed
+                                                continue;
+                                            }
                                         }
                                     }
                                 }
-                                info!("Cleaning up PipeWire pipeline");
+
+                                // Non-freedepth: GStreamer pipeline only
+                                #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+                                {
+                                    use cosmic::iced::futures::StreamExt;
+                                    // GStreamer pipeline - use channel-based receiver
+                                    loop {
+                                        // Check cancel flag first
+                                        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                            info!("Cancel flag set - subscription being cancelled");
+                                            break;
+                                        }
+
+                                        if output.is_closed() {
+                                            info!(
+                                                "Output channel closed - subscription being cancelled"
+                                            );
+                                            break;
+                                        }
+
+                                        match tokio::time::timeout(
+                                            tokio::time::Duration::from_millis(16),
+                                            receiver.next(),
+                                        )
+                                        .await
+                                        {
+                                            Ok(Some(frame)) => {
+                                                frame_count += 1;
+                                                let latency_us =
+                                                    frame.captured_at.elapsed().as_micros();
+
+                                                if frame_count % 30 == 0 {
+                                                    info!(
+                                                        frame = frame_count,
+                                                        width = frame.width,
+                                                        height = frame.height,
+                                                        latency_ms = latency_us as f64 / 1000.0,
+                                                        "Received frame from pipeline"
+                                                    );
+                                                }
+
+                                                match output
+                                                    .try_send(Message::CameraFrame(Arc::new(frame)))
+                                                {
+                                                    Ok(()) => {
+                                                        if frame_count % 30 == 0 {
+                                                            tracing::debug!(
+                                                                frame = frame_count,
+                                                                "Frame forwarded to UI"
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(frame = frame_count, error = ?e, "Frame dropped");
+                                                        if e.is_disconnected() {
+                                                            info!("Output channel disconnected");
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                info!("Pipeline frame stream ended");
+                                                break;
+                                            }
+                                            Err(_) => {
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                                info!("Cleaning up pipeline");
                                 // Pipeline will be dropped here, stopping the camera
                                 drop(pipeline);
                             } else {

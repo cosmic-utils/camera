@@ -4,9 +4,11 @@
 //!
 //! Provides a floating overlay for camera motor controls including:
 //! - V4L2 pan/tilt/zoom controls (for PTZ cameras)
+//! - Depth camera tilt control (via freedepth)
 
 use crate::app::state::{AppModel, Message};
 use crate::backends::camera::v4l2_controls;
+use crate::backends::camera::{TILT_MAX_DEGREES, TILT_MIN_DEGREES};
 use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::fl;
 use cosmic::Element;
@@ -37,9 +39,9 @@ fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
 }
 
 impl AppModel {
-    /// Check if any motor controls are available (V4L2 PTZ)
+    /// Check if any motor controls are available (V4L2 PTZ or Kinect)
     pub fn has_motor_controls(&self) -> bool {
-        self.available_exposure_controls.has_any_ptz()
+        self.kinect.is_device || self.available_exposure_controls.has_any_ptz()
     }
 
     /// Build the motor controls picker overlay
@@ -62,6 +64,28 @@ impl AppModel {
             )
             .align_y(cosmic::iced::Alignment::Center);
         column = column.push(title_row);
+
+        // Depth camera tilt control
+        if self.kinect.is_device {
+            let tilt_value = self.kinect.tilt_angle as i32;
+            let tilt_min = TILT_MIN_DEGREES as i32;
+            let tilt_max = TILT_MAX_DEGREES as i32;
+            let tilt_row = widget::row()
+                .push(widget::text::body(fl!("kinect-tilt")).width(Length::Fixed(60.0)))
+                .push(
+                    widget::slider(tilt_min..=tilt_max, tilt_value, |val| {
+                        Message::SetKinectTilt(val as i8)
+                    })
+                    .width(Length::Fixed(140.0)),
+                )
+                .push(
+                    widget::text::body(format!("{}°", self.kinect.tilt_angle))
+                        .width(Length::Fixed(40.0)),
+                )
+                .spacing(spacing.space_xs)
+                .align_y(cosmic::iced::Alignment::Center);
+            column = column.push(tilt_row);
+        }
 
         // V4L2 Pan control
         if self.available_exposure_controls.pan_absolute.available {
@@ -208,6 +232,8 @@ impl AppModel {
                 }
             });
         }
+
+        // Note: Kinect tilt reset is handled by Message::ResetPanTilt handler in update.rs
     }
 }
 

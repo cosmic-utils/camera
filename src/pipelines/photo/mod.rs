@@ -31,7 +31,7 @@ pub mod capture;
 pub mod encoding;
 pub mod processing;
 
-pub use encoding::{CameraMetadata, EncodingFormat, EncodingQuality, PhotoEncoder};
+pub use encoding::{CameraMetadata, DepthDataInfo, EncodingFormat, EncodingQuality, PhotoEncoder};
 pub use processing::{PostProcessingConfig, PostProcessor};
 
 use crate::backends::camera::types::CameraFrame;
@@ -76,29 +76,64 @@ impl PhotoPipeline {
     /// This runs the complete pipeline:
     /// 1. Captures frame from camera (already provided)
     /// 2. Post-processes the frame
-    /// 3. Encodes to target format
+    /// 3. Encodes to target format (DNG will include depth data if present)
     /// 4. Saves to disk
+    /// 5. If depth data is present AND format is not DNG, saves a separate depth PNG
     ///
     /// # Arguments
-    /// * `frame` - Raw camera frame (RGBA format)
+    /// * `frame` - Raw camera frame (RGBA format, may include depth_data)
     /// * `output_dir` - Directory to save the photo
     ///
     /// # Returns
-    /// * `Ok(PathBuf)` - Path to saved photo
+    /// * `Ok(PathBuf)` - Path to saved RGB photo (depth saved separately with DEPTH_ prefix for non-DNG)
     /// * `Err(String)` - Error message
     pub async fn capture_and_save(
         &self,
         frame: Arc<CameraFrame>,
         output_dir: PathBuf,
     ) -> Result<PathBuf, String> {
+        use tracing::info;
+
+        // Extract depth data before processing (clone the Arc if present)
+        let depth_data = frame.depth_data.clone();
+        let width = frame.width;
+        let height = frame.height;
+
         // Stage 1: Post-process (async, CPU-bound)
         let processed = self.post_processor.process(frame).await?;
 
         // Stage 2: Encode (async, CPU-bound)
+        // For DNG format, depth data will be included in the file itself
         let encoded = self.encoder.encode(processed).await?;
+        let is_dng = encoded.format == EncodingFormat::Dng;
 
-        // Stage 3: Save to disk (async, I/O-bound)
-        let output_path = self.encoder.save(encoded, output_dir).await?;
+        // Stage 3: Save RGB to disk (async, I/O-bound)
+        let output_path = self.encoder.save(encoded, output_dir.clone()).await?;
+
+        // Stage 4: Save depth data if present (as 16-bit PNG) - only for non-DNG formats
+        // For DNG format, depth data is already embedded in the file via camera_metadata
+        if let Some(depth_arc) = depth_data {
+            if !is_dng {
+                info!(
+                    width,
+                    height,
+                    depth_values = depth_arc.len(),
+                    "Saving depth data as separate 16-bit PNG"
+                );
+                match encoding::save_depth_png(depth_arc.to_vec(), width, height, output_dir).await
+                {
+                    Ok(depth_path) => {
+                        info!(path = %depth_path.display(), "Depth image saved");
+                    }
+                    Err(e) => {
+                        // Log but don't fail the whole capture
+                        tracing::warn!(error = %e, "Failed to save depth image");
+                    }
+                }
+            } else {
+                info!("Depth data included in DNG file");
+            }
+        }
 
         Ok(output_path)
     }
@@ -106,9 +141,10 @@ impl PhotoPipeline {
     /// Capture and save with progress callback
     ///
     /// Same as `capture_and_save` but calls the provided callback at each stage.
+    /// Also saves depth data as a separate 16-bit PNG if present.
     ///
     /// # Arguments
-    /// * `frame` - Raw camera frame
+    /// * `frame` - Raw camera frame (may include depth_data)
     /// * `output_dir` - Directory to save the photo
     /// * `progress` - Callback for progress updates (0.0 - 1.0)
     pub async fn capture_and_save_with_progress<F>(
@@ -120,7 +156,14 @@ impl PhotoPipeline {
     where
         F: FnMut(f32) + Send,
     {
+        use tracing::info;
+
         progress(0.0);
+
+        // Extract depth data before processing
+        let depth_data = frame.depth_data.clone();
+        let width = frame.width;
+        let height = frame.height;
 
         // Post-process
         let processed = self.post_processor.process(frame).await?;
@@ -130,8 +173,28 @@ impl PhotoPipeline {
         let encoded = self.encoder.encode(processed).await?;
         progress(0.66);
 
-        // Save
-        let output_path = self.encoder.save(encoded, output_dir).await?;
+        // Save RGB
+        let output_path = self.encoder.save(encoded, output_dir.clone()).await?;
+        progress(0.90);
+
+        // Save depth data if present
+        if let Some(depth_arc) = depth_data {
+            info!(
+                width,
+                height,
+                depth_values = depth_arc.len(),
+                "Saving depth data as separate 16-bit PNG"
+            );
+            match encoding::save_depth_png(depth_arc.to_vec(), width, height, output_dir).await {
+                Ok(depth_path) => {
+                    info!(path = %depth_path.display(), "Depth image saved");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to save depth image");
+                }
+            }
+        }
+
         progress(1.0);
 
         Ok(output_path)

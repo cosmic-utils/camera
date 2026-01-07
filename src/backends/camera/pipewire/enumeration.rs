@@ -5,7 +5,7 @@
 //! This module provides camera discovery and format enumeration using PipeWire.
 //! PipeWire handles all camera access, format negotiation, and decoding internally.
 
-use super::super::types::{CameraDevice, CameraFormat, DeviceInfo};
+use super::super::types::{CameraDevice, CameraFormat, DeviceInfo, SensorType};
 use crate::constants::formats;
 use tracing::{debug, info, warn};
 
@@ -100,13 +100,18 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
                             current_object_path.as_deref(),
                         );
 
-                        debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera");
-                        cameras.push(CameraDevice {
-                            name: name.clone(),
-                            path,
-                            metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
-                            device_info,
-                        });
+                        // Skip Kinect devices - they should use the native backend
+                        if is_kinect_v4l2_device(&device_info) {
+                            debug!(name = %name, "Skipping Kinect V4L2 device (use native backend instead)");
+                        } else {
+                            debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera");
+                            cameras.push(CameraDevice {
+                                name: name.clone(),
+                                path,
+                                metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                                device_info,
+                            });
+                        }
                     }
                 }
             }
@@ -185,13 +190,18 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
                 let device_info =
                     build_device_info(current_nick.as_deref(), current_object_path.as_deref());
 
-                debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera (last)");
-                cameras.push(CameraDevice {
-                    name: name.clone(),
-                    path,
-                    metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
-                    device_info,
-                });
+                // Skip Kinect devices - they should use the native backend
+                if is_kinect_v4l2_device(&device_info) {
+                    debug!(name = %name, "Skipping Kinect V4L2 device (use native backend instead)");
+                } else {
+                    debug!(id = %id, serial = ?current_serial, name = %name, path = %path, "Found video camera (last)");
+                    cameras.push(CameraDevice {
+                        name: name.clone(),
+                        path,
+                        metadata_path: Some(id.clone()), // Store node ID in metadata_path for format enumeration
+                        device_info,
+                    });
+                }
             }
         }
     }
@@ -239,6 +249,21 @@ fn build_device_info(nick: Option<&str>, object_path: Option<&str>) -> Option<De
         path: v4l2_path,
         real_path,
     })
+}
+
+/// Check if a device is a Kinect device (uses gspca_kinect driver)
+///
+/// Kinect devices should be handled by the native backend, not PipeWire.
+fn is_kinect_v4l2_device(device_info: &Option<DeviceInfo>) -> bool {
+    if let Some(info) = device_info {
+        // Check for Kinect V4L2 drivers
+        let driver = info.driver.to_lowercase();
+        if driver == "gspca_kinect" || driver == "kinect" {
+            debug!(driver = %info.driver, path = %info.path, "Filtering out Kinect V4L2 device (use native backend)");
+            return true;
+        }
+    }
+    false
 }
 
 /// Get V4L2 driver name using ioctl
@@ -377,6 +402,7 @@ fn get_fallback_formats() -> Vec<CameraFormat> {
                 framerate: Some(fps),
                 hardware_accelerated: true,
                 pixel_format: "MJPG".to_string(),
+                sensor_type: SensorType::Rgb,
             });
         }
     }
@@ -467,7 +493,7 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
                 // Determine the pixel format string:
                 // - For raw formats: use VideoFormat (YUY2, NV12, etc.)
                 // - For compressed formats: use MediaSubtype (MJPG, H264, etc.)
-                let pixel_format = if subtype == "raw" {
+                let mut pixel_format = if subtype == "raw" {
                     current_video_format
                         .clone()
                         .unwrap_or_else(|| "YUY2".to_string())
@@ -475,17 +501,36 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
                     subtype.to_uppercase()
                 };
 
-                // Create a format for each framerate
-                for &fps in &current_framerates {
-                    formats.push(CameraFormat {
-                        width: w,
-                        height: h,
-                        framerate: Some(fps),
-                        hardware_accelerated: pixel_format == "MJPG", // MJPEG is hardware accelerated
-                        pixel_format: pixel_format.clone(),
-                    });
+                // Detect Y10B depth sensor by resolution (640x488 or 1280x1024 with UNKNOWN format)
+                // The Kinect depth sensor reports VideoFormat:UNKNOWN for Y10B
+                if pixel_format == "UNKNOWN" && (w == 640 && h == 488 || w == 1280 && h == 1024) {
+                    pixel_format = "Y10B".to_string();
+                    debug!(width = w, height = h, "Detected Y10B depth sensor format");
                 }
-                debug!(width = w, height = h, pixel_format = %pixel_format, framerates = current_framerates.len(), "Completed format group");
+
+                // Only add formats with supported pixel formats
+                if is_supported_pixel_format(&pixel_format) {
+                    // Determine sensor type based on pixel format
+                    let sensor_type = if pixel_format == "Y10B" {
+                        SensorType::Depth
+                    } else {
+                        SensorType::Rgb
+                    };
+
+                    for &fps in &current_framerates {
+                        formats.push(CameraFormat {
+                            width: w,
+                            height: h,
+                            framerate: Some(fps),
+                            hardware_accelerated: pixel_format == "MJPG", // MJPEG is hardware accelerated
+                            pixel_format: pixel_format.clone(),
+                            sensor_type,
+                        });
+                    }
+                    debug!(width = w, height = h, pixel_format = %pixel_format, ?sensor_type, framerates = current_framerates.len(), "Completed format group");
+                } else {
+                    debug!(width = w, height = h, pixel_format = %pixel_format, "Skipping unsupported format");
+                }
             }
             current_width = None;
             current_height = None;
@@ -499,7 +544,7 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
     if !current_framerates.is_empty() {
         if let (Some(w), Some(h), Some(subtype)) = (current_width, current_height, &current_subtype)
         {
-            let pixel_format = if subtype == "raw" {
+            let mut pixel_format = if subtype == "raw" {
                 current_video_format
                     .clone()
                     .unwrap_or_else(|| "YUY2".to_string())
@@ -507,14 +552,37 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
                 subtype.to_uppercase()
             };
 
-            for &fps in &current_framerates {
-                formats.push(CameraFormat {
-                    width: w,
-                    height: h,
-                    framerate: Some(fps),
-                    hardware_accelerated: pixel_format == "MJPG",
-                    pixel_format: pixel_format.clone(),
-                });
+            // Detect Y10B depth sensor by resolution
+            if pixel_format == "UNKNOWN" && (w == 640 && h == 488 || w == 1280 && h == 1024) {
+                pixel_format = "Y10B".to_string();
+                debug!(
+                    width = w,
+                    height = h,
+                    "Detected Y10B depth sensor format (last)"
+                );
+            }
+
+            // Only add formats with supported pixel formats
+            if is_supported_pixel_format(&pixel_format) {
+                // Determine sensor type based on pixel format
+                let sensor_type = if pixel_format == "Y10B" {
+                    SensorType::Depth
+                } else {
+                    SensorType::Rgb
+                };
+
+                for &fps in &current_framerates {
+                    formats.push(CameraFormat {
+                        width: w,
+                        height: h,
+                        framerate: Some(fps),
+                        hardware_accelerated: pixel_format == "MJPG",
+                        pixel_format: pixel_format.clone(),
+                        sensor_type,
+                    });
+                }
+            } else {
+                debug!(width = w, height = h, pixel_format = %pixel_format, "Skipping unsupported format (last)");
             }
         }
     }
@@ -524,6 +592,16 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
     } else {
         Some(formats)
     }
+}
+
+/// Check if a pixel format is supported by the pipeline
+///
+/// Filters out formats that the GStreamer pipeline cannot handle,
+/// such as Y10B (10-bit packed grayscale) and raw Bayer patterns.
+fn is_supported_pixel_format(pixel_format: &str) -> bool {
+    use crate::media::Codec;
+    let codec = Codec::from_fourcc(pixel_format);
+    codec != Codec::Unknown
 }
 
 /// Test if PipeWire is available and working

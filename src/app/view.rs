@@ -15,6 +15,12 @@ use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
 use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
 use crate::fl;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+use crate::shaders::depth::{DEPTH_MAX_MM_U16, DEPTH_MIN_MM_U16};
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+const DEPTH_MAX_MM_U16: u16 = 10000;
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+const DEPTH_MIN_MM_U16: u16 = 400;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
@@ -47,8 +53,16 @@ const TOOLS_GRID_ICON: &[u8] = include_bytes!("../../resources/button_icons/tool
 const MOON_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon.svg");
 /// Moon off icon SVG (burst mode disabled, with strike-through)
 const MOON_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon-off.svg");
+/// Depth visualization icon SVG (for depth cameras like Kinect)
+const DEPTH_ICON: &[u8] = include_bytes!("../../resources/button_icons/depth-waves.svg");
+/// Depth visualization off icon SVG
+const DEPTH_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/depth-waves-off.svg");
 /// Camera tilt/motor control icon SVG
 const CAMERA_TILT_ICON: &[u8] = include_bytes!("../../resources/button_icons/camera-tilt.svg");
+/// Mesh view icon SVG (triangulated surface)
+const MESH_ICON: &[u8] = include_bytes!("../../resources/button_icons/mesh.svg");
+/// Points view icon SVG (point cloud)
+const POINTS_ICON: &[u8] = include_bytes!("../../resources/button_icons/points.svg");
 
 /// Burst mode progress bar dimensions
 const BURST_MODE_PROGRESS_BAR_WIDTH: f32 = 200.0;
@@ -200,8 +214,8 @@ impl AppModel {
             camera_preview
         };
 
-        // Check if zoom label should be shown (only in Photo mode)
-        let show_zoom_label = self.mode == CameraMode::Photo;
+        // Check if zoom label should be shown (Photo mode or 3D preview mode)
+        let show_zoom_label = self.mode == CameraMode::Photo || self.preview_3d.enabled;
 
         // Capture button area - changes based on recording/streaming state and video file selection
         // Check if we have video file controls (play/pause button for video file sources)
@@ -321,6 +335,8 @@ impl AppModel {
                     camera_preview,
                     // QR overlay (custom widget calculates positions at render time)
                     self.build_qr_overlay(),
+                    // Depth legend overlay (bottom right, when depth overlay enabled)
+                    self.build_depth_legend(),
                     // Privacy cover warning overlay (centered)
                     self.build_privacy_warning(),
                     // Top bar aligned to top (no extra padding - row has its own padding)
@@ -343,6 +359,7 @@ impl AppModel {
                 cosmic::iced::widget::stack![
                     camera_preview,
                     self.build_qr_overlay(),
+                    self.build_depth_legend(),
                     self.build_privacy_warning()
                 ]
                 .width(Length::Fill)
@@ -356,6 +373,8 @@ impl AppModel {
                 camera_preview,
                 // QR overlay (custom widget calculates positions at render time)
                 self.build_qr_overlay(),
+                // Depth legend overlay (bottom right, when depth overlay enabled)
+                self.build_depth_legend(),
                 // Privacy cover warning overlay (centered)
                 self.build_privacy_warning(),
                 widget::container(top_bar)
@@ -419,6 +438,11 @@ impl AppModel {
         // Add tools menu overlay if visible
         if self.tools_menu_visible {
             main_stack = main_stack.push(self.build_tools_menu());
+        }
+
+        // Add calibration dialog overlay if visible
+        if self.kinect.calibration_dialog_visible {
+            main_stack = main_stack.push(self.build_calibration_dialog());
         }
 
         // Wrap everything in a themed background container
@@ -598,6 +622,70 @@ impl AppModel {
                 row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
             }
 
+            // Depth visualization toggle (shows when camera has depth data)
+            let has_depth = self
+                .current_frame
+                .as_ref()
+                .map(|f| f.depth_data.is_some())
+                .unwrap_or(false);
+            if has_depth {
+                let depth_icon_bytes = if self.depth_viz.overlay_enabled {
+                    DEPTH_ICON
+                } else {
+                    DEPTH_OFF_ICON
+                };
+                let depth_icon = widget::icon::from_svg_bytes(depth_icon_bytes).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(depth_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(overlay_icon_button(
+                        depth_icon,
+                        Some(Message::ToggleDepthOverlay),
+                        self.depth_viz.overlay_enabled,
+                    ));
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+            }
+
+            // Scene view mode toggle (only in Scene mode)
+            // Switches between point cloud and mesh rendering
+            if self.mode == CameraMode::Scene && self.preview_3d.enabled {
+                use crate::app::state::SceneViewMode;
+                let is_mesh = self.preview_3d.view_mode == SceneViewMode::Mesh;
+                let view_icon_bytes = if is_mesh { MESH_ICON } else { POINTS_ICON };
+                let view_icon = widget::icon::from_svg_bytes(view_icon_bytes).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(view_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(overlay_icon_button(
+                        view_icon,
+                        Some(Message::ToggleSceneViewMode),
+                        false, // Never highlight - toggle state shown by icon change
+                    ));
+                }
+            }
+
+            // 5px spacing
+            row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+
             // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, theatre)
             // Highlight when tools menu is open or any tool setting is non-default
             let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
@@ -728,28 +816,82 @@ impl AppModel {
 
     /// Build zoom level button for display above capture button
     ///
-    /// Shows current zoom level (1x, 1.3x, 2x, etc.) in Photo mode.
-    /// Click to reset zoom to 1.0.
+    /// Shows current zoom level (1x, 1.3x, 2x, etc.) in Photo mode or 3D preview mode.
+    /// In 3D mode, also shows a rotation reset button.
+    /// Click zoom to reset to 1.0.
     fn build_zoom_label(&self) -> Element<'_, Message> {
-        let zoom_text = if self.zoom_level >= 10.0 {
-            "10x".to_string()
-        } else if (self.zoom_level - self.zoom_level.round()).abs() < 0.05 {
-            format!("{}x", self.zoom_level.round() as u32)
-        } else {
-            format!("{:.1}x", self.zoom_level)
-        };
+        let spacing = cosmic::theme::spacing();
 
-        let is_zoomed = (self.zoom_level - 1.0).abs() > 0.01;
-
-        // Use text button style - Suggested when zoomed, Standard when at 1x
-        widget::button::text(zoom_text)
-            .on_press(Message::ResetZoom)
-            .class(if is_zoomed {
-                cosmic::theme::Button::Suggested
+        if self.preview_3d.enabled {
+            // 3D preview mode: "fly into scene" zoom model
+            // preview_3d_zoom = 0 means camera at sensor (1x view)
+            // Positive values = camera moved into scene = zoomed in
+            // Negative values = camera moved back = zoomed out
+            let display_zoom = if self.preview_3d.zoom >= 0.0 {
+                1.0 + self.preview_3d.zoom // 0=1x, 1=2x, 2=3x
             } else {
-                cosmic::theme::Button::Standard
-            })
-            .into()
+                1.0 / (1.0 - self.preview_3d.zoom) // -1=0.5x, -2=0.33x
+            };
+            let zoom_text = if display_zoom >= 4.0 {
+                format!("{:.0}x", display_zoom)
+            } else if display_zoom < 1.0 {
+                format!("{:.1}x", display_zoom)
+            } else if (display_zoom - display_zoom.round()).abs() < 0.05 {
+                format!("{}x", display_zoom.round() as u32)
+            } else {
+                format!("{:.1}x", display_zoom)
+            };
+
+            let is_zoomed = self.preview_3d.zoom.abs() > 0.01;
+            let (pitch, yaw) = self.preview_3d.rotation;
+            let is_rotated = pitch.abs() > 0.01 || yaw.abs() > 0.01;
+
+            // Zoom reset button
+            let zoom_button = widget::button::text(zoom_text)
+                .on_press(Message::Reset3DPreviewRotation)
+                .class(if is_zoomed {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Standard
+                });
+
+            // Rotation reset button (shows when rotated)
+            let reset_button = widget::button::text("⟲")
+                .on_press(Message::Reset3DPreviewRotation)
+                .class(if is_rotated {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Standard
+                });
+
+            widget::row()
+                .push(reset_button)
+                .push(zoom_button)
+                .spacing(spacing.space_xxs)
+                .align_y(Alignment::Center)
+                .into()
+        } else {
+            // Normal Photo mode zoom
+            let zoom_text = if self.zoom_level >= 10.0 {
+                "10x".to_string()
+            } else if (self.zoom_level - self.zoom_level.round()).abs() < 0.05 {
+                format!("{}x", self.zoom_level.round() as u32)
+            } else {
+                format!("{:.1}x", self.zoom_level)
+            };
+
+            let is_zoomed = (self.zoom_level - 1.0).abs() > 0.01;
+
+            // Use text button style - Suggested when zoomed, Standard when at 1x
+            widget::button::text(zoom_text)
+                .on_press(Message::ResetZoom)
+                .class(if is_zoomed {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    cosmic::theme::Button::Standard
+                })
+                .into()
+        }
     }
 
     /// Build the QR code overlay layer
@@ -1280,5 +1422,295 @@ impl AppModel {
             .align_x(cosmic::iced::alignment::Horizontal::Center)
             .align_y(cosmic::iced::alignment::Vertical::Center)
             .into()
+    }
+
+    /// Build the depth legend overlay
+    ///
+    /// Shows a horizontal gradient bar with depth values in mm.
+    /// Uses the turbo colormap (blue=near to red=far).
+    /// Positioned in bottom right, limited to capture button height.
+    fn build_depth_legend(&self) -> Element<'_, Message> {
+        // Only show when depth overlay is enabled and we have depth data
+        if !self.depth_viz.overlay_enabled {
+            return widget::Space::new(Length::Fill, Length::Fill).into();
+        }
+
+        let has_depth = self
+            .current_frame
+            .as_ref()
+            .map(|f| f.depth_data.is_some())
+            .unwrap_or(false);
+
+        if !has_depth {
+            return widget::Space::new(Length::Fill, Length::Fill).into();
+        }
+
+        let spacing = cosmic::theme::spacing();
+
+        // Kinect depth range from shared constants
+        let min_depth_mm = DEPTH_MIN_MM_U16;
+        let max_depth_mm = DEPTH_MAX_MM_U16;
+
+        // Build the legend content: gradient bar with labels
+        // Height limited to capture button size (60px)
+        let legend_height = ui::CAPTURE_BUTTON_OUTER;
+        let bar_height = 12.0_f32;
+        let label_size = 10_u16;
+
+        // Create gradient bar using a row of colored segments
+        let num_segments = 40;
+        let segment_width = 4.0_f32;
+        let mut gradient_row = widget::row().spacing(0);
+
+        // Turbo colormap gradient stops (used when not in grayscale mode)
+        let turbo_colors: [(f32, Color); 7] = [
+            (0.0, Color::from_rgb(0.18995, 0.07176, 0.23217)), // Dark blue/purple
+            (0.17, Color::from_rgb(0.12178, 0.38550, 0.90354)), // Blue
+            (0.33, Color::from_rgb(0.09859, 0.70942, 0.66632)), // Cyan
+            (0.5, Color::from_rgb(0.50000, 0.85810, 0.27671)), // Green/yellow
+            (0.67, Color::from_rgb(0.91567, 0.85024, 0.09695)), // Yellow
+            (0.83, Color::from_rgb(0.99214, 0.50000, 0.07763)), // Orange
+            (1.0, Color::from_rgb(0.72340, 0.10000, 0.08125)), // Red
+        ];
+
+        let use_grayscale = self.depth_viz.grayscale_mode;
+
+        for i in 0..num_segments {
+            let t = i as f32 / (num_segments - 1) as f32;
+
+            // Use grayscale or turbo colormap based on mode
+            // Grayscale: near (t=0) = bright, far (t=1) = dark (matches shader)
+            let color = if use_grayscale {
+                let gray = 1.0 - t; // Invert: near=bright, far=dark
+                Color::from_rgb(gray, gray, gray)
+            } else {
+                Self::interpolate_turbo(t, &turbo_colors)
+            };
+
+            gradient_row = gradient_row.push(
+                widget::container(widget::Space::new(
+                    Length::Fixed(segment_width),
+                    Length::Fixed(bar_height),
+                ))
+                .style(move |_| widget::container::Style {
+                    background: Some(Background::Color(color)),
+                    ..Default::default()
+                }),
+            );
+        }
+
+        // Labels row: Near (blue) on left, Far (red) on right
+        // Matches turbo colormap: t=0 (left) = blue = near, t=1 (right) = red = far
+        let labels_row = widget::row()
+            .push(widget::text::caption(format!("{}mm", min_depth_mm)).size(label_size))
+            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(widget::text::caption(format!("{}mm", max_depth_mm)).size(label_size))
+            .width(Length::Fixed(segment_width * num_segments as f32));
+
+        // Toggle button for grayscale mode
+        let grayscale_toggle = widget::row()
+            .push(
+                widget::checkbox("Grayscale", self.depth_viz.grayscale_mode)
+                    .on_toggle(|_| Message::ToggleDepthGrayscale)
+                    .size(14)
+                    .text_size(label_size),
+            )
+            .width(Length::Fixed(segment_width * num_segments as f32));
+
+        // Combine into a column: labels on top, gradient bar, then grayscale toggle
+        let legend_content = widget::column()
+            .push(labels_row)
+            .push(gradient_row)
+            .push(grayscale_toggle)
+            .spacing(2)
+            .align_x(cosmic::iced::Alignment::Center);
+
+        // Semi-transparent container for the legend
+        let legend_container = widget::container(legend_content)
+            .padding([spacing.space_xxs, spacing.space_xs])
+            .style(|theme: &cosmic::Theme| {
+                let cosmic = theme.cosmic();
+                let bg = cosmic.bg_color();
+                widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        bg.red,
+                        bg.green,
+                        bg.blue,
+                        OVERLAY_BACKGROUND_ALPHA,
+                    ))),
+                    border: cosmic::iced::Border {
+                        radius: cosmic.corner_radii.radius_s.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            });
+
+        // Position in bottom right corner
+        // Bottom padding: space_s (bottom bar margin) + capture button height + xxs gap
+        let bottom_padding = spacing.space_s as f32 + legend_height + spacing.space_xxs as f32;
+
+        widget::container(
+            widget::row()
+                .push(widget::Space::new(Length::Fill, Length::Shrink))
+                .push(legend_container),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(cosmic::iced::alignment::Vertical::Bottom)
+        .padding([0.0, spacing.space_s as f32, bottom_padding, 0.0])
+        .into()
+    }
+
+    /// Build the calibration dialog overlay
+    ///
+    /// Shows calibration status and prompts user to calibrate if using defaults.
+    fn build_calibration_dialog(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+
+        // Get calibration info
+        #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+        let (status_text, detail_text, has_device_calibration) =
+            if let Some(ref calib) = self.kinect.calibration_info {
+                if calib.from_device {
+                    (
+                        "Device Calibration Active",
+                        format!(
+                            "Factory calibration loaded from device EEPROM.\n\n\
+                             Reference distance: {:.0}mm\n\
+                             IR-RGB baseline: {:.1}mm",
+                            calib.reference_distance_mm, calib.stereo_baseline_mm
+                        ),
+                        true,
+                    )
+                } else {
+                    (
+                        "Using Default Calibration",
+                        "Factory calibration could not be read from the device.\n\
+                         Depth-to-color alignment may be inaccurate.\n\n\
+                         This can happen when:\n\
+                         • USB permission issues (try running as root)\n\
+                         • Device not fully initialized\n\
+                         • Using V4L2 mode instead of native Kinect\n\n\
+                         Try restarting the camera or switching to native mode."
+                            .to_string(),
+                        false,
+                    )
+                }
+            } else {
+                (
+                    "No Calibration Data",
+                    "No depth camera is currently active.".to_string(),
+                    false,
+                )
+            };
+        #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+        let (status_text, detail_text, has_device_calibration) = (
+            "No Calibration Data",
+            "freedepth feature not enabled.".to_string(),
+            false,
+        );
+
+        // Icon - check mark for device calibration, warning for default
+        let status_icon = if has_device_calibration {
+            icon::from_name("emblem-ok-symbolic").symbolic(true)
+        } else {
+            icon::from_name("dialog-warning-symbolic").symbolic(true)
+        };
+
+        // Build dialog content
+        let content = widget::column()
+            .push(
+                widget::icon(status_icon.into())
+                    .size(48)
+                    .class(if has_device_calibration {
+                        cosmic::theme::Svg::Default
+                    } else {
+                        cosmic::theme::Svg::Custom(std::rc::Rc::new(|theme: &cosmic::Theme| {
+                            cosmic::widget::svg::Style {
+                                color: Some(theme.cosmic().destructive_color().into()),
+                            }
+                        }))
+                    }),
+            )
+            .push(
+                widget::text(status_text)
+                    .size(20)
+                    .font(cosmic::font::bold()),
+            )
+            .push(widget::text(detail_text).size(14))
+            .push(widget::Space::new(Length::Shrink, Length::Fixed(16.0)))
+            .push(
+                widget::button::text("Close")
+                    .on_press(Message::CloseCalibrationDialog)
+                    .class(cosmic::theme::Button::Standard),
+            )
+            .spacing(spacing.space_s)
+            .align_x(Alignment::Center);
+
+        // Dialog container with semi-transparent background
+        let dialog_box =
+            widget::container(content)
+                .padding(spacing.space_m)
+                .style(|theme: &cosmic::Theme| {
+                    let cosmic = theme.cosmic();
+                    let bg = cosmic.bg_color();
+                    widget::container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            bg.red, bg.green, bg.blue, 0.95,
+                        ))),
+                        border: cosmic::iced::Border {
+                            radius: cosmic.corner_radii.radius_m.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                });
+
+        // Dark overlay behind dialog to dim the background
+        let overlay = widget::mouse_area(
+            widget::container(dialog_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(cosmic::iced::alignment::Vertical::Center),
+        )
+        .on_press(Message::CloseCalibrationDialog);
+
+        widget::container(overlay)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_theme| widget::container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    /// Interpolate turbo colormap from pre-defined color stops
+    fn interpolate_turbo(t: f32, colors: &[(f32, Color); 7]) -> Color {
+        let t = t.clamp(0.0, 1.0);
+
+        // Find the two color stops to interpolate between
+        let mut i = 0;
+        while i < colors.len() - 1 && colors[i + 1].0 < t {
+            i += 1;
+        }
+
+        if i >= colors.len() - 1 {
+            return colors[colors.len() - 1].1;
+        }
+
+        let (t0, c0) = colors[i];
+        let (t1, c1) = colors[i + 1];
+
+        // Linear interpolation between the two stops
+        let factor = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
+
+        Color::from_rgb(
+            c0.r + (c1.r - c0.r) * factor,
+            c0.g + (c1.g - c0.g) * factor,
+            c0.b + (c1.b - c0.b) * factor,
+        )
     }
 }
