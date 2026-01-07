@@ -65,10 +65,10 @@ impl TryFrom<u32> for DepthSensorType {
 pub struct DepthIntrinsics {
     pub width: u32,
     pub height: u32,
-    pub fx: i32,  // Q16.16 focal length X
-    pub fy: i32,  // Q16.16 focal length Y
-    pub cx: i32,  // Q16.16 principal point X
-    pub cy: i32,  // Q16.16 principal point Y
+    pub fx: i32, // Q16.16 focal length X
+    pub fy: i32, // Q16.16 focal length Y
+    pub cx: i32, // Q16.16 principal point X
+    pub cy: i32, // Q16.16 principal point Y
     pub model: u32,
     pub k1: i32,
     pub k2: i32,
@@ -102,7 +102,7 @@ impl DepthIntrinsics {
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct DepthExtrinsics {
-    pub rotation: [i32; 9],     // 3x3 rotation matrix (Q2.30)
+    pub rotation: [i32; 9],    // 3x3 rotation matrix (Q2.30)
     pub translation: [i32; 3], // Translation in micrometers
     pub reserved: [u32; 4],
 }
@@ -119,7 +119,7 @@ impl DepthExtrinsics {
 #[derive(Debug, Clone)]
 pub struct DepthCapabilities {
     pub sensor_type: DepthSensorType,
-    pub units_um: u32,          // Depth units in micrometers (1000 = mm)
+    pub units_um: u32, // Depth units in micrometers (1000 = mm)
     pub min_distance_mm: u32,
     pub max_distance_mm: u32,
     pub invalid_value: u32,
@@ -131,7 +131,7 @@ pub struct DepthCapabilities {
 // V4L2 ioctl definitions
 const VIDIOC_QUERYCAP: libc::c_ulong = 0x8068_5600; // _IOR('V', 0, struct v4l2_capability)
 const VIDIOC_QUERYCTRL: libc::c_ulong = 0xc044_5624; // _IOWR('V', 36, struct v4l2_queryctrl) - 68 bytes struct
-const VIDIOC_G_CTRL: libc::c_ulong = 0xc008_561b;    // _IOWR('V', 27, struct v4l2_control)
+const VIDIOC_G_CTRL: libc::c_ulong = 0xc008_561b; // _IOWR('V', 27, struct v4l2_control)
 const VIDIOC_G_EXT_CTRLS: libc::c_ulong = 0xc040_5647; // _IOWR('V', 71, struct v4l2_ext_controls)
 
 /// V4L2 device capability structure for QUERYCAP
@@ -284,11 +284,7 @@ fn get_control(fd: i32, id: u32) -> Option<i32> {
 
     let result = unsafe { libc::ioctl(fd, VIDIOC_G_CTRL, &mut ctrl as *mut _) };
 
-    if result == 0 {
-        Some(ctrl.value)
-    } else {
-        None
-    }
+    if result == 0 { Some(ctrl.value) } else { None }
 }
 
 /// Query depth camera capabilities via V4L2 controls
@@ -423,8 +419,7 @@ fn get_extrinsics(fd: i32) -> Option<DepthExtrinsics> {
 
 /// Enable or disable the depth illuminator (IR projector)
 pub fn set_illuminator_enabled(device_path: &str, enabled: bool) -> Result<(), String> {
-    let file = File::open(device_path)
-        .map_err(|e| format!("Failed to open device: {}", e))?;
+    let file = File::open(device_path).map_err(|e| format!("Failed to open device: {}", e))?;
     let fd = file.as_raw_fd();
 
     let ctrl = V4l2Control {
@@ -592,8 +587,7 @@ fn build_depth_to_rgb_shift_from_extrinsics(
 
     debug!(
         baseline_mm,
-        fx,
-        "Building depth-to-RGB shift table from kernel extrinsics"
+        fx, "Building depth-to-RGB shift table from kernel extrinsics"
     );
 
     for depth_mm in 1..=DEPTH_MM_MAX {

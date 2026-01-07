@@ -59,19 +59,17 @@ pub use depth_native::{
 
 // Kernel driver exports (always available)
 pub use manager::CameraBackendManager;
+pub use motor_control::{MotorBackend, MotorController, TILT_MAX_DEGREES, TILT_MIN_DEGREES};
 pub use types::*;
 pub use v4l2_depth_controls::{
-    DepthCapabilities, DepthIntrinsics, DepthExtrinsics, DepthSensorType,
-    has_depth_controls, query_depth_capabilities, V4l2DeviceInfo, query_device_info,
-    KernelRegistrationData, REG_X_VAL_SCALE,
+    DepthCapabilities, DepthExtrinsics, DepthIntrinsics, DepthSensorType, KernelRegistrationData,
+    REG_X_VAL_SCALE, V4l2DeviceInfo, has_depth_controls, query_depth_capabilities,
+    query_device_info,
 };
 pub use v4l2_kernel_depth::{
-    V4l2KernelDepthBackend, KERNEL_DEPTH_PREFIX, KERNEL_KINECT_PREFIX,
-    is_kernel_depth_device, is_kernel_kinect_device, parse_kernel_kinect_path,
-    KinectDevicePair, find_kernel_kinect_pairs, has_kernel_kinect_devices,
-};
-pub use motor_control::{
-    MotorController, MotorBackend, TILT_MIN_DEGREES, TILT_MAX_DEGREES,
+    KERNEL_DEPTH_PREFIX, KERNEL_KINECT_PREFIX, KinectDevicePair, V4l2KernelDepthBackend,
+    find_kernel_kinect_pairs, has_kernel_kinect_devices, is_kernel_depth_device,
+    is_kernel_kinect_device, parse_kernel_kinect_path,
 };
 
 // Stubs when freedepth is disabled (either not x86_64 or feature disabled)
@@ -143,7 +141,9 @@ impl CameraBackend for NativeDepthBackend {
     }
 
     fn initialize(&mut self, _device: &CameraDevice, _format: &CameraFormat) -> BackendResult<()> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn shutdown(&mut self) -> BackendResult<()> {
@@ -155,27 +155,39 @@ impl CameraBackend for NativeDepthBackend {
     }
 
     fn recover(&mut self) -> BackendResult<()> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn switch_camera(&mut self, _device: &CameraDevice) -> BackendResult<()> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn apply_format(&mut self, _format: &CameraFormat) -> BackendResult<()> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn capture_photo(&self) -> BackendResult<CameraFrame> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn start_recording(&mut self, _output_path: std::path::PathBuf) -> BackendResult<()> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn stop_recording(&mut self) -> BackendResult<std::path::PathBuf> {
-        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+        Err(BackendError::NotAvailable(
+            "freedepth feature not enabled".to_string(),
+        ))
     }
 
     fn is_recording(&self) -> bool {
@@ -516,7 +528,10 @@ pub fn enumerate_depth_cameras_with_backend() -> Vec<(CameraDevice, DepthBackend
         for pair in kernel_pairs {
             let device = CameraDevice {
                 name: format!("{} (Kernel)", pair.card_name),
-                path: format!("{}{}:{}", KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path),
+                path: format!(
+                    "{}{}:{}",
+                    KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path
+                ),
                 metadata_path: Some(pair.depth_path.clone()),
                 device_info: Some(DeviceInfo {
                     card: pair.card_name.clone(),
@@ -543,7 +558,16 @@ pub fn enumerate_depth_cameras_with_backend() -> Vec<(CameraDevice, DepthBackend
 
     info!(
         count = cameras.len(),
-        backend = if cameras.is_empty() { "none" } else if cameras.iter().any(|(_, b)| matches!(b, DepthBackendType::KernelDriver)) { "kernel" } else { "freedepth" },
+        backend = if cameras.is_empty() {
+            "none"
+        } else if cameras
+            .iter()
+            .any(|(_, b)| matches!(b, DepthBackendType::KernelDriver))
+        {
+            "kernel"
+        } else {
+            "freedepth"
+        },
         "Enumerated depth cameras with backend selection"
     );
 

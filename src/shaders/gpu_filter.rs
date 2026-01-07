@@ -325,7 +325,8 @@ impl GpuFilterPipeline {
         self.queue.submit(std::iter::once(encoder.finish()));
 
         // Map staging buffer and read back result
-        let output = crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
+        let output =
+            crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
 
         Ok(output)
     }

@@ -18,9 +18,9 @@ use std::time::{Duration, Instant};
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use tracing::{debug, info, warn};
 
-use crate::app::state::{AppModel, Message};
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use crate::app::state::SceneViewMode;
+use crate::app::state::{AppModel, Message};
 use cosmic::Task;
 
 /// Set up GPU shader registration data from device calibration

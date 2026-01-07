@@ -5,8 +5,8 @@
 //! across different depth camera backends, reducing code duplication and
 //! ensuring consistent thread lifecycle handling.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use tracing::{debug, info, warn};
 

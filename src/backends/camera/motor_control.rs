@@ -42,7 +42,10 @@ pub struct MotorController {
 impl MotorController {
     /// Create a motor controller for a kernel V4L2 device
     pub fn for_kernel_device(device_path: &str) -> Self {
-        info!(device_path, "Creating motor controller for kernel V4L2 device");
+        info!(
+            device_path,
+            "Creating motor controller for kernel V4L2 device"
+        );
         Self {
             backend: MotorBackend::KernelV4L2 {
                 device_path: device_path.to_string(),
@@ -76,13 +79,9 @@ impl MotorController {
         let degrees = degrees.clamp(TILT_MIN_DEGREES, TILT_MAX_DEGREES);
 
         match &self.backend {
-            MotorBackend::KernelV4L2 { device_path } => {
-                set_tilt_v4l2(device_path, degrees)
-            }
+            MotorBackend::KernelV4L2 { device_path } => set_tilt_v4l2(device_path, degrees),
             #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
-            MotorBackend::Freedepth => {
-                set_tilt_freedepth(degrees)
-            }
+            MotorBackend::Freedepth => set_tilt_freedepth(degrees),
             MotorBackend::None => {
                 warn!("Motor control not available");
                 Err("Motor control not available".to_string())
@@ -93,33 +92,23 @@ impl MotorController {
     /// Get current tilt angle
     pub fn get_tilt(&self) -> Result<i8, String> {
         match &self.backend {
-            MotorBackend::KernelV4L2 { device_path } => {
-                get_tilt_v4l2(device_path)
-            }
+            MotorBackend::KernelV4L2 { device_path } => get_tilt_v4l2(device_path),
             #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
-            MotorBackend::Freedepth => {
-                get_tilt_freedepth()
-            }
-            MotorBackend::None => {
-                Err("Motor control not available".to_string())
-            }
+            MotorBackend::Freedepth => get_tilt_freedepth(),
+            MotorBackend::None => Err("Motor control not available".to_string()),
         }
     }
 
     /// Reset tilt to center position
     pub fn reset_tilt(&self) -> Result<(), String> {
         match &self.backend {
-            MotorBackend::KernelV4L2 { device_path } => {
-                reset_tilt_v4l2(device_path)
-            }
+            MotorBackend::KernelV4L2 { device_path } => reset_tilt_v4l2(device_path),
             #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
             MotorBackend::Freedepth => {
                 // freedepth doesn't have a dedicated reset, just set to 0
                 set_tilt_freedepth(0)
             }
-            MotorBackend::None => {
-                Err("Motor control not available".to_string())
-            }
+            MotorBackend::None => Err("Motor control not available".to_string()),
         }
     }
 }
@@ -131,8 +120,12 @@ fn set_tilt_v4l2(device_path: &str, degrees: i8) -> Result<(), String> {
     debug!(device_path, degrees, "Setting tilt via V4L2");
 
     // V4L2_CID_TILT_ABSOLUTE expects the value in degrees for the Kinect driver
-    v4l2_controls::set_control(device_path, v4l2_controls::V4L2_CID_TILT_ABSOLUTE, degrees as i32)
-        .map_err(|e| format!("Failed to set tilt: {}", e))
+    v4l2_controls::set_control(
+        device_path,
+        v4l2_controls::V4L2_CID_TILT_ABSOLUTE,
+        degrees as i32,
+    )
+    .map_err(|e| format!("Failed to set tilt: {}", e))
 }
 
 fn get_tilt_v4l2(device_path: &str) -> Result<i8, String> {
@@ -220,7 +213,7 @@ mod freedepth_motor {
 
 // Re-export for external use
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
-pub use freedepth_motor::{set_motor_usb_device, clear_motor_usb_device};
+pub use freedepth_motor::{clear_motor_usb_device, set_motor_usb_device};
 
 /// Global function to set motor tilt via freedepth
 ///
