@@ -9,9 +9,9 @@ use crate::app::state::{AppModel, Message};
 use crate::backends::camera::v4l2_controls;
 use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::fl;
+use cosmic::Element;
 use cosmic::iced::{Background, Color, Length};
 use cosmic::widget;
-use cosmic::Element;
 use tracing::warn;
 
 /// Width of the motor picker panel
