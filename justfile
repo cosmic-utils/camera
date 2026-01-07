@@ -224,7 +224,11 @@ flatpak-cargo-sources:
     if python3 -c "import aiohttp, tomlkit" 2>/dev/null; then
         python3 flatpak-cargo-generator.py ./Cargo.lock -o cargo-sources.json
     else
-        [ -d .flatpak-venv ] || python3 -m venv .flatpak-venv
+        # Recreate venv if missing or broken (stale interpreter path)
+        if [ ! -d .flatpak-venv ] || ! .flatpak-venv/bin/python3 --version &>/dev/null; then
+            rm -rf .flatpak-venv
+            python3 -m venv .flatpak-venv
+        fi
         .flatpak-venv/bin/pip install --quiet aiohttp tomlkit
         .flatpak-venv/bin/python flatpak-cargo-generator.py ./Cargo.lock -o cargo-sources.json
     fi
