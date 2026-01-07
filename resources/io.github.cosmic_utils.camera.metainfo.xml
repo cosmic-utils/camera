@@ -28,6 +28,7 @@
   </description>
   <launchable type="desktop-id">io.github.cosmic_utils.camera.desktop</launchable>
   <provides>
+    <id>com.system76.CosmicApplication</id>
     <binary>camera</binary>
   </provides>
   <url type="homepage">https://github.com/cosmic-utils/camera</url>
