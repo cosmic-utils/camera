@@ -514,7 +514,10 @@ pub struct KinectState {
     pub streaming: bool,
     /// Current calibration info from depth device (for display)
     /// Uses generic RegistrationSummary for device-agnostic access
+    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
     pub calibration_info: Option<freedepth::RegistrationSummary>,
+    #[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+    pub calibration_info: Option<()>,
     /// Whether calibration dialog is visible
     pub calibration_dialog_visible: bool,
     /// Registration data for depth-to-RGB alignment (used by scene capture)
@@ -821,10 +824,10 @@ pub enum CameraMode {
 /// Scene mode view type (point cloud vs mesh)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SceneViewMode {
-    /// Point cloud - individual points rendered (default)
-    #[default]
+    /// Point cloud - individual points rendered
     PointCloud,
-    /// Mesh - triangulated surface with RGB texture
+    /// Mesh - triangulated surface with RGB texture (default)
+    #[default]
     Mesh,
 }
 

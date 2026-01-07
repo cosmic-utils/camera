@@ -585,6 +585,26 @@ impl AppModel {
         // Get scene view mode (point cloud vs mesh)
         let scene_view_mode = self.preview_3d.view_mode;
 
+        // Get filter mode for scene rendering
+        use crate::app::state::FilterType;
+        let filter_mode = match self.selected_filter {
+            FilterType::Standard => 0u32,
+            FilterType::Mono => 1,
+            FilterType::Sepia => 2,
+            FilterType::Noir => 3,
+            FilterType::Vivid => 4,
+            FilterType::Cool => 5,
+            FilterType::Warm => 6,
+            FilterType::Fade => 7,
+            FilterType::Duotone => 8,
+            FilterType::Vignette => 9,
+            FilterType::Negative => 10,
+            FilterType::Posterize => 11,
+            FilterType::Solarize => 12,
+            FilterType::ChromaticAberration => 13,
+            FilterType::Pencil => 14,
+        };
+
         info!(
             depth_format = ?depth_format,
             mirror,
@@ -594,6 +614,7 @@ impl AppModel {
             ?sensor_type,
             showing_depth_colormap,
             ?scene_view_mode,
+            filter_mode,
             "Rendering 3D scene"
         );
 
@@ -616,6 +637,7 @@ impl AppModel {
                         depth_format,
                         mirror,
                         apply_rgb_registration,
+                        filter_mode,
                     )
                     .await
                     .map(|r| (r.width, r.height, r.rgba)),
@@ -638,6 +660,7 @@ impl AppModel {
                             mirror,
                             apply_rgb_registration,
                             DEPTH_DISCONTINUITY_THRESHOLD,
+                            filter_mode,
                         )
                         .await
                         .map(|r| (r.width, r.height, r.rgba))

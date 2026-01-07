@@ -305,8 +305,9 @@ impl AppModel {
                     self.tools_menu_visible = false;
 
                     // Get initial tilt from motor control if available
+                    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                     if self.kinect.is_device {
-                        use crate::backends::camera::depth_controller::{
+                        use crate::backends::camera::motor_control::{
                             get_motor_tilt, is_motor_available,
                         };
                         if is_motor_available() {

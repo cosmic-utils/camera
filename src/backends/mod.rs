@@ -38,5 +38,6 @@
 
 pub mod audio;
 pub mod camera;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub mod kinect;
 pub mod virtual_camera;

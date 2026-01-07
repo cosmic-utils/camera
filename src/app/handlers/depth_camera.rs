@@ -5,13 +5,23 @@
 //! Handles depth camera device control including motor tilt, native streaming,
 //! 3D preview frame polling, depth visualization settings, and calibration dialogs.
 //! LED is automatically managed by freedepth based on device state.
+//!
+//! When freedepth is not available (non-x86_64 or feature disabled), stub
+//! implementations are provided that return Task::none().
 
-use crate::app::state::{AppModel, Message, SceneViewMode};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use crate::backends::camera::{NativeDepthBackend, depth_device_index, rgb_to_rgba};
-use cosmic::Task;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use freedepth::{DepthRegistration, TILT_MAX_DEGREES, TILT_MIN_DEGREES};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use std::time::{Duration, Instant};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use tracing::{debug, info, warn};
+
+use crate::app::state::{AppModel, Message};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+use crate::app::state::SceneViewMode;
+use cosmic::Task;
 
 /// Set up GPU shader registration data from device calibration
 ///
@@ -20,6 +30,7 @@ use tracing::{debug, info, warn};
 /// depth backend is initialized.
 ///
 /// Uses the generic DepthRegistration trait for device-agnostic access.
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub fn setup_shader_registration_data(registration: &dyn DepthRegistration) {
     let reg_data = crate::shaders::RegistrationData {
         registration_table: registration.registration_table_flat().to_vec(),
@@ -41,6 +52,8 @@ pub fn setup_shader_registration_data(registration: &dyn DepthRegistration) {
     });
 }
 
+// Full implementation when freedepth is available
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 impl AppModel {
     /// Handle setting depth camera tilt angle (desired state)
     ///
@@ -58,7 +71,7 @@ impl AppModel {
         self.kinect.tilt_angle = degrees;
 
         // Send command to motor via global motor control
-        use crate::backends::camera::depth_controller::set_motor_tilt;
+        use crate::backends::camera::motor_control::set_motor_tilt;
         if let Err(e) = set_motor_tilt(degrees) {
             tracing::warn!("Failed to set depth camera tilt: {}", e);
         }
@@ -150,7 +163,6 @@ impl AppModel {
                             registration_table: registration.registration_table_flat().to_vec(),
                             depth_to_rgb_shift: registration.depth_to_rgb_shift_table().to_vec(),
                             target_offset: registration.target_offset(),
-                            reg_x_val_scale: 256,
                             reg_scale_x: 1.0,
                             reg_scale_y: 1.0,
                             reg_y_offset: 0,
@@ -207,7 +219,7 @@ impl AppModel {
                 video_frame_is_new =
                     self.preview_3d.last_render_video_timestamp != Some(video_frame.timestamp);
 
-                let rgba_data = rgb_to_rgba(&video_frame.rgb_data);
+                let rgba_data = rgb_to_rgba(&video_frame.data);
 
                 use crate::backends::camera::types::{CameraFrame, PixelFormat};
                 let frame = CameraFrame {
@@ -468,5 +480,90 @@ impl AppModel {
         debug!(zoom = new_zoom, "3D preview zoom changed");
         // Re-render point cloud with new zoom
         self.handle_request_point_cloud_render()
+    }
+}
+
+// Stub implementations when freedepth is disabled
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+impl AppModel {
+    pub(crate) fn handle_set_kinect_tilt(&mut self, _degrees: i8) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn update_kinect_state(&mut self) -> Task<cosmic::Action<Message>> {
+        self.kinect.is_device = false;
+        Task::none()
+    }
+
+    pub(crate) fn is_current_camera_depth_sensor(&self) -> bool {
+        false
+    }
+
+    pub(crate) fn handle_start_native_kinect_streaming(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_stop_native_kinect_streaming(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_poll_native_kinect_frames(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_depth_overlay(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_depth_grayscale(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_show_calibration_dialog(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_close_calibration_dialog(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_start_calibration(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_3d_preview(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_scene_view_mode(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_preview_3d_mouse_pressed(
+        &mut self,
+        _x: f32,
+        _y: f32,
+    ) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_preview_3d_mouse_moved(
+        &mut self,
+        _x: f32,
+        _y: f32,
+    ) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_preview_3d_mouse_released(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_reset_3d_preview_rotation(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::none()
+    }
+
+    pub(crate) fn handle_zoom_3d_preview(&mut self, _delta: f32) -> Task<cosmic::Action<Message>> {
+        Task::none()
     }
 }

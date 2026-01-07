@@ -6,9 +6,10 @@
 
 use crate::gpu::{self, wgpu};
 use crate::gpu_processor_singleton;
+use crate::shaders::common::Render3DParams;
 use crate::shaders::compute_dispatch_size;
-use crate::shaders::depth::kinect;
 use crate::shaders::gpu_utils;
+use crate::shaders::kinect_intrinsics as kinect;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -21,49 +22,7 @@ pub enum DepthFormat {
     Disparity16 = 1,
 }
 
-/// Point cloud rendering parameters
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct PointCloudParams {
-    // Depth input dimensions (used for iteration and unprojection)
-    input_width: u32,
-    input_height: u32,
-    // Output dimensions
-    output_width: u32,
-    output_height: u32,
-    // RGB input dimensions (may differ from depth)
-    rgb_width: u32,
-    rgb_height: u32,
-    // Camera intrinsics (Kinect defaults)
-    fx: f32,
-    fy: f32,
-    cx: f32,
-    cy: f32,
-    // Depth format: 0 = millimeters, 1 = disparity (10-bit shifted to 16-bit)
-    depth_format: u32,
-    // Depth conversion coefficients (only used for disparity format)
-    // Formula: depth_m = 1.0 / (raw * depth_coeff_a + depth_coeff_b)
-    depth_coeff_a: f32,
-    depth_coeff_b: f32,
-    min_depth: f32,
-    max_depth: f32,
-    // Rotation
-    pitch: f32,
-    yaw: f32,
-    // Rendering
-    point_size: f32,
-    fov: f32,
-    view_distance: f32,
-    // Registration parameters
-    use_registration_tables: u32, // 1 = use lookup tables, 0 = use simple shift
-    target_offset: u32,           // Y offset from pad_info (for registration tables)
-    reg_x_val_scale: i32,         // Fixed-point scale factor (256)
-    mirror: u32,                  // 1 = mirror horizontally, 0 = normal
-    // High-res RGB scaling for registration
-    reg_scale_x: f32,  // X scale factor (1.0 for 640, 2.0 for 1280)
-    reg_scale_y: f32,  // Y scale factor (1.0 for 480, 2.0 for 960->1024)
-    reg_y_offset: i32, // Y offset for high-res (32 for 1280x1024, 0 for 640x480)
-}
+// Point cloud uses Render3DParams from common::params
 
 /// Result of point cloud rendering
 pub struct PointCloudResult {
@@ -114,6 +73,9 @@ pub struct PointCloudProcessor {
     has_registration_data: bool,
     // CPU copy of registration data for retrieval
     registration_data_copy: Option<RegistrationData>,
+    // Pre-allocated dummy buffers for when registration data is not set
+    dummy_reg_buffer: wgpu::Buffer,
+    dummy_shift_buffer: wgpu::Buffer,
 }
 
 impl PointCloudProcessor {
@@ -173,8 +135,23 @@ impl PointCloudProcessor {
         // Create uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("point_cloud_uniform_buffer"),
-            size: std::mem::size_of::<PointCloudParams>() as u64,
+            size: std::mem::size_of::<Render3DParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create dummy registration buffers for bind group compatibility
+        // These are used when registration data is not set
+        let dummy_reg_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("point_cloud_dummy_reg_buffer"),
+            size: 8,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let dummy_shift_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("point_cloud_dummy_shift_buffer"),
+            size: 8,
+            usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
@@ -201,6 +178,8 @@ impl PointCloudProcessor {
             registration_target_offset: 0,
             has_registration_data: false,
             registration_data_copy: None,
+            dummy_reg_buffer,
+            dummy_shift_buffer,
         })
     }
 
@@ -390,6 +369,7 @@ impl PointCloudProcessor {
     /// * `depth_format` - Format of depth data (millimeters or disparity)
     /// * `mirror` - Whether to mirror the point cloud horizontally
     /// * `apply_rgb_registration` - Whether to apply stereo registration (true for RGB camera, false for IR/depth)
+    /// * `filter_mode` - Color filter mode (0 = none, 1-12 = various filters)
     pub async fn render(
         &mut self,
         rgb_data: &[u8],
@@ -406,6 +386,7 @@ impl PointCloudProcessor {
         depth_format: DepthFormat,
         mirror: bool,
         apply_rgb_registration: bool,
+        filter_mode: u32,
     ) -> Result<PointCloudResult, String> {
         // Ensure resources are allocated for the various dimensions
         // - RGB buffer sized for RGB resolution
@@ -499,7 +480,7 @@ impl PointCloudProcessor {
         );
 
         // Update uniform buffer with parameters
-        let params = PointCloudParams {
+        let params = Render3DParams {
             input_width,
             input_height,
             output_width,
@@ -515,14 +496,12 @@ impl PointCloudProcessor {
             depth_format: depth_format as u32,
             // Kinect depth conversion coefficients from libfreenect glpclview.c
             // Formula: depth_m = 1.0 / (raw * coeff_a + coeff_b)
-            // These convert the 10-bit disparity values to meters
             depth_coeff_a: kinect::DEPTH_COEFF_A,
             depth_coeff_b: kinect::DEPTH_COEFF_B,
             min_depth: 0.4, // 0.4m minimum (Kinect near limit)
             max_depth: 4.0, // 4.0m maximum (Kinect far limit)
             pitch,
             yaw,
-            point_size: 1.0,
             fov: 1.0,            // ~57 degrees
             view_distance: zoom, // Camera Z position: 0=sensor position, higher=into scene
             // Registration parameters
@@ -540,6 +519,10 @@ impl PointCloudProcessor {
             reg_scale_x,
             reg_scale_y,
             reg_y_offset,
+            // Mode-specific parameters
+            point_size: 1.0,
+            depth_discontinuity_threshold: 0.0, // Not used for point cloud
+            filter_mode,
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
@@ -547,37 +530,14 @@ impl PointCloudProcessor {
         // Create bind group
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Get registration buffers or create dummy buffers if not set
+        // Get registration buffers or use pre-allocated dummies
         let (reg_table_buffer, shift_buffer) = if self.has_registration_data {
             (
                 self.registration_table_buffer.as_ref().unwrap(),
                 self.depth_to_rgb_shift_buffer.as_ref().unwrap(),
             )
         } else {
-            // Create minimal dummy buffers for bind group compatibility
-            // These won't be used when use_registration_tables == 0
-            if self.registration_table_buffer.is_none() {
-                self.registration_table_buffer =
-                    Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("dummy_registration_table_buffer"),
-                        size: 8, // Minimum size
-                        usage: wgpu::BufferUsages::STORAGE,
-                        mapped_at_creation: false,
-                    }));
-            }
-            if self.depth_to_rgb_shift_buffer.is_none() {
-                self.depth_to_rgb_shift_buffer =
-                    Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("dummy_depth_to_rgb_shift_buffer"),
-                        size: 8, // Minimum size
-                        usage: wgpu::BufferUsages::STORAGE,
-                        mapped_at_creation: false,
-                    }));
-            }
-            (
-                self.registration_table_buffer.as_ref().unwrap(),
-                self.depth_to_rgb_shift_buffer.as_ref().unwrap(),
-            )
+            (&self.dummy_reg_buffer, &self.dummy_shift_buffer)
         };
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -673,23 +633,8 @@ impl PointCloudProcessor {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Map and read back
-        let staging_slice = staging_buffer.slice(..);
-        let (sender, receiver) = futures::channel::oneshot::channel();
-
-        staging_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-
-        receiver
-            .await
-            .map_err(|_| "Failed to receive staging buffer mapping")?
-            .map_err(|e| format!("Failed to map staging buffer: {:?}", e))?;
-
-        let rgba = staging_slice.get_mapped_range().to_vec();
-        staging_buffer.unmap();
+        // Map and read back using shared helper
+        let rgba = crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
 
         Ok(PointCloudResult {
             rgba,
@@ -760,6 +705,7 @@ pub async fn get_point_cloud_registration_data() -> Result<Option<RegistrationDa
 /// * `depth_format` - Format of depth data (millimeters or disparity)
 /// * `mirror` - Whether to mirror the point cloud horizontally
 /// * `apply_rgb_registration` - Whether to apply stereo registration (true for RGB camera, false for IR/depth)
+/// * `filter_mode` - Color filter mode (0 = none, 1-12 = various filters)
 pub async fn render_point_cloud(
     rgb_data: &[u8],
     depth_data: &[u16],
@@ -775,6 +721,7 @@ pub async fn render_point_cloud(
     depth_format: DepthFormat,
     mirror: bool,
     apply_rgb_registration: bool,
+    filter_mode: u32,
 ) -> Result<PointCloudResult, String> {
     let mut guard = get_point_cloud_processor().await?;
     let processor = guard
@@ -797,6 +744,7 @@ pub async fn render_point_cloud(
             depth_format,
             mirror,
             apply_rgb_registration,
+            filter_mode,
         )
         .await
 }

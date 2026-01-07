@@ -7,6 +7,12 @@ description = "Camera application for the COSMIC™ desktop"
 repository = "https://github.com/cosmic-utils/camera"
 authors = ["Frederic Laing <frederic.laing.development@gmail.com>"]
 
+[features]
+default = ["freedepth"]
+# freedepth userspace library for Kinect depth cameras (fallback when kernel driver unavailable)
+# Only works on x86_64 due to libclang/bindgen requirements
+freedepth = ["dep:freedepth"]
+
 [dependencies]
 futures = "0.3.31"
 i18n-embed = { version = "0.16.0", features = [
@@ -41,8 +47,12 @@ libc = "0.2.179"
 dng = "1.5"
 async-stream = "0.3"
 v4l = "0.14"
-freedepth = { git = "https://github.com/FreddyFunk/freedepth", rev = "aab2bbcc9c1c196751d8eb37a9b704e9b75683cb" }  # Multi-device depth camera library
 las = { version = "0.9", features = ["laz"] }  # LAZ point cloud export
+
+# freedepth is only available on x86_64 (requires libclang for v4l2-sys-mit bindgen)
+# Enabled via the "freedepth" feature flag (on by default)
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+freedepth = { git = "https://github.com/FreddyFunk/freedepth", rev = "aab2bbcc9c1c196751d8eb37a9b704e9b75683cb", optional = true }  # Multi-device depth camera library
 
 # Separate wgpu for compute pipelines (independent from libcosmic's wgpu for UI)
 # This allows us to use the latest wgpu features like open_with_callback for low-priority queues

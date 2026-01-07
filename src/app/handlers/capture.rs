@@ -668,7 +668,6 @@ impl AppModel {
                                 registration_table: shader_reg.registration_table,
                                 depth_to_rgb_shift: shader_reg.depth_to_rgb_shift,
                                 target_offset: shader_reg.target_offset,
-                                reg_x_val_scale: 256, // Standard Kinect scale factor
                                 reg_scale_x,
                                 reg_scale_y,
                                 reg_y_offset,

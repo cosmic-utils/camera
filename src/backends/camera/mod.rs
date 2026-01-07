@@ -29,21 +29,190 @@
 //!       └────────┘
 //! ```
 
+// freedepth-specific modules (require both x86_64 and freedepth feature)
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub mod depth_controller;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub mod depth_native;
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+pub mod v4l2_depth;
+
+// Kernel driver modules (work without freedepth)
+pub mod format_converters;
+pub mod frame_loop;
 pub mod manager;
+pub mod motor_control;
 pub mod pipewire;
 pub mod types;
 pub mod v4l2_controls;
-pub mod v4l2_depth;
+pub mod v4l2_depth_controls;
+pub mod v4l2_kernel_depth;
 
+// freedepth exports
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub use depth_controller::{DepthController, is_depth_camera};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 pub use depth_native::{
     DEPTH_PATH_PREFIX, NativeDepthBackend, can_use_native_backend, depth_device_index,
     enumerate_depth_cameras, get_depth_formats, is_depth_native_device, rgb_to_rgba,
 };
+
+// Kernel driver exports (always available)
 pub use manager::CameraBackendManager;
 pub use types::*;
+pub use v4l2_depth_controls::{
+    DepthCapabilities, DepthIntrinsics, DepthExtrinsics, DepthSensorType,
+    has_depth_controls, query_depth_capabilities, V4l2DeviceInfo, query_device_info,
+    KernelRegistrationData, REG_X_VAL_SCALE,
+};
+pub use v4l2_kernel_depth::{
+    V4l2KernelDepthBackend, KERNEL_DEPTH_PREFIX, KERNEL_KINECT_PREFIX,
+    is_kernel_depth_device, is_kernel_kinect_device, parse_kernel_kinect_path,
+    KinectDevicePair, find_kernel_kinect_pairs, has_kernel_kinect_devices,
+};
+pub use motor_control::{
+    MotorController, MotorBackend, TILT_MIN_DEGREES, TILT_MAX_DEGREES,
+};
+
+// Stubs when freedepth is disabled (either not x86_64 or feature disabled)
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn is_depth_camera(_device: &CameraDevice) -> bool {
+    // With kernel driver, depth cameras are detected via find_kernel_kinect_pairs
+    false
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn is_depth_native_device(_device_path: &str) -> bool {
+    false
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn enumerate_depth_cameras() -> Vec<CameraDevice> {
+    Vec::new()
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub const DEPTH_PATH_PREFIX: &str = "kinect:";
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn get_depth_formats(_device: &CameraDevice) -> Vec<CameraFormat> {
+    Vec::new()
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn depth_device_index(_device_path: &str) -> Option<usize> {
+    None
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn can_use_native_backend() -> bool {
+    false
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub fn rgb_to_rgba(rgb: &[u8]) -> Vec<u8> {
+    // Convert RGB to RGBA by adding alpha channel
+    let pixels = rgb.len() / 3;
+    let mut rgba = Vec::with_capacity(pixels * 4);
+    for chunk in rgb.chunks_exact(3) {
+        rgba.extend_from_slice(chunk);
+        rgba.push(255);
+    }
+    rgba
+}
+
+// Stub NativeDepthBackend when freedepth is disabled
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub struct NativeDepthBackend;
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+impl NativeDepthBackend {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+impl CameraBackend for NativeDepthBackend {
+    fn enumerate_cameras(&self) -> Vec<CameraDevice> {
+        Vec::new()
+    }
+
+    fn get_formats(&self, _device: &CameraDevice, _video_mode: bool) -> Vec<CameraFormat> {
+        Vec::new()
+    }
+
+    fn initialize(&mut self, _device: &CameraDevice, _format: &CameraFormat) -> BackendResult<()> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn shutdown(&mut self) -> BackendResult<()> {
+        Ok(())
+    }
+
+    fn is_initialized(&self) -> bool {
+        false
+    }
+
+    fn recover(&mut self) -> BackendResult<()> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn switch_camera(&mut self, _device: &CameraDevice) -> BackendResult<()> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn apply_format(&mut self, _format: &CameraFormat) -> BackendResult<()> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn capture_photo(&self) -> BackendResult<CameraFrame> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn start_recording(&mut self, _output_path: std::path::PathBuf) -> BackendResult<()> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn stop_recording(&mut self) -> BackendResult<std::path::PathBuf> {
+        Err(BackendError::NotAvailable("freedepth feature not enabled".to_string()))
+    }
+
+    fn is_recording(&self) -> bool {
+        false
+    }
+
+    fn get_preview_receiver(&self) -> Option<FrameReceiver> {
+        None
+    }
+
+    fn backend_type(&self) -> CameraBackendType {
+        CameraBackendType::PipeWire
+    }
+
+    fn is_available(&self) -> bool {
+        false
+    }
+
+    fn current_device(&self) -> Option<&CameraDevice> {
+        None
+    }
+
+    fn current_format(&self) -> Option<&CameraFormat> {
+        None
+    }
+}
+
+// Stub DepthController when freedepth is disabled
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+pub struct DepthController;
+
+#[cfg(not(all(target_arch = "x86_64", feature = "freedepth")))]
+impl DepthController {
+    pub fn new(_device_path: String) -> Result<Self, String> {
+        Err("freedepth feature not enabled".to_string())
+    }
+}
 
 use std::path::PathBuf;
 
@@ -201,4 +370,182 @@ pub fn get_backend() -> Box<dyn CameraBackend> {
 /// Get the default backend (PipeWire)
 pub fn get_default_backend() -> CameraBackendType {
     CameraBackendType::PipeWire
+}
+
+// ============================================================================
+// Runtime Depth Backend Selection
+// ============================================================================
+
+/// Depth backend type - kernel driver or userspace (freedepth)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DepthBackendType {
+    /// Use the V4L2 kernel driver with depth controls
+    /// Preferred when available - no USB unbind/rebind needed
+    KernelDriver,
+    /// Use freedepth userspace library
+    /// Fallback when kernel driver doesn't support depth controls
+    #[cfg(target_arch = "x86_64")]
+    Freedepth,
+}
+
+impl std::fmt::Display for DepthBackendType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::KernelDriver => write!(f, "Kernel Driver"),
+            #[cfg(target_arch = "x86_64")]
+            Self::Freedepth => write!(f, "freedepth"),
+        }
+    }
+}
+
+/// Detect the best depth backend for a V4L2 device
+///
+/// Checks if the device has V4L2 depth control support (kernel driver).
+/// If so, returns KernelDriver; otherwise returns Freedepth on x86_64.
+///
+/// # Arguments
+/// * `v4l2_path` - Path to the V4L2 device (e.g., "/dev/video2")
+///
+/// # Returns
+/// * `Some(DepthBackendType)` - The recommended backend
+/// * `None` - Device is not a depth camera
+pub fn detect_depth_backend(v4l2_path: &str) -> Option<DepthBackendType> {
+    use tracing::info;
+
+    // First check if this device has kernel depth controls
+    if v4l2_depth_controls::has_depth_controls(v4l2_path) {
+        info!(
+            path = %v4l2_path,
+            backend = "KernelDriver",
+            "Detected depth camera with kernel driver support"
+        );
+        return Some(DepthBackendType::KernelDriver);
+    }
+
+    // On x86_64, fall back to freedepth
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Check if this is a Kinect device (by driver name)
+        if let Ok(file) = std::fs::File::open(v4l2_path) {
+            use std::os::unix::io::AsRawFd;
+            let fd = file.as_raw_fd();
+
+            // Query driver name via VIDIOC_QUERYCAP
+            #[repr(C)]
+            struct V4l2Capability {
+                driver: [u8; 16],
+                card: [u8; 32],
+                bus_info: [u8; 32],
+                version: u32,
+                capabilities: u32,
+                device_caps: u32,
+                reserved: [u32; 3],
+            }
+
+            let mut caps = V4l2Capability {
+                driver: [0; 16],
+                card: [0; 32],
+                bus_info: [0; 32],
+                version: 0,
+                capabilities: 0,
+                device_caps: 0,
+                reserved: [0; 3],
+            };
+
+            const VIDIOC_QUERYCAP: libc::c_ulong = 0x8056_5600;
+
+            if unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut caps as *mut _) } == 0 {
+                let driver = std::str::from_utf8(&caps.driver)
+                    .unwrap_or("")
+                    .trim_end_matches('\0');
+
+                if driver == "kinect" || driver == "gspca_kinect" {
+                    info!(
+                        path = %v4l2_path,
+                        driver = %driver,
+                        backend = "freedepth",
+                        "Detected Kinect without kernel depth controls, using freedepth"
+                    );
+                    return Some(DepthBackendType::Freedepth);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if the kernel depth driver is available for any device
+pub fn has_kernel_depth_driver() -> bool {
+    for entry in std::fs::read_dir("/dev").into_iter().flatten() {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("video") {
+                    if v4l2_depth_controls::has_depth_controls(&path.to_string_lossy()) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Enumerate depth cameras with runtime backend selection
+///
+/// This function prioritizes the kernel driver over freedepth. When the kernel
+/// driver is present, freedepth is NOT used at all - complete isolation.
+///
+/// Returns a list of cameras with their paths indicating the appropriate backend:
+/// - `v4l2-kinect:/dev/videoX:/dev/videoY` for kernel driver (color:depth pair)
+/// - `kinect:N` for freedepth (only when kernel driver not available)
+pub fn enumerate_depth_cameras_with_backend() -> Vec<(CameraDevice, DepthBackendType)> {
+    use tracing::info;
+
+    let mut cameras = Vec::new();
+
+    // Priority 1: Check for kernel driver device pairs
+    let kernel_pairs = find_kernel_kinect_pairs();
+    if !kernel_pairs.is_empty() {
+        info!(
+            count = kernel_pairs.len(),
+            "Found Kinect devices with kernel driver - NOT using freedepth"
+        );
+
+        for pair in kernel_pairs {
+            let device = CameraDevice {
+                name: format!("{} (Kernel)", pair.card_name),
+                path: format!("{}{}:{}", KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path),
+                metadata_path: Some(pair.depth_path.clone()),
+                device_info: Some(DeviceInfo {
+                    card: pair.card_name.clone(),
+                    driver: "kinect".to_string(),
+                    path: pair.color_path.clone(),
+                    real_path: pair.depth_path.clone(),
+                }),
+            };
+            cameras.push((device, DepthBackendType::KernelDriver));
+        }
+
+        // Return early - do NOT fall back to freedepth when kernel driver is present
+        return cameras;
+    }
+
+    // Priority 2: Fall back to freedepth on x86_64 (only if NO kernel devices found)
+    #[cfg(target_arch = "x86_64")]
+    {
+        info!("No kernel Kinect driver found - falling back to freedepth");
+        for cam in enumerate_depth_cameras() {
+            cameras.push((cam, DepthBackendType::Freedepth));
+        }
+    }
+
+    info!(
+        count = cameras.len(),
+        backend = if cameras.is_empty() { "none" } else if cameras.iter().any(|(_, b)| matches!(b, DepthBackendType::KernelDriver)) { "kernel" } else { "freedepth" },
+        "Enumerated depth cameras with backend selection"
+    );
+
+    cameras
 }

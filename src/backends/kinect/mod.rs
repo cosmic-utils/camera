@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+
 //! Kinect support via freedepth
 //!
 //! This module re-exports types from freedepth for Kinect sensor control.

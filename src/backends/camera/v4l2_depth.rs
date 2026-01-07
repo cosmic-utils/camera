@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+
 //! Direct V4L2 depth sensor capture for Y10B format
 //!
 //! GStreamer doesn't support Y10B (10-bit packed grayscale) format,

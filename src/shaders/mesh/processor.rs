@@ -7,56 +7,15 @@
 
 use crate::gpu::{self, wgpu};
 use crate::gpu_processor_singleton;
+use crate::shaders::common::Render3DParams;
 use crate::shaders::compute_dispatch_size;
-use crate::shaders::depth::kinect;
 use crate::shaders::gpu_utils;
+use crate::shaders::kinect_intrinsics as kinect;
 use crate::shaders::point_cloud::DepthFormat;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// Mesh rendering parameters
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct MeshParams {
-    // Depth input dimensions
-    input_width: u32,
-    input_height: u32,
-    // Output dimensions
-    output_width: u32,
-    output_height: u32,
-    // RGB input dimensions (may differ from depth)
-    rgb_width: u32,
-    rgb_height: u32,
-    // Camera intrinsics (Kinect defaults)
-    fx: f32,
-    fy: f32,
-    cx: f32,
-    cy: f32,
-    // Depth format: 0 = millimeters, 1 = disparity (10-bit shifted to 16-bit)
-    depth_format: u32,
-    // Depth conversion coefficients
-    depth_coeff_a: f32,
-    depth_coeff_b: f32,
-    min_depth: f32,
-    max_depth: f32,
-    // Rotation
-    pitch: f32,
-    yaw: f32,
-    // Rendering
-    fov: f32,
-    view_distance: f32,
-    // Registration parameters
-    use_registration_tables: u32,
-    target_offset: u32,
-    reg_x_val_scale: i32,
-    mirror: u32,
-    // High-res RGB scaling for registration
-    reg_scale_x: f32,
-    reg_scale_y: f32,
-    reg_y_offset: i32,
-    // Mesh-specific parameters
-    depth_discontinuity_threshold: f32,
-}
+// Mesh uses Render3DParams from common::params
 
 /// Result of mesh rendering
 pub struct MeshResult {
@@ -88,11 +47,14 @@ pub struct MeshProcessor {
     depth_test_buffer: Option<wgpu::Buffer>,
     output_texture: Option<wgpu::Texture>,
     staging_buffer: Option<wgpu::Buffer>,
-    // Registration data buffers
+    // Registration data buffers (None = using dummy buffers)
     registration_table_buffer: Option<wgpu::Buffer>,
     depth_to_rgb_shift_buffer: Option<wgpu::Buffer>,
     registration_target_offset: u32,
     has_registration_data: bool,
+    // Dummy buffers for when no registration data is available
+    dummy_reg_buffer: wgpu::Buffer,
+    dummy_shift_buffer: wgpu::Buffer,
 }
 
 impl MeshProcessor {
@@ -149,8 +111,22 @@ impl MeshProcessor {
         // Create uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh_uniform_buffer"),
-            size: std::mem::size_of::<MeshParams>() as u64,
+            size: std::mem::size_of::<Render3DParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create dummy buffers for when no registration data is available
+        let dummy_reg_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mesh_dummy_reg_buffer"),
+            size: 8,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let dummy_shift_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mesh_dummy_shift_buffer"),
+            size: 8,
+            usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
@@ -176,6 +152,8 @@ impl MeshProcessor {
             depth_to_rgb_shift_buffer: None,
             registration_target_offset: 0,
             has_registration_data: false,
+            dummy_reg_buffer,
+            dummy_shift_buffer,
         })
     }
 
@@ -309,6 +287,7 @@ impl MeshProcessor {
         mirror: bool,
         apply_rgb_registration: bool,
         depth_discontinuity_threshold: f32,
+        filter_mode: u32,
     ) -> Result<MeshResult, String> {
         self.ensure_resources(
             rgb_width,
@@ -385,7 +364,7 @@ impl MeshProcessor {
         let reg_y_offset = 0i32;
 
         // Update uniform buffer with parameters
-        let params = MeshParams {
+        let params = Render3DParams {
             input_width,
             input_height,
             output_width,
@@ -416,7 +395,10 @@ impl MeshProcessor {
             reg_scale_x,
             reg_scale_y,
             reg_y_offset,
+            // Mode-specific parameters
+            point_size: 0.0, // Not used for mesh
             depth_discontinuity_threshold,
+            filter_mode,
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
@@ -424,35 +406,14 @@ impl MeshProcessor {
         // Create bind group
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Get registration buffers or create dummy buffers
+        // Get registration buffers or use pre-allocated dummy buffers
         let (reg_table_buffer, shift_buffer) = if self.has_registration_data {
             (
                 self.registration_table_buffer.as_ref().unwrap(),
                 self.depth_to_rgb_shift_buffer.as_ref().unwrap(),
             )
         } else {
-            if self.registration_table_buffer.is_none() {
-                self.registration_table_buffer =
-                    Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("mesh_dummy_registration_table_buffer"),
-                        size: 8,
-                        usage: wgpu::BufferUsages::STORAGE,
-                        mapped_at_creation: false,
-                    }));
-            }
-            if self.depth_to_rgb_shift_buffer.is_none() {
-                self.depth_to_rgb_shift_buffer =
-                    Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("mesh_dummy_depth_to_rgb_shift_buffer"),
-                        size: 8,
-                        usage: wgpu::BufferUsages::STORAGE,
-                        mapped_at_creation: false,
-                    }));
-            }
-            (
-                self.registration_table_buffer.as_ref().unwrap(),
-                self.depth_to_rgb_shift_buffer.as_ref().unwrap(),
-            )
+            (&self.dummy_reg_buffer, &self.dummy_shift_buffer)
         };
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -548,23 +509,8 @@ impl MeshProcessor {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // Map and read back
-        let staging_slice = staging_buffer.slice(..);
-        let (sender, receiver) = futures::channel::oneshot::channel();
-
-        staging_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-
-        receiver
-            .await
-            .map_err(|_| "Failed to receive staging buffer mapping")?
-            .map_err(|e| format!("Failed to map staging buffer: {:?}", e))?;
-
-        let rgba = staging_slice.get_mapped_range().to_vec();
-        staging_buffer.unmap();
+        // Map and read back using shared helper
+        let rgba = crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
 
         Ok(MeshResult {
             rgba,
@@ -606,6 +552,7 @@ pub async fn render_mesh(
     mirror: bool,
     apply_rgb_registration: bool,
     depth_discontinuity_threshold: f32,
+    filter_mode: u32,
 ) -> Result<MeshResult, String> {
     let mut guard = get_mesh_processor().await?;
     let processor = guard.as_mut().ok_or("GPU mesh processor not initialized")?;
@@ -627,6 +574,7 @@ pub async fn render_mesh(
             mirror,
             apply_rgb_registration,
             depth_discontinuity_threshold,
+            filter_mode,
         )
         .await
 }

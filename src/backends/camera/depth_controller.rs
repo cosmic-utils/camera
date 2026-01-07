@@ -1,88 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+#![cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+
 //! Depth camera device controller
 //!
 //! Manages freedepth integration for depth cameras, providing:
 //! - Device detection (by V4L2 driver name)
-//! - Motor/tilt control (via global USB device reference)
 //! - Depth-to-mm conversion (for V4L2 mode)
 //!
-//! Note: LED is automatically managed by freedepth based on device state.
+//! Note: Motor control is handled by motor_control.rs
 
-use std::sync::{Arc, Mutex};
 use tracing::info;
 
 use super::types::CameraDevice;
-
-// =============================================================================
-// Motor Control via Global USB Device Reference
-// =============================================================================
-
-/// Global USB device for motor control
-/// Set when native depth backend starts, cleared when it stops
-static MOTOR_USB_DEVICE: std::sync::OnceLock<Mutex<Option<Arc<Mutex<freedepth::UsbDevice>>>>> =
-    std::sync::OnceLock::new();
-
-fn get_motor_usb() -> &'static Mutex<Option<Arc<Mutex<freedepth::UsbDevice>>>> {
-    MOTOR_USB_DEVICE.get_or_init(|| Mutex::new(None))
-}
-
-/// Set the USB device for motor control (called when native backend starts)
-pub fn set_motor_usb_device(usb: Arc<Mutex<freedepth::UsbDevice>>) {
-    if let Ok(mut guard) = get_motor_usb().lock() {
-        *guard = Some(usb);
-        info!("Motor control USB device set");
-    }
-}
-
-/// Clear the USB device for motor control (called when native backend stops)
-pub fn clear_motor_usb_device() {
-    if let Ok(mut guard) = get_motor_usb().lock() {
-        *guard = None;
-        info!("Motor control USB device cleared");
-    }
-}
-
-/// Execute a closure with the motor USB device
-///
-/// Handles the nested lock pattern internally, returning appropriate errors
-/// if the device is unavailable or locks fail.
-fn with_motor_usb<T, F>(f: F) -> Result<T, String>
-where
-    F: FnOnce(&mut freedepth::UsbDevice) -> freedepth::Result<T>,
-{
-    let guard = get_motor_usb()
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    let usb_arc = guard.as_ref().ok_or("Motor USB device not available")?;
-    let mut usb = usb_arc
-        .lock()
-        .map_err(|e| format!("USB lock error: {}", e))?;
-    f(&mut usb).map_err(|e| e.to_string())
-}
-
-/// Set motor tilt via global USB device
-pub fn set_motor_tilt(degrees: i8) -> Result<(), String> {
-    with_motor_usb(|usb| freedepth::Motor::new(usb).set_tilt(degrees))
-}
-
-/// Get motor tilt via global USB device
-pub fn get_motor_tilt() -> Result<i8, String> {
-    with_motor_usb(|usb| freedepth::Motor::new(usb).get_tilt())
-}
-
-/// Get motor/accelerometer state via global USB device
-pub fn get_motor_tilt_state() -> Result<freedepth::TiltState, String> {
-    with_motor_usb(|usb| freedepth::Motor::new(usb).get_state())
-}
-
-/// Check if motor control is available
-pub fn is_motor_available() -> bool {
-    get_motor_usb()
-        .lock()
-        .map(|guard| guard.is_some())
-        .unwrap_or(false)
-}
 
 // =============================================================================
 // Device Detection

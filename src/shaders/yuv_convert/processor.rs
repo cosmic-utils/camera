@@ -8,6 +8,7 @@
 
 use crate::gpu::{self, wgpu};
 use crate::shaders::compute_dispatch_size;
+use crate::shaders::gpu_processor::CachedDimensions;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -49,8 +50,7 @@ pub struct YuvConvertProcessor {
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     // Cached resources for reuse
-    cached_width: u32,
-    cached_height: u32,
+    cached_dims: CachedDimensions,
     uniform_buffer: Option<wgpu::Buffer>,
     input_buffer: Option<wgpu::Buffer>,
     output_texture: Option<Arc<wgpu::Texture>>,
@@ -138,8 +138,7 @@ impl YuvConvertProcessor {
             queue,
             pipeline,
             bind_group_layout,
-            cached_width: 0,
-            cached_height: 0,
+            cached_dims: CachedDimensions::default(),
             uniform_buffer: None,
             input_buffer: None,
             output_texture: None,
@@ -149,7 +148,7 @@ impl YuvConvertProcessor {
 
     /// Ensure resources are allocated for the given dimensions
     fn ensure_resources(&mut self, width: u32, height: u32) {
-        if width == self.cached_width && height == self.cached_height {
+        if !self.cached_dims.needs_update(width, height) {
             return;
         }
 
@@ -202,8 +201,7 @@ impl YuvConvertProcessor {
             mapped_at_creation: false,
         }));
 
-        self.cached_width = width;
-        self.cached_height = height;
+        self.cached_dims.update(width, height);
     }
 
     /// Convert YUV data to RGBA on GPU
@@ -333,25 +331,7 @@ impl YuvConvertProcessor {
         // Read back if requested
         let rgba = if read_back {
             let staging_buffer = self.staging_buffer.as_ref().unwrap();
-            let buffer_slice = staging_buffer.slice(..);
-
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-                let _ = tx.send(result);
-            });
-
-            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-
-            rx.await
-                .map_err(|_| "Failed to receive map result")?
-                .map_err(|e| format!("Failed to map buffer: {:?}", e))?;
-
-            let data = buffer_slice.get_mapped_range();
-            let output_size = (width * height * 4) as usize;
-            let rgba_data = data[..output_size].to_vec();
-            drop(data);
-            staging_buffer.unmap();
-
+            let rgba_data = crate::shaders::gpu_processor::read_buffer_async(&self.device, staging_buffer).await?;
             Some(rgba_data)
         } else {
             None

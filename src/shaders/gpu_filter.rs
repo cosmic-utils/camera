@@ -7,6 +7,7 @@
 
 use crate::app::FilterType;
 use crate::gpu::{self, wgpu};
+use crate::shaders::gpu_processor::CachedDimensions;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -29,8 +30,7 @@ pub struct GpuFilterPipeline {
     sampler: wgpu::Sampler,
     uniform_buffer: wgpu::Buffer,
     // Cached resources for current dimensions
-    cached_width: u32,
-    cached_height: u32,
+    cached_dims: CachedDimensions,
     input_texture: Option<wgpu::Texture>,
     output_buffer: Option<wgpu::Buffer>,
     staging_buffer: Option<wgpu::Buffer>,
@@ -156,8 +156,7 @@ impl GpuFilterPipeline {
             bind_group_layout,
             sampler,
             uniform_buffer,
-            cached_width: 0,
-            cached_height: 0,
+            cached_dims: CachedDimensions::default(),
             input_texture: None,
             output_buffer: None,
             staging_buffer: None,
@@ -166,7 +165,7 @@ impl GpuFilterPipeline {
 
     /// Ensure resources are allocated for the given dimensions
     fn ensure_resources(&mut self, width: u32, height: u32) {
-        if self.cached_width == width && self.cached_height == height {
+        if !self.cached_dims.needs_update(width, height) {
             return;
         }
 
@@ -206,8 +205,7 @@ impl GpuFilterPipeline {
             mapped_at_creation: false,
         }));
 
-        self.cached_width = width;
-        self.cached_height = height;
+        self.cached_dims.update(width, height);
     }
 
     /// Apply a filter to RGBA data
@@ -327,25 +325,7 @@ impl GpuFilterPipeline {
         self.queue.submit(std::iter::once(encoder.finish()));
 
         // Map staging buffer and read back result
-        let buffer_slice = staging_buffer.slice(..);
-        let (sender, receiver) = futures::channel::oneshot::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = sender.send(result);
-        });
-
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-
-        receiver
-            .await
-            .map_err(|_| "Failed to receive buffer mapping result")?
-            .map_err(|e| format!("Failed to map buffer: {:?}", e))?;
-
-        // Read RGBA data directly from buffer
-        let data = buffer_slice.get_mapped_range();
-        let output = data.to_vec();
-
-        drop(data);
-        staging_buffer.unmap();
+        let output = crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
 
         Ok(output)
     }
