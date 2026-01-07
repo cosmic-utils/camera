@@ -104,7 +104,8 @@ jobs:
       - name: Update Cargo.toml version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          # Only replace the first 'version = ' line (the package version, not dependency versions)
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
           echo "✅ Updated Cargo.toml to version $VERSION"
 
       - name: Update metainfo.xml
