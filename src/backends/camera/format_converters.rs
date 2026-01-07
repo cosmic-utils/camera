@@ -149,8 +149,8 @@ impl DepthVisualizationOptions {
             grayscale: false,
             quantize: false,
             quantize_bands: 32,
-            min_depth_mm: 500,  // DEPTH_MIN_USABLE_MM
-            max_depth_mm: 4000, // DEPTH_MAX_USABLE_MM
+            min_depth_mm: 500,   // DEPTH_MIN_USABLE_MM
+            max_depth_mm: 4000,  // DEPTH_MAX_USABLE_MM
             invalid_value: 8191, // DEPTH_INVALID_THRESHOLD_MM
         }
     }
@@ -173,8 +173,7 @@ impl DepthVisualizationOptions {
 /// Based on the Google Turbo colormap.
 fn turbo(t: f32) -> [u8; 3] {
     let r = (0.13572138
-        + t * (4.6153926
-            + t * (-42.66032 + t * (132.13108 + t * (-152.54825 + t * 59.28144)))))
+        + t * (4.6153926 + t * (-42.66032 + t * (132.13108 + t * (-152.54825 + t * 59.28144)))))
         .clamp(0.0, 1.0);
     let g = (0.09140261
         + t * (2.19418 + t * (4.84296 + t * (-14.18503 + t * (4.27805 + t * 2.53377)))))
@@ -192,7 +191,12 @@ fn turbo(t: f32) -> [u8; 3] {
 /// - Turbo colormap (blue=near, red=far)
 /// - Optional band quantization
 /// - Auto-ranging or fixed range
-pub fn depth_to_rgb(depth: &[u16], width: u32, height: u32, options: &DepthVisualizationOptions) -> Vec<u8> {
+pub fn depth_to_rgb(
+    depth: &[u16],
+    width: u32,
+    height: u32,
+    options: &DepthVisualizationOptions,
+) -> Vec<u8> {
     let pixel_count = (width * height) as usize;
     let mut rgb = Vec::with_capacity(pixel_count * 3);
 
@@ -251,7 +255,12 @@ pub fn depth_to_rgb(depth: &[u16], width: u32, height: u32, options: &DepthVisua
 /// Convert 16-bit depth values to RGBA visualization
 ///
 /// Same as `depth_to_rgb` but outputs RGBA with alpha=255.
-pub fn depth_to_rgba(depth: &[u16], width: u32, height: u32, options: &DepthVisualizationOptions) -> Vec<u8> {
+pub fn depth_to_rgba(
+    depth: &[u16],
+    width: u32,
+    height: u32,
+    options: &DepthVisualizationOptions,
+) -> Vec<u8> {
     let rgb = depth_to_rgb(depth, width, height, options);
     let mut rgba = Vec::with_capacity(rgb.len() / 3 * 4);
 

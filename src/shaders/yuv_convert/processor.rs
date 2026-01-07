@@ -331,7 +331,9 @@ impl YuvConvertProcessor {
         // Read back if requested
         let rgba = if read_back {
             let staging_buffer = self.staging_buffer.as_ref().unwrap();
-            let rgba_data = crate::shaders::gpu_processor::read_buffer_async(&self.device, staging_buffer).await?;
+            let rgba_data =
+                crate::shaders::gpu_processor::read_buffer_async(&self.device, staging_buffer)
+                    .await?;
             Some(rgba_data)
         } else {
             None

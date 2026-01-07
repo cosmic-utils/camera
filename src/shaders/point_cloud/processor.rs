@@ -634,7 +634,8 @@ impl PointCloudProcessor {
         self.queue.submit(std::iter::once(encoder.finish()));
 
         // Map and read back using shared helper
-        let rgba = crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
+        let rgba =
+            crate::shaders::gpu_processor::read_buffer_async(&self.device, &staging_buffer).await?;
 
         Ok(PointCloudResult {
             rgba,

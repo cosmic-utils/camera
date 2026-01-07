@@ -777,10 +777,6 @@ pub struct AppModel {
     /// Kinect device state (detection, motor, calibration, native streaming)
     pub kinect: KinectState,
 
-    // ===== Motor/PTZ Controls =====
-    /// Whether motor controls picker is visible
-    pub motor_picker_visible: bool,
-
     // ===== Depth Visualization =====
     /// Depth visualization settings (overlay, grayscale mode)
     pub depth_viz: DepthVisualizationState,

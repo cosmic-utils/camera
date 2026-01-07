@@ -24,20 +24,20 @@ pub use pipeline::PipeWirePipeline;
 use super::CameraBackend;
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use super::depth_controller::DepthController;
-use super::{NativeDepthBackend, is_depth_native_device};
-#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
-use super::{enumerate_depth_cameras, get_depth_formats};
 use super::types::*;
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use super::v4l2_depth::{DepthFrameReceiver, DepthFrameSender, V4l2DepthPipeline};
+use super::{NativeDepthBackend, is_depth_native_device};
+#[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+use super::{enumerate_depth_cameras, get_depth_formats};
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use crate::shaders::depth::{is_depth_colormap_enabled, is_depth_only_mode, unpack_y10b_gpu};
 use std::path::PathBuf;
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use std::sync::Arc;
-use tracing::{debug, info};
 #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
 use tracing::warn;
+use tracing::{debug, info};
 
 use super::V4l2KernelDepthBackend;
 

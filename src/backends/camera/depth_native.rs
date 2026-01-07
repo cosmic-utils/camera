@@ -33,10 +33,10 @@ use freedepth::{
 };
 use tracing::{debug, info, warn};
 
-use super::format_converters::{
-    self, ir_8bit_to_rgb, ir_10bit_to_rgb, ir_10bit_unpacked_to_rgb, DepthVisualizationOptions,
-};
 use super::CameraBackend;
+use super::format_converters::{
+    self, DepthVisualizationOptions, ir_8bit_to_rgb, ir_10bit_to_rgb, ir_10bit_unpacked_to_rgb,
+};
 use super::types::*;
 
 /// Path prefix for depth camera devices to distinguish from PipeWire cameras
@@ -212,7 +212,6 @@ pub struct NativeDepthBackend {
     /// Uses trait object for device-agnostic access
     registration: Option<Box<dyn DepthRegistration>>,
 }
-
 
 impl NativeDepthBackend {
     /// Create a new native depth camera backend

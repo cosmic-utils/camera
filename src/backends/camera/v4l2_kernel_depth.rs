@@ -33,14 +33,14 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::{Format, FourCC};
 
+use super::CameraBackend;
 use super::format_converters::{
-    self, grbg_to_rgba, unpack_y10b, uyvy_to_rgba, DepthVisualizationOptions,
+    self, DepthVisualizationOptions, grbg_to_rgba, unpack_y10b, uyvy_to_rgba,
 };
 use super::types::*;
 use super::v4l2_depth_controls::{
     self, DepthCapabilities, DepthIntrinsics, KernelRegistrationData, V4l2DeviceInfo,
 };
-use super::CameraBackend;
 
 /// Path prefix for kernel depth camera devices (single depth device)
 pub const KERNEL_DEPTH_PREFIX: &str = "v4l2-depth:";
@@ -140,14 +140,14 @@ pub fn find_kernel_kinect_pairs() -> Vec<KinectDevicePair> {
             let fourcc_uyvy = FourCC::new(b"UYVY");
 
             // Check for depth formats (Y10B, Y16)
-            let has_depth_format = formats.iter().any(|f| {
-                f.fourcc == fourcc_y10b || f.fourcc == fourcc_y16
-            });
+            let has_depth_format = formats
+                .iter()
+                .any(|f| f.fourcc == fourcc_y10b || f.fourcc == fourcc_y16);
 
             // Check for color formats (Bayer GRBG or UYVY)
-            let has_color_format = formats.iter().any(|f| {
-                f.fourcc == fourcc_grbg || f.fourcc == fourcc_uyvy
-            });
+            let has_color_format = formats
+                .iter()
+                .any(|f| f.fourcc == fourcc_grbg || f.fourcc == fourcc_uyvy);
 
             if has_depth_format {
                 KinectDeviceType::Depth
@@ -228,7 +228,6 @@ pub fn find_kernel_kinect_pairs() -> Vec<KinectDevicePair> {
 pub fn has_kernel_kinect_devices() -> bool {
     !find_kernel_kinect_pairs().is_empty()
 }
-
 
 /// V4L2 Kernel Depth Backend
 ///
@@ -315,7 +314,9 @@ impl V4l2KernelDepthBackend {
 
     /// Get registration data converted to shader format
     pub fn get_shader_registration_data(&self) -> Option<crate::shaders::RegistrationData> {
-        self.registration_data.as_ref().map(|r| r.to_shader_format())
+        self.registration_data
+            .as_ref()
+            .map(|r| r.to_shader_format())
     }
 
     /// Get the device pair if available
@@ -375,7 +376,10 @@ impl V4l2KernelDepthBackend {
         // Create combined device representation
         let device = CameraDevice {
             name: format!("{} (Kernel)", pair.card_name),
-            path: format!("{}{}:{}", KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path),
+            path: format!(
+                "{}{}:{}",
+                KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path
+            ),
             metadata_path: Some(pair.depth_path.clone()),
             device_info: Some(DeviceInfo {
                 card: pair.card_name.clone(),
@@ -411,7 +415,11 @@ impl V4l2KernelDepthBackend {
     }
 
     /// Start dual capture (color + depth streams)
-    fn start_dual_capture(&mut self, pair: &KinectDevicePair, format: &CameraFormat) -> BackendResult<()> {
+    fn start_dual_capture(
+        &mut self,
+        pair: &KinectDevicePair,
+        format: &CameraFormat,
+    ) -> BackendResult<()> {
         let stop_signal = self.stop_signal.clone();
         let latest_frame = self.latest_frame.clone();
         let latest_depth = self.latest_depth_frame.clone();
@@ -458,11 +466,7 @@ impl V4l2KernelDepthBackend {
         let color_latest = latest_color.clone();
 
         let color_handle = thread::spawn(move || {
-            if let Err(e) = color_capture_loop(
-                &color_path,
-                color_stop,
-                color_latest,
-            ) {
+            if let Err(e) = color_capture_loop(&color_path, color_stop, color_latest) {
                 error!(error = %e, "Color capture loop error");
             }
         });
@@ -566,9 +570,8 @@ fn depth_capture_loop(
     );
 
     // Create memory-mapped stream
-    let mut stream =
-        Stream::with_buffers(&dev, Type::VideoCapture, 4)
-            .map_err(|e| format!("Failed to create stream: {}", e))?;
+    let mut stream = Stream::with_buffers(&dev, Type::VideoCapture, 4)
+        .map_err(|e| format!("Failed to create stream: {}", e))?;
 
     // Get invalid depth value from capabilities
     let invalid_value = capabilities
@@ -693,9 +696,8 @@ fn color_capture_loop(
     );
 
     // Create memory-mapped stream
-    let mut stream =
-        Stream::with_buffers(&dev, Type::VideoCapture, 4)
-            .map_err(|e| format!("Failed to create color stream: {}", e))?;
+    let mut stream = Stream::with_buffers(&dev, Type::VideoCapture, 4)
+        .map_err(|e| format!("Failed to create color stream: {}", e))?;
 
     info!("Color capture loop started");
 
@@ -753,7 +755,10 @@ impl CameraBackend for V4l2KernelDepthBackend {
         for pair in pairs {
             let device = CameraDevice {
                 name: format!("{} (Kernel)", pair.card_name),
-                path: format!("{}{}:{}", KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path),
+                path: format!(
+                    "{}{}:{}",
+                    KERNEL_KINECT_PREFIX, pair.color_path, pair.depth_path
+                ),
                 metadata_path: Some(pair.depth_path.clone()),
                 device_info: Some(DeviceInfo {
                     card: pair.card_name.clone(),

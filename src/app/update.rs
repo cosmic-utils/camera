@@ -50,6 +50,24 @@ impl AppModel {
                     self.exposure_picker_visible = false;
                     self.color_picker_visible = false;
                     self.tools_menu_visible = false;
+
+                    // Get initial tilt from motor control if available
+                    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
+                    if self.kinect.is_device {
+                        use crate::backends::camera::motor_control::{
+                            get_motor_tilt, is_motor_available,
+                        };
+                        if is_motor_available() {
+                            match get_motor_tilt() {
+                                Ok(tilt) => {
+                                    self.kinect.tilt_angle = tilt;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to get Kinect tilt: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -71,6 +89,10 @@ impl AppModel {
             }
             Message::ResetPanTilt => {
                 self.reset_pan_tilt();
+                // Also reset Kinect tilt if it's a Kinect device
+                if self.kinect.is_device {
+                    return self.handle_set_kinect_tilt(0);
+                }
                 Task::none()
             }
 
@@ -294,60 +316,6 @@ impl AppModel {
                 self.handle_request_point_cloud_render()
             }
             Message::RequestPointCloudRender => self.handle_request_point_cloud_render(),
-
-            // ===== Motor/PTZ Controls =====
-            Message::ToggleMotorPicker => {
-                self.motor_picker_visible = !self.motor_picker_visible;
-                // Close other pickers when opening motor picker
-                if self.motor_picker_visible {
-                    self.exposure_picker_visible = false;
-                    self.color_picker_visible = false;
-                    self.tools_menu_visible = false;
-
-                    // Get initial tilt from motor control if available
-                    #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
-                    if self.kinect.is_device {
-                        use crate::backends::camera::motor_control::{
-                            get_motor_tilt, is_motor_available,
-                        };
-                        if is_motor_available() {
-                            match get_motor_tilt() {
-                                Ok(tilt) => {
-                                    self.kinect.tilt_angle = tilt;
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to get Kinect tilt: {}", e);
-                                }
-                            }
-                        }
-                    }
-                }
-                Task::none()
-            }
-            Message::CloseMotorPicker => {
-                self.motor_picker_visible = false;
-                Task::none()
-            }
-            Message::SetPanAbsolute(value) => {
-                self.set_v4l2_pan(value);
-                Task::none()
-            }
-            Message::SetTiltAbsolute(value) => {
-                self.set_v4l2_tilt(value);
-                Task::none()
-            }
-            Message::SetZoomAbsolute(value) => {
-                self.set_v4l2_zoom(value);
-                Task::none()
-            }
-            Message::ResetPanTilt => {
-                self.reset_pan_tilt();
-                // Also reset Kinect tilt if it's a Kinect device
-                if self.kinect.is_device {
-                    return self.handle_set_kinect_tilt(0);
-                }
-                Task::none()
-            }
 
             // ===== Kinect Controls =====
             Message::SetKinectTilt(degrees) => self.handle_set_kinect_tilt(degrees),

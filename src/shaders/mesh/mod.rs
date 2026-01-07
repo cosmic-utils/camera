@@ -27,5 +27,10 @@ static MESH_SHADER_COMBINED: OnceLock<String> = OnceLock::new();
 
 /// Get the combined mesh shader source
 pub fn mesh_shader() -> &'static str {
-    MESH_SHADER_COMBINED.get_or_init(|| format!("{}\n\n{}\n\n{}", MESH_MAIN_WGSL, GEOMETRY_WGSL, FILTERS_WGSL))
+    MESH_SHADER_COMBINED.get_or_init(|| {
+        format!(
+            "{}\n\n{}\n\n{}",
+            MESH_MAIN_WGSL, GEOMETRY_WGSL, FILTERS_WGSL
+        )
+    })
 }

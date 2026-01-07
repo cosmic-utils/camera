@@ -329,8 +329,6 @@ impl cosmic::Application for AppModel {
             privacy_cover_closed: false,
             // Kinect state (device, motor, calibration, native backend)
             kinect: crate::app::state::KinectState::default(),
-            // Motor/PTZ controls
-            motor_picker_visible: false,
             // Depth visualization settings
             depth_viz: crate::app::state::DepthVisualizationState::default(),
             // 3D preview state (rotation, zoom, rendering)
@@ -653,7 +651,9 @@ impl cosmic::Application for AppModel {
                             // Create camera pipeline using PipeWire backend
                             // For Y10B depth formats, use V4L2 direct capture with GPU unpacking
                             use crate::backends::camera::pipewire::PipeWirePipeline;
-                            use crate::backends::camera::types::{CameraDevice, CameraFormat, SensorType};
+                            use crate::backends::camera::types::{
+                                CameraDevice, CameraFormat, SensorType,
+                            };
                             #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                             use crate::backends::camera::types::{CameraFrame, PixelFormat};
 
@@ -697,8 +697,8 @@ impl cosmic::Application for AppModel {
                             #[cfg(all(target_arch = "x86_64", feature = "freedepth"))]
                             use crate::backends::camera::v4l2_depth::V4l2DepthPipeline;
                             use crate::backends::camera::{
-                                NativeDepthBackend, is_depth_native_device,
-                                V4l2KernelDepthBackend, is_kernel_depth_device,
+                                NativeDepthBackend, V4l2KernelDepthBackend, is_depth_native_device,
+                                is_kernel_depth_device,
                             };
 
                             // Enum to hold active pipeline - fields are used for ownership semantics
@@ -715,7 +715,8 @@ impl cosmic::Application for AppModel {
                             // Check if this is a kernel depth device first (highest priority)
                             let is_kernel_depth = is_kernel_depth_device(&device.path);
                             // Then check for freedepth device (only when kernel driver not present)
-                            let is_depth_cam = !is_kernel_depth && is_depth_native_device(&device.path);
+                            let is_depth_cam =
+                                !is_kernel_depth && is_depth_native_device(&device.path);
                             if is_kernel_depth {
                                 info!(device = %device.name, path = %device.path, "Using V4L2 kernel depth backend");
                             } else if is_depth_cam {
@@ -764,7 +765,8 @@ impl cosmic::Application for AppModel {
                                 if is_depth_format {
                                     info!("Creating V4L2 depth pipeline for Y10B format");
                                     use crate::shaders::depth::{
-                                        is_depth_colormap_enabled, is_depth_only_mode, unpack_y10b_gpu,
+                                        is_depth_colormap_enabled, is_depth_only_mode,
+                                        unpack_y10b_gpu,
                                     };
 
                                     // Create depth frame channel
@@ -813,10 +815,15 @@ impl cosmic::Application for AppModel {
                                                                 ),
                                                                 format: PixelFormat::Depth16,
                                                                 stride: result.width * 4,
-                                                                captured_at: depth_frame.captured_at,
-                                                                depth_data: Some(std::sync::Arc::from(
-                                                                    result.depth_u16.into_boxed_slice(),
-                                                                )),
+                                                                captured_at: depth_frame
+                                                                    .captured_at,
+                                                                depth_data: Some(
+                                                                    std::sync::Arc::from(
+                                                                        result
+                                                                            .depth_u16
+                                                                            .into_boxed_slice(),
+                                                                    ),
+                                                                ),
                                                                 depth_width: result.width,
                                                                 depth_height: result.height,
                                                                 video_timestamp: None,
@@ -885,18 +892,21 @@ impl cosmic::Application for AppModel {
 
                                 // For kernel depth devices, poll frames directly via V4L2
                                 if let ActivePipeline::KernelDepth(ref kernel_backend) = pipeline {
-
                                     info!("Starting kernel depth frame polling loop");
                                     loop {
                                         // Check cancel flag
                                         if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                                            info!("Cancel flag set - kernel depth subscription being cancelled");
+                                            info!(
+                                                "Cancel flag set - kernel depth subscription being cancelled"
+                                            );
                                             break;
                                         }
 
                                         // Check if output is closed
                                         if output.is_closed() {
-                                            info!("Output channel closed - kernel depth subscription being cancelled");
+                                            info!(
+                                                "Output channel closed - kernel depth subscription being cancelled"
+                                            );
                                             break;
                                         }
 
@@ -914,11 +924,13 @@ impl cosmic::Application for AppModel {
                                             }
 
                                             // Send frame to UI
-                                            let _ = output.try_send(Message::CameraFrame(Arc::new(frame)));
+                                            let _ = output
+                                                .try_send(Message::CameraFrame(Arc::new(frame)));
                                         }
 
                                         // Small sleep to avoid busy-waiting (~30fps)
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(16)).await;
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(16))
+                                            .await;
                                     }
                                 }
 
@@ -1145,7 +1157,9 @@ impl cosmic::Application for AppModel {
                                         }
 
                                         if output.is_closed() {
-                                            info!("Output channel closed - subscription being cancelled");
+                                            info!(
+                                                "Output channel closed - subscription being cancelled"
+                                            );
                                             break;
                                         }
 
@@ -1157,7 +1171,8 @@ impl cosmic::Application for AppModel {
                                         {
                                             Ok(Some(frame)) => {
                                                 frame_count += 1;
-                                                let latency_us = frame.captured_at.elapsed().as_micros();
+                                                let latency_us =
+                                                    frame.captured_at.elapsed().as_micros();
 
                                                 if frame_count % 30 == 0 {
                                                     info!(
@@ -1169,10 +1184,15 @@ impl cosmic::Application for AppModel {
                                                     );
                                                 }
 
-                                                match output.try_send(Message::CameraFrame(Arc::new(frame))) {
+                                                match output
+                                                    .try_send(Message::CameraFrame(Arc::new(frame)))
+                                                {
                                                     Ok(()) => {
                                                         if frame_count % 30 == 0 {
-                                                            tracing::debug!(frame = frame_count, "Frame forwarded to UI");
+                                                            tracing::debug!(
+                                                                frame = frame_count,
+                                                                "Frame forwarded to UI"
+                                                            );
                                                         }
                                                     }
                                                     Err(e) => {

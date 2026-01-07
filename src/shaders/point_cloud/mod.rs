@@ -31,6 +31,10 @@ static POINT_CLOUD_SHADER_COMBINED: OnceLock<String> = OnceLock::new();
 
 /// Get the combined point cloud shader source
 pub fn point_cloud_shader() -> &'static str {
-    POINT_CLOUD_SHADER_COMBINED
-        .get_or_init(|| format!("{}\n\n{}\n\n{}", POINT_CLOUD_MAIN_WGSL, GEOMETRY_WGSL, FILTERS_WGSL))
+    POINT_CLOUD_SHADER_COMBINED.get_or_init(|| {
+        format!(
+            "{}\n\n{}\n\n{}",
+            POINT_CLOUD_MAIN_WGSL, GEOMETRY_WGSL, FILTERS_WGSL
+        )
+    })
 }
