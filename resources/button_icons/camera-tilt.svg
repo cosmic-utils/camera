@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Orbit/rotation icon: two interlocking rings with arrows -->
+
+  <!-- Horizontal ring - back part (top half, goes behind vertical) -->
+  <path d="M21 12 A9 3.5 0 0 0 3 12" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Vertical ring - complete ellipse -->
+  <ellipse cx="12" cy="12" rx="3.5" ry="9" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Horizontal ring - front part (bottom half, goes in front of vertical) -->
+  <path d="M3 12 A9 3.5 0 0 0 21 12" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Arrow head on vertical ring (bottom-left, pointing down) -->
+  <path d="M8.5 18 L12 22 L10.5 17 Z" fill="#FFFFFF"/>
+
+  <!-- Arrow head on horizontal ring (right side, pointing right) -->
+  <path d="M18 9.5 L22 12 L18 14.5 Z" fill="#FFFFFF"/>
+</svg>

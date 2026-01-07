@@ -244,6 +244,22 @@ pub struct AvailableExposureControls {
     // === Privacy ===
     /// Whether privacy control is available (hardware privacy switch)
     pub has_privacy: bool,
+
+    // === PTZ (Pan/Tilt/Zoom) Controls ===
+    /// Pan absolute position range
+    pub pan_absolute: ControlRange,
+    /// Tilt absolute position range
+    pub tilt_absolute: ControlRange,
+    /// Zoom absolute position range
+    pub zoom_absolute: ControlRange,
+    /// Whether pan relative control is available
+    pub has_pan_relative: bool,
+    /// Whether tilt relative control is available
+    pub has_tilt_relative: bool,
+    /// Whether pan reset control is available
+    pub has_pan_reset: bool,
+    /// Whether tilt reset control is available
+    pub has_tilt_reset: bool,
 }
 
 impl AvailableExposureControls {
@@ -278,6 +294,15 @@ impl AvailableExposureControls {
     /// Check if any focus controls are available
     pub fn has_any_focus(&self) -> bool {
         self.has_focus_auto || self.focus.available
+    }
+
+    /// Check if any PTZ (pan/tilt/zoom) controls are available
+    pub fn has_any_ptz(&self) -> bool {
+        self.pan_absolute.available
+            || self.tilt_absolute.available
+            || self.zoom_absolute.available
+            || self.has_pan_relative
+            || self.has_tilt_relative
     }
 
     /// Check if any exposure controls are available at all

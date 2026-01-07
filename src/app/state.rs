@@ -545,6 +545,11 @@ pub struct AppModel {
     pub color_picker_visible: bool,
     /// Whether the tools menu is visible (iOS-style popup)
     pub tools_menu_visible: bool,
+
+    // ===== Motor/PTZ Controls =====
+    /// Whether motor controls picker is visible
+    pub motor_picker_visible: bool,
+
     /// Current exposure settings for active camera
     pub exposure_settings: Option<ExposureSettings>,
     /// Current color/image adjustment settings for active camera
@@ -1018,6 +1023,20 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
+
+    // ===== Motor/PTZ Controls =====
+    /// Toggle motor controls picker visibility
+    ToggleMotorPicker,
+    /// Close motor controls picker
+    CloseMotorPicker,
+    /// Set V4L2 pan absolute position
+    SetPanAbsolute(i32),
+    /// Set V4L2 tilt absolute position (V4L2 cameras)
+    SetTiltAbsolute(i32),
+    /// Set V4L2 zoom absolute position
+    SetZoomAbsolute(i32),
+    /// Reset pan/tilt to center position
+    ResetPanTilt,
 
     // ===== Format Selection =====
     /// Switch between Photo/Video mode

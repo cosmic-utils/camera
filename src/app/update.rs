@@ -42,6 +42,38 @@ impl AppModel {
             Message::ToggleToolsMenu => self.handle_toggle_tools_menu(),
             Message::CloseToolsMenu => self.handle_close_tools_menu(),
 
+            // ===== Motor/PTZ Controls =====
+            Message::ToggleMotorPicker => {
+                self.motor_picker_visible = !self.motor_picker_visible;
+                // Close other pickers when opening motor picker
+                if self.motor_picker_visible {
+                    self.exposure_picker_visible = false;
+                    self.color_picker_visible = false;
+                    self.tools_menu_visible = false;
+                }
+                Task::none()
+            }
+            Message::CloseMotorPicker => {
+                self.motor_picker_visible = false;
+                Task::none()
+            }
+            Message::SetPanAbsolute(value) => {
+                self.set_v4l2_pan(value);
+                Task::none()
+            }
+            Message::SetTiltAbsolute(value) => {
+                self.set_v4l2_tilt(value);
+                Task::none()
+            }
+            Message::SetZoomAbsolute(value) => {
+                self.set_v4l2_zoom(value);
+                Task::none()
+            }
+            Message::ResetPanTilt => {
+                self.reset_pan_tilt();
+                Task::none()
+            }
+
             // ===== Exposure Controls =====
             Message::ToggleExposurePicker => self.handle_toggle_exposure_picker(),
             Message::CloseExposurePicker => self.handle_close_exposure_picker(),

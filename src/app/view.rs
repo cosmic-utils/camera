@@ -47,6 +47,8 @@ const TOOLS_GRID_ICON: &[u8] = include_bytes!("../../resources/button_icons/tool
 const MOON_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon.svg");
 /// Moon off icon SVG (burst mode disabled, with strike-through)
 const MOON_OFF_ICON: &[u8] = include_bytes!("../../resources/button_icons/moon-off.svg");
+/// Camera tilt/motor control icon SVG
+const CAMERA_TILT_ICON: &[u8] = include_bytes!("../../resources/button_icons/camera-tilt.svg");
 
 /// Burst mode progress bar dimensions
 const BURST_MODE_PROGRESS_BAR_WIDTH: f32 = 200.0;
@@ -409,6 +411,11 @@ impl AppModel {
             main_stack = main_stack.push(self.build_color_picker());
         }
 
+        // Add motor/PTZ controls picker overlay if visible
+        if self.motor_picker_visible {
+            main_stack = main_stack.push(self.build_motor_picker());
+        }
+
         // Add tools menu overlay if visible
         if self.tools_menu_visible {
             main_stack = main_stack.push(self.build_tools_menu());
@@ -470,8 +477,10 @@ impl AppModel {
         row = row.push(widget::Space::new(Length::Fill, Length::Shrink));
 
         // Hide flash and tools buttons when any picker/menu is open
-        let hide_top_bar_buttons =
-            self.tools_menu_visible || self.exposure_picker_visible || self.color_picker_visible;
+        let hide_top_bar_buttons = self.tools_menu_visible
+            || self.exposure_picker_visible
+            || self.color_picker_visible
+            || self.motor_picker_visible;
 
         if !hide_top_bar_buttons {
             // Flash toggle button (only in Photo mode)
@@ -557,6 +566,31 @@ impl AppModel {
                         icon::from_name("document-open-symbolic").symbolic(true),
                         Some(message),
                         has_file,
+                    ));
+                }
+
+                // 5px spacing
+                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+            }
+
+            // Motor/PTZ control button (shows when camera has motor controls)
+            if self.has_motor_controls() {
+                let motor_icon = widget::icon::from_svg_bytes(CAMERA_TILT_ICON).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(motor_icon.clone()).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(overlay_icon_button(
+                        motor_icon,
+                        Some(Message::ToggleMotorPicker),
+                        self.motor_picker_visible,
                     ));
                 }
 

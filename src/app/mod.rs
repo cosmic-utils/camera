@@ -37,6 +37,7 @@ pub mod frame_processor;
 mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
+mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
 mod state;
@@ -249,6 +250,7 @@ impl cosmic::Application for AppModel {
             exposure_picker_visible: false,
             color_picker_visible: false,
             tools_menu_visible: false,
+            motor_picker_visible: false,
             exposure_settings: None,
             color_settings: None,
             available_exposure_controls:

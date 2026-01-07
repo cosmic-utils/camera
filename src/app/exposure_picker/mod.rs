@@ -122,6 +122,31 @@ pub fn query_exposure_controls(device_path: &str) -> AvailableExposureControls {
     // Query privacy control (hardware privacy switch)
     controls.has_privacy = query_bool_control(device_path, v4l2_controls::V4L2_CID_PRIVACY);
 
+    // Query PTZ (pan/tilt/zoom) controls
+    controls.pan_absolute = query_range_control(device_path, v4l2_controls::V4L2_CID_PAN_ABSOLUTE);
+    controls.tilt_absolute =
+        query_range_control(device_path, v4l2_controls::V4L2_CID_TILT_ABSOLUTE);
+    controls.zoom_absolute =
+        query_range_control(device_path, v4l2_controls::V4L2_CID_ZOOM_ABSOLUTE);
+    controls.has_pan_relative =
+        query_bool_control(device_path, v4l2_controls::V4L2_CID_PAN_RELATIVE);
+    controls.has_tilt_relative =
+        query_bool_control(device_path, v4l2_controls::V4L2_CID_TILT_RELATIVE);
+    controls.has_pan_reset = query_bool_control(device_path, v4l2_controls::V4L2_CID_PAN_RESET);
+    controls.has_tilt_reset = query_bool_control(device_path, v4l2_controls::V4L2_CID_TILT_RESET);
+
+    if controls.has_any_ptz() {
+        debug!(
+            device_path,
+            pan_abs = controls.pan_absolute.available,
+            tilt_abs = controls.tilt_absolute.available,
+            zoom_abs = controls.zoom_absolute.available,
+            pan_rel = controls.has_pan_relative,
+            tilt_rel = controls.has_tilt_relative,
+            "PTZ controls available"
+        );
+    }
+
     info!(
         device_path,
         has_mode = controls.has_exposure_auto,

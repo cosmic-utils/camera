@@ -120,6 +120,9 @@ tools-color = Color
 tools-filter = Filter
 tools-theatre = Theatre
 
+# PTZ controls
+ptz-title = Camera Controls
+
 # Privacy cover warning
 privacy-cover-closed = Privacy cover is closed
 privacy-cover-hint = Open the privacy cover to use the camera

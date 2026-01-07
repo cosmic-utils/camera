@@ -66,6 +66,31 @@ pub const V4L2_CID_EXPOSURE_METERING: u32 = V4L2_CID_CAMERA_CLASS_BASE + 25;
 /// Privacy control - when 1 (TRUE), camera cannot capture (privacy cover closed)
 pub const V4L2_CID_PRIVACY: u32 = V4L2_CID_CAMERA_CLASS_BASE + 16;
 
+// ===== V4L2 Control IDs (Camera Class - PTZ) =====
+
+/// Pan relative movement (write-only, undefined units)
+pub const V4L2_CID_PAN_RELATIVE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 4;
+/// Tilt relative movement (write-only, undefined units)
+pub const V4L2_CID_TILT_RELATIVE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 5;
+/// Reset pan to default position
+pub const V4L2_CID_PAN_RESET: u32 = V4L2_CID_CAMERA_CLASS_BASE + 6;
+/// Reset tilt to default position
+pub const V4L2_CID_TILT_RESET: u32 = V4L2_CID_CAMERA_CLASS_BASE + 7;
+/// Pan absolute position (arc seconds, -180*3600 to +180*3600)
+pub const V4L2_CID_PAN_ABSOLUTE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 8;
+/// Tilt absolute position (arc seconds, -180*3600 to +180*3600)
+pub const V4L2_CID_TILT_ABSOLUTE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 9;
+/// Zoom absolute position (driver-specific units)
+pub const V4L2_CID_ZOOM_ABSOLUTE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 13;
+/// Zoom relative movement
+pub const V4L2_CID_ZOOM_RELATIVE: u32 = V4L2_CID_CAMERA_CLASS_BASE + 14;
+/// Zoom continuous movement (-1, 0, +1)
+pub const V4L2_CID_ZOOM_CONTINUOUS: u32 = V4L2_CID_CAMERA_CLASS_BASE + 15;
+/// Pan speed (continuous movement)
+pub const V4L2_CID_PAN_SPEED: u32 = V4L2_CID_CAMERA_CLASS_BASE + 32;
+/// Tilt speed (continuous movement)
+pub const V4L2_CID_TILT_SPEED: u32 = V4L2_CID_CAMERA_CLASS_BASE + 33;
+
 // ===== V4L2 Control IDs (Image Source Class) =====
 
 /// Analogue gain (image source class)
