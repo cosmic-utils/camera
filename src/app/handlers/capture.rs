@@ -807,9 +807,10 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.is_capturing = false;
 
-        // Clear current_frame to force the video widget to refresh
-        // when the next frame arrives (unsticks the preview after processing pause)
-        self.current_frame = None;
+        // Start a short blur transition (200ms) after stream restarts
+        // This keeps the last frame blurred until new frames arrive, then fades out smoothly
+        // Don't disable UI since capture is complete
+        let _ = self.transition_state.start_with_duration(200, false);
 
         // Restart the camera stream after HDR+ processing
         // The stream was stopped when processing began to free GPU resources.

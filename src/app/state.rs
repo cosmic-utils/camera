@@ -660,16 +660,30 @@ pub struct AppModel {
 }
 
 /// State for smooth blur transitions when changing camera settings
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TransitionState {
     /// Whether we're currently in a transition (blur is active)
     pub in_transition: bool,
     /// Timestamp when transition started (for detecting camera restart)
     pub transition_start_time: Option<Instant>,
-    /// Timestamp when first new frame arrived (for 1-second blur countdown)
+    /// Timestamp when first new frame arrived (for blur countdown)
     pub first_frame_time: Option<Instant>,
     /// Whether UI should be disabled during transition (to prevent user interaction)
     pub ui_disabled: bool,
+    /// Duration in ms to keep blur active after first frame arrives (default: 1000ms)
+    pub blur_duration_ms: u64,
+}
+
+impl Default for TransitionState {
+    fn default() -> Self {
+        Self {
+            in_transition: false,
+            transition_start_time: None,
+            first_frame_time: None,
+            ui_disabled: false,
+            blur_duration_ms: 1000, // Default 1 second for camera switches
+        }
+    }
 }
 
 /// Camera modes
@@ -1229,9 +1243,21 @@ pub enum Message {
 
 impl TransitionState {
     /// Start a transition - enable blur, disable UI, and wait for first frame
+    /// Uses default blur duration (1 second)
     pub fn start(&mut self) -> cosmic::Task<Message> {
+        self.start_with_duration(1000, true)
+    }
+
+    /// Start a transition with custom blur duration
+    /// Used for HDR+ completion (shorter blur) vs camera switches (longer blur)
+    pub fn start_with_duration(
+        &mut self,
+        duration_ms: u64,
+        disable_ui: bool,
+    ) -> cosmic::Task<Message> {
         self.in_transition = true;
-        self.ui_disabled = true; // Disable UI during transition
+        self.ui_disabled = disable_ui;
+        self.blur_duration_ms = duration_ms;
         self.transition_start_time = Some(Instant::now());
         self.first_frame_time = None; // Reset - waiting for first new frame
 
@@ -1239,7 +1265,7 @@ impl TransitionState {
     }
 
     /// Called when a new frame arrives during transition
-    /// Returns a task to clear blur after 1 second if this is the first frame
+    /// Returns a task to clear blur after the configured duration if this is the first frame
     pub fn on_frame_received(&mut self) -> Option<cosmic::Task<Message>> {
         if !self.in_transition {
             return None;
@@ -1249,10 +1275,11 @@ impl TransitionState {
         if self.first_frame_time.is_none() {
             self.first_frame_time = Some(Instant::now());
 
-            // Schedule blur removal after 1 second from NOW
+            // Schedule blur removal after configured duration from NOW
+            let duration_ms = self.blur_duration_ms;
             return Some(cosmic::Task::perform(
-                async {
-                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(duration_ms)).await;
                 },
                 |_| Message::ClearTransitionBlur,
             ));
@@ -1273,8 +1300,8 @@ impl TransitionState {
             return true;
         };
 
-        // Once first frame arrives, blur for 1 second
-        first_frame_time.elapsed() < std::time::Duration::from_millis(1000)
+        // Once first frame arrives, blur for configured duration
+        first_frame_time.elapsed() < std::time::Duration::from_millis(self.blur_duration_ms)
     }
 
     /// Clear the blur and end transition
