@@ -988,12 +988,8 @@ impl cosmic::Application for AppModel {
             && !self.hdr_override_disabled
             && self.current_frame.is_some()
         {
-            // Use 2-second interval for first evaluation, then 1-second thereafter
-            let interval = if self.last_brightness_eval_time.is_none() {
-                std::time::Duration::from_secs(2) // First evaluation after 2 seconds
-            } else {
-                std::time::Duration::from_secs(1) // Subsequent evaluations every 1 second
-            };
+            // Evaluate brightness every 1 second
+            let interval = std::time::Duration::from_secs(1);
             cosmic::iced::time::every(interval).map(|_| Message::BrightnessEvaluationTick)
         } else {
             Subscription::none()
