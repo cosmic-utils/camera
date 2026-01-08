@@ -35,40 +35,33 @@ impl AppModel {
     /// Check if burst mode would be triggered based on current scene brightness
     ///
     /// Returns true if Auto mode would use more than 1 frame (actual burst capture)
-    /// or if a fixed frame count > 1 is set.
+    /// or if a fixed frame count > 1 is set, AND the user hasn't overridden it.
     pub fn would_use_burst_mode(&self) -> bool {
         use crate::config::BurstModeSetting;
+
+        // User override takes precedence
+        if self.hdr_override_disabled {
+            return false;
+        }
 
         match self.config.burst_mode_setting {
             BurstModeSetting::Off => false,
             BurstModeSetting::Frames4
             | BurstModeSetting::Frames6
             | BurstModeSetting::Frames8
-            | BurstModeSetting::Frames50 => {
-                true // Fixed frame counts always use burst
-            }
+            | BurstModeSetting::Frames50 => true, // Fixed frame counts always use burst
             BurstModeSetting::Auto => {
-                // Check scene brightness to determine if burst would be used
-                if let Some(frame) = &self.current_frame {
-                    use crate::pipelines::photo::burst_mode::burst::{
-                        calculate_adaptive_params, estimate_scene_brightness,
-                    };
-                    let (_luminance, brightness) = estimate_scene_brightness(frame);
-                    let params = calculate_adaptive_params(brightness);
-                    params.frame_count > 1
-                } else {
-                    // No frame available, assume burst would be used (conservative)
-                    true
-                }
+                // Use the cached auto-detected frame count (updated every 1 second)
+                self.auto_detected_frame_count > 1
             }
         }
     }
 
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
-        // Use HDR+ burst mode if enabled in settings (Auto or fixed frame count)
-        // No need to toggle the moon button - HDR+ is automatic when enabled
-        if self.config.burst_mode_setting.is_enabled() {
+        // Use HDR+ burst mode only if it would actually be used (frame_count > 1)
+        // This respects auto-detected brightness and user override
+        if self.would_use_burst_mode() {
             return self.capture_burst_mode_photo();
         }
 
@@ -155,29 +148,19 @@ impl AppModel {
             return Task::none();
         }
 
-        // Determine frame count: use config if set, otherwise auto-detect from scene
+        // Determine frame count: use config if set, otherwise use cached auto-detected value
         let frame_count = match self.config.burst_mode_setting.frame_count() {
             Some(count) => {
                 info!(frame_count = count, "Using configured frame count");
                 count
             }
             None => {
-                // Auto-detect based on scene brightness
-                let auto_count = if let Some(frame) = &self.current_frame {
-                    use crate::pipelines::photo::burst_mode::burst::{
-                        calculate_adaptive_params, estimate_scene_brightness,
-                    };
-                    let (_luminance, brightness) = estimate_scene_brightness(frame);
-                    let params = calculate_adaptive_params(brightness);
-                    info!(
-                        brightness = ?brightness,
-                        auto_frame_count = params.frame_count,
-                        "Auto-detected frame count based on scene brightness"
-                    );
-                    params.frame_count
-                } else {
-                    8 // Default fallback
-                };
+                // Use the cached auto-detected frame count (updated every 1 second)
+                let auto_count = self.auto_detected_frame_count;
+                info!(
+                    auto_frame_count = auto_count,
+                    "Using cached auto-detected frame count"
+                );
                 auto_count
             }
         };
@@ -331,6 +314,46 @@ impl AppModel {
         Self::delay_task(100, Message::PollBurstModeProgress)
     }
 
+    /// Handle periodic brightness evaluation tick
+    ///
+    /// Evaluates scene brightness every 1 second and updates auto_detected_frame_count.
+    /// Only runs when in Auto mode and not overridden.
+    pub(crate) fn handle_brightness_evaluation_tick(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::config::BurstModeSetting;
+        use crate::pipelines::photo::burst_mode::burst::{
+            calculate_adaptive_params, estimate_scene_brightness,
+        };
+
+        // Only evaluate in Auto mode when not overridden
+        if !matches!(self.config.burst_mode_setting, BurstModeSetting::Auto) {
+            return Task::none();
+        }
+
+        if self.hdr_override_disabled {
+            return Task::none();
+        }
+
+        // Evaluate brightness from current frame
+        if let Some(frame) = &self.current_frame {
+            let (_luminance, brightness) = estimate_scene_brightness(frame);
+            let params = calculate_adaptive_params(brightness);
+
+            // Only update and log if frame count changed
+            if params.frame_count != self.auto_detected_frame_count {
+                debug!(
+                    old_count = self.auto_detected_frame_count,
+                    new_count = params.frame_count,
+                    brightness = ?brightness,
+                    "Auto frame count updated based on scene brightness"
+                );
+                self.auto_detected_frame_count = params.frame_count;
+                self.last_brightness_eval_time = Some(std::time::Instant::now());
+            }
+        }
+
+        Task::none()
+    }
+
     pub(crate) fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
         // If timer countdown is active, abort it
         if self.photo_timer_countdown.is_some() {
@@ -367,18 +390,56 @@ impl AppModel {
         use crate::config::BurstModeSetting;
         use cosmic::cosmic_config::CosmicConfigEntry;
 
-        // Toggle between Auto and Off
-        self.config.burst_mode_setting = match self.config.burst_mode_setting {
-            BurstModeSetting::Off => BurstModeSetting::Auto,
-            _ => BurstModeSetting::Off,
-        };
+        // Track if config changed (need to save)
+        let mut config_changed = false;
 
-        info!(setting = ?self.config.burst_mode_setting, "HDR+ toggled");
+        match self.config.burst_mode_setting {
+            BurstModeSetting::Off => {
+                // Turning ON: go to Auto mode, clear any override
+                self.config.burst_mode_setting = BurstModeSetting::Auto;
+                self.hdr_override_disabled = false;
+                config_changed = true;
+            }
+            BurstModeSetting::Auto => {
+                if self.hdr_override_disabled {
+                    // Already overridden - toggle back to enabled
+                    self.hdr_override_disabled = false;
+                    info!("HDR+ override cleared - auto mode re-enabled");
+                } else if self.auto_detected_frame_count > 1 {
+                    // HDR+ would be active - set override to disable it
+                    self.hdr_override_disabled = true;
+                    info!("HDR+ override enabled - auto mode disabled until next toggle");
+                } else {
+                    // HDR+ already not active (bright scene, 1 frame) - switch to Off
+                    self.config.burst_mode_setting = BurstModeSetting::Off;
+                    config_changed = true;
+                }
+            }
+            _ => {
+                // Fixed frame count modes - toggle override
+                if self.hdr_override_disabled {
+                    self.hdr_override_disabled = false;
+                    info!("HDR+ override cleared for fixed frame count mode");
+                } else {
+                    self.hdr_override_disabled = true;
+                    info!("HDR+ override enabled for fixed frame count mode");
+                }
+            }
+        }
 
-        // Save to config
-        if let Some(handler) = self.config_handler.as_ref() {
-            if let Err(err) = self.config.write_entry(handler) {
-                error!(?err, "Failed to save HDR+ setting");
+        info!(
+            setting = ?self.config.burst_mode_setting,
+            override_disabled = self.hdr_override_disabled,
+            auto_frame_count = self.auto_detected_frame_count,
+            "HDR+ toggled"
+        );
+
+        // Save config only if setting changed
+        if config_changed {
+            if let Some(handler) = self.config_handler.as_ref() {
+                if let Err(err) = self.config.write_entry(handler) {
+                    error!(?err, "Failed to save HDR+ setting");
+                }
             }
         }
         Task::none()
@@ -407,9 +468,13 @@ impl AppModel {
             5 => BurstModeSetting::Frames50,
             _ => BurstModeSetting::Auto,
         };
+
+        // Reset override when manually changing setting
+        self.hdr_override_disabled = false;
+
         info!(
             setting = ?self.config.burst_mode_setting,
-            "HDR+ setting changed"
+            "HDR+ setting changed (override cleared)"
         );
 
         if let Some(handler) = self.config_handler.as_ref() {

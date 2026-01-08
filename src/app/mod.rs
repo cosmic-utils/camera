@@ -266,6 +266,9 @@ impl cosmic::Application for AppModel {
             base_exposure_time: None,
             theatre: TheatreState::default(),
             burst_mode: BurstModeState::default(),
+            auto_detected_frame_count: 1, // Start with 1 (no HDR+) until first brightness evaluation
+            last_brightness_eval_time: None,
+            hdr_override_disabled: false,
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
@@ -974,6 +977,28 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        // Brightness evaluation subscription (every 1 second when in Auto mode)
+        // Updates auto_detected_frame_count based on scene brightness
+        // Initial delay of 2 seconds at startup to allow camera to stabilize
+        let brightness_eval_sub = if self.mode == CameraMode::Photo
+            && matches!(
+                self.config.burst_mode_setting,
+                crate::config::BurstModeSetting::Auto
+            )
+            && !self.hdr_override_disabled
+            && self.current_frame.is_some()
+        {
+            // Use 2-second interval for first evaluation, then 1-second thereafter
+            let interval = if self.last_brightness_eval_time.is_none() {
+                std::time::Duration::from_secs(2) // First evaluation after 2 seconds
+            } else {
+                std::time::Duration::from_secs(1) // Subsequent evaluations every 1 second
+            };
+            cosmic::iced::time::every(interval).map(|_| Message::BrightnessEvaluationTick)
+        } else {
+            Subscription::none()
+        };
+
         Subscription::batch([
             config_sub,
             camera_sub,
@@ -982,6 +1007,7 @@ impl cosmic::Application for AppModel {
             file_source_preview_sub,
             timer_animation_sub,
             privacy_polling_sub,
+            brightness_eval_sub,
         ])
     }
 

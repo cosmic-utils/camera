@@ -124,10 +124,17 @@ pub fn validate_config(config: &BurstModeConfig) -> Result<(), String> {
 //=============================================================================
 
 /// Scene brightness classification
+///
+/// Based on HDR+ paper (Hasinoff et al.):
+/// - "In bright scenes, capturing 1-2 images is usually sufficient"
+/// - "In practice, we limit our bursts to 2-8 images"
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SceneBrightness {
+    /// Very bright scene (e.g., direct sunlight, well-exposed outdoor)
+    /// Average luminance > 0.5 - no HDR+ benefit, single frame sufficient
+    VeryBright,
     /// Well-lit scene (e.g., outdoor daylight, bright indoor)
-    /// Average luminance > 0.3
+    /// Average luminance 0.3 - 0.5
     Bright,
     /// Medium lighting (e.g., indoor with lights on, overcast outdoor)
     /// Average luminance 0.1 - 0.3
@@ -142,8 +149,12 @@ pub enum SceneBrightness {
 
 impl SceneBrightness {
     /// Classify scene brightness based on average luminance
+    ///
+    /// Thresholds based on HDR+ paper recommendations for frame count selection
     pub fn from_luminance(avg_luminance: f32) -> Self {
-        if avg_luminance > 0.3 {
+        if avg_luminance > 0.5 {
+            SceneBrightness::VeryBright
+        } else if avg_luminance > 0.3 {
             SceneBrightness::Bright
         } else if avg_luminance > 0.1 {
             SceneBrightness::Medium
@@ -168,7 +179,9 @@ pub struct AdaptiveBurstParams {
 
 /// Calculate adaptive burst parameters based on scene brightness
 ///
-/// Based on HDR+ paper recommendations:
+/// Based on HDR+ paper (Hasinoff et al.) recommendations:
+/// - "In bright scenes, capturing 1-2 images is usually sufficient"
+/// - "In practice, we limit our bursts to 2-8 images"
 /// - Darker scenes benefit from more frames (more noise to average out)
 /// - Brighter scenes need fewer frames (less noise, risk of motion blur)
 /// - Robustness parameter scales with darkness (more aggressive denoising)
@@ -180,23 +193,28 @@ pub struct AdaptiveBurstParams {
 /// Recommended burst parameters
 pub fn calculate_adaptive_params(brightness: SceneBrightness) -> AdaptiveBurstParams {
     match brightness {
+        SceneBrightness::VeryBright => AdaptiveBurstParams {
+            frame_count: 1,        // No HDR+ needed - single frame sufficient
+            robustness: 0.0,       // Not used for single frame
+            motion_threshold: 0.0, // Not used for single frame
+        },
         SceneBrightness::Bright => AdaptiveBurstParams {
-            frame_count: 4,        // Minimal frames, low noise already
-            robustness: 0.5,       // Light denoising
-            motion_threshold: 0.2, // Stricter motion rejection
+            frame_count: 2,         // "1-2 images usually sufficient" per HDR+ paper
+            robustness: 0.3,        // Very light denoising
+            motion_threshold: 0.15, // Strictest motion rejection
         },
         SceneBrightness::Medium => AdaptiveBurstParams {
-            frame_count: 6,  // Standard burst
-            robustness: 0.8, // Moderate denoising
-            motion_threshold: 0.25,
+            frame_count: 4,  // Standard burst
+            robustness: 0.6, // Light denoising
+            motion_threshold: 0.2,
         },
         SceneBrightness::Low => AdaptiveBurstParams {
-            frame_count: 10,       // More frames for low light
-            robustness: 1.2,       // Stronger denoising
-            motion_threshold: 0.3, // More lenient (motion blur less visible in dark)
+            frame_count: 6,        // More frames for low light
+            robustness: 1.0,       // Moderate denoising
+            motion_threshold: 0.25, // More lenient (motion blur less visible in dark)
         },
         SceneBrightness::VeryDark => AdaptiveBurstParams {
-            frame_count: 15,        // Maximum frames
+            frame_count: 8,         // Maximum per HDR+ paper (2-8 range)
             robustness: 1.5,        // Aggressive denoising
             motion_threshold: 0.35, // Most lenient
         },
@@ -328,35 +346,49 @@ mod tests {
 
     #[test]
     fn test_scene_brightness_classification() {
-        // Very dark scene
+        // Very bright scene (> 0.5)
         assert_eq!(
-            SceneBrightness::from_luminance(0.01),
-            SceneBrightness::VeryDark
+            SceneBrightness::from_luminance(0.6),
+            SceneBrightness::VeryBright
         );
 
-        // Low light scene
-        assert_eq!(SceneBrightness::from_luminance(0.05), SceneBrightness::Low);
+        // Bright scene (0.3 - 0.5)
+        assert_eq!(
+            SceneBrightness::from_luminance(0.4),
+            SceneBrightness::Bright
+        );
 
-        // Medium scene
+        // Medium scene (0.1 - 0.3)
         assert_eq!(
             SceneBrightness::from_luminance(0.2),
             SceneBrightness::Medium
         );
 
-        // Bright scene
+        // Low light scene (0.03 - 0.1)
+        assert_eq!(SceneBrightness::from_luminance(0.05), SceneBrightness::Low);
+
+        // Very dark scene (< 0.03)
         assert_eq!(
-            SceneBrightness::from_luminance(0.5),
-            SceneBrightness::Bright
+            SceneBrightness::from_luminance(0.01),
+            SceneBrightness::VeryDark
         );
     }
 
     #[test]
     fn test_adaptive_params_scaling() {
+        let very_bright = calculate_adaptive_params(SceneBrightness::VeryBright);
         let bright = calculate_adaptive_params(SceneBrightness::Bright);
         let dark = calculate_adaptive_params(SceneBrightness::VeryDark);
 
-        // Darker scenes should capture more frames
+        // Very bright scenes should use 1 frame (no HDR+)
+        assert_eq!(very_bright.frame_count, 1);
+
+        // Bright scenes should use 2 frames per HDR+ paper
+        assert_eq!(bright.frame_count, 2);
+
+        // Darker scenes should capture more frames (max 8 per HDR+ paper)
         assert!(dark.frame_count > bright.frame_count);
+        assert_eq!(dark.frame_count, 8);
 
         // Darker scenes should use higher robustness
         assert!(dark.robustness > bright.robustness);

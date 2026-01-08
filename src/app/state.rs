@@ -565,6 +565,14 @@ pub struct AppModel {
     pub theatre: TheatreState,
     /// Burst mode state (enabled, capture/processing progress)
     pub burst_mode: BurstModeState,
+    /// Auto-detected frame count based on current scene brightness (1-8)
+    /// Updated every 1 second when in Auto mode via BrightnessEvaluationTick
+    pub auto_detected_frame_count: usize,
+    /// Last time brightness was evaluated for auto frame count
+    pub last_brightness_eval_time: Option<Instant>,
+    /// User override to disable HDR+ even when auto-detection suggests using it
+    /// Reset when switching burst mode settings or on app restart
+    pub hdr_override_disabled: bool,
     /// Currently selected filter
     pub selected_filter: FilterType,
     /// Flash enabled for photo capture
@@ -1077,6 +1085,9 @@ pub enum Message {
     PollBurstModeProgress,
     /// Reset burst mode state after completion/error
     ResetBurstModeState,
+    /// Periodic brightness evaluation tick (every 1 second in Auto mode)
+    /// Updates auto_detected_frame_count based on scene brightness
+    BrightnessEvaluationTick,
     /// Cycle photo aspect ratio (native -> 4:3 -> 16:9 -> 1:1 -> native)
     CyclePhotoAspectRatio,
     /// Flash duration complete, now capture the photo
