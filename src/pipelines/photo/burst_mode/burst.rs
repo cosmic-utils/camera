@@ -14,10 +14,10 @@
 //! - Medium scenes: standard frames (6-8), good balance
 //! - Dark scenes: more frames (8-15), need aggressive noise reduction
 
-use crate::backends::camera::v4l2_controls::ExposureMetadata;
 use crate::backends::camera::CameraBackendManager;
 use crate::backends::camera::types::CameraFrame;
-use crate::shaders::{analyze_brightness_gpu, BrightnessMetrics as GpuBrightnessMetrics};
+use crate::backends::camera::v4l2_controls::ExposureMetadata;
+use crate::shaders::{BrightnessMetrics as GpuBrightnessMetrics, analyze_brightness_gpu};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -216,11 +216,11 @@ pub fn calculate_adaptive_params(brightness: SceneBrightness) -> AdaptiveBurstPa
             local_contrast: 0.1,    // Minimal contrast enhancement
         },
         SceneBrightness::Medium => AdaptiveBurstParams {
-            frame_count: 4,         // Standard burst
-            robustness: 0.6,        // Light denoising
+            frame_count: 4,  // Standard burst
+            robustness: 0.6, // Light denoising
             motion_threshold: 0.2,
-            shadow_boost: 0.2,      // Default shadow boost
-            local_contrast: 0.15,   // Default contrast enhancement
+            shadow_boost: 0.2,    // Default shadow boost
+            local_contrast: 0.15, // Default contrast enhancement
         },
         SceneBrightness::Low => AdaptiveBurstParams {
             frame_count: 6,         // More frames for low light
@@ -313,7 +313,9 @@ fn classify_from_exposure(exposure: &ExposureMetadata) -> Option<(SceneBrightnes
     // Get ISO or gain (normalize gain to ISO-like scale)
     let iso = exposure.iso.map(|i| i as f32).or_else(|| {
         // Map gain to approximate ISO: gain of 0 ~ ISO 100, gain of 255 ~ ISO 3200
-        exposure.gain.map(|g| 100.0 * (1.0 + g.max(0) as f32 / 32.0))
+        exposure
+            .gain
+            .map(|g| 100.0 * (1.0 + g.max(0) as f32 / 32.0))
     })?;
 
     // Calculate exposure value (EV) approximation
@@ -323,9 +325,7 @@ fn classify_from_exposure(exposure: &ExposureMetadata) -> Option<(SceneBrightnes
 
     debug!(
         exposure_time = exp_time,
-        iso,
-        ev,
-        "V4L2 exposure-based brightness estimation"
+        iso, ev, "V4L2 exposure-based brightness estimation"
     );
 
     // Map EV to brightness classification

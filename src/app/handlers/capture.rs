@@ -6,10 +6,10 @@
 
 use crate::app::state::{AppModel, CameraMode, Message, RecordingState};
 use crate::backends::camera::v4l2_controls::read_exposure_metadata;
+use crate::pipelines::photo::burst_mode::BurstModeConfig;
 use crate::pipelines::photo::burst_mode::burst::{
     analyze_brightness_multi, calculate_adaptive_params,
 };
-use crate::pipelines::photo::burst_mode::BurstModeConfig;
 use cosmic::Task;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -944,11 +944,7 @@ async fn save_first_burst_frame(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let filename = format!(
-        "IMG_SINGLE_{}.{}",
-        timestamp,
-        encoding_format.extension()
-    );
+    let filename = format!("IMG_SINGLE_{}.{}", timestamp, encoding_format.extension());
     let output_path = save_dir.join(&filename);
 
     tokio::fs::create_dir_all(save_dir)

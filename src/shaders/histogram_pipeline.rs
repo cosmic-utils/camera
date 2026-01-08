@@ -237,11 +237,19 @@ impl HistogramPipeline {
     ///
     /// Returns histogram-derived brightness metrics. All histogram computation
     /// stays on GPU; only the small metrics struct is transferred to CPU.
-    pub fn analyze(&mut self, data: &[u8], width: u32, height: u32) -> Result<BrightnessMetrics, String> {
+    pub fn analyze(
+        &mut self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<BrightnessMetrics, String> {
         self.ensure_resources(width, height);
 
         let input_texture = self.input_texture.as_ref().ok_or("No input texture")?;
-        let histogram_buffer = self.histogram_buffer.as_ref().ok_or("No histogram buffer")?;
+        let histogram_buffer = self
+            .histogram_buffer
+            .as_ref()
+            .ok_or("No histogram buffer")?;
         let metrics_buffer = self.metrics_buffer.as_ref().ok_or("No metrics buffer")?;
         let staging_buffer = self.staging_buffer.as_ref().ok_or("No staging buffer")?;
 
@@ -267,7 +275,8 @@ impl HistogramPipeline {
         );
 
         // Clear histogram buffer
-        self.queue.write_buffer(histogram_buffer, 0, &[0u8; 256 * 4]);
+        self.queue
+            .write_buffer(histogram_buffer, 0, &[0u8; 256 * 4]);
 
         // Update uniforms
         let params = Params {
@@ -276,7 +285,8 @@ impl HistogramPipeline {
             stage: 0,
             _padding: 0,
         };
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
 
         // Create texture view
         let texture_view = input_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -305,9 +315,11 @@ impl HistogramPipeline {
             ],
         });
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("histogram_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("histogram_encoder"),
+            });
 
         // Pass 1: Build histogram
         {
@@ -378,8 +390,8 @@ static GPU_HISTOGRAM_PIPELINE: std::sync::OnceLock<std::sync::Mutex<Option<Histo
 
 /// Get or initialize the shared histogram pipeline
 fn get_histogram_pipeline() -> Option<std::sync::MutexGuard<'static, Option<HistogramPipeline>>> {
-    let mutex = GPU_HISTOGRAM_PIPELINE.get_or_init(|| {
-        match pollster::block_on(HistogramPipeline::new()) {
+    let mutex =
+        GPU_HISTOGRAM_PIPELINE.get_or_init(|| match pollster::block_on(HistogramPipeline::new()) {
             Ok(pipeline) => {
                 info!("GPU histogram pipeline initialized");
                 std::sync::Mutex::new(Some(pipeline))
@@ -388,15 +400,10 @@ fn get_histogram_pipeline() -> Option<std::sync::MutexGuard<'static, Option<Hist
                 warn!("Failed to initialize GPU histogram pipeline: {}", e);
                 std::sync::Mutex::new(None)
             }
-        }
-    });
+        });
 
     let guard = mutex.lock().ok()?;
-    if guard.is_some() {
-        Some(guard)
-    } else {
-        None
-    }
+    if guard.is_some() { Some(guard) } else { None }
 }
 
 /// Analyze brightness using GPU histogram
