@@ -21,11 +21,8 @@ finish-args:
   # Home directory access for saving photos/videos
   - --filesystem=xdg-pictures:rw
   - --filesystem=xdg-videos:rw
-  # COSMIC config access (theme settings + app config)
-  # Needs rw for app's own config; reads system theme configs
+  # flathub-linter: skip=finish-args-unnecessary-xdg-config-cosmic-rw-access
   - --filesystem=xdg-config/cosmic:rw
-  # COSMIC system-wide defaults (corner radii, toolkit settings)
-  - --filesystem=/usr/share/cosmic:ro
   # PipeWire access for camera and audio
   - --filesystem=xdg-run/pipewire-0:ro
   # D-Bus access for COSMIC config daemon (live theme/config updates)
@@ -33,8 +30,6 @@ finish-args:
   # names like com.system76.CosmicSettingsDaemon.Config.com.system76.CosmicTheme.Dark.V1
   - --talk-name=com.system76.CosmicSettingsDaemon
   - --talk-name=com.system76.CosmicSettingsDaemon.*
-  # D-Bus access for XDG Desktop Portal (theme/appearance detection)
-  - --talk-name=org.freedesktop.portal.Desktop
   # D-Bus access for "Show in Files" functionality
   - --talk-name=org.freedesktop.FileManager1
   # D-Bus access for WiFi connection from QR codes (system bus, not session bus)
