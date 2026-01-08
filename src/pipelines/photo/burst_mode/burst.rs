@@ -175,6 +175,12 @@ pub struct AdaptiveBurstParams {
     pub robustness: f32,
     /// Maximum motion tolerance before rejecting frame
     pub motion_threshold: f32,
+    /// Shadow boost strength for tone mapping (0.0 - 1.0)
+    /// Higher values lift shadows more aggressively (for dark scenes)
+    pub shadow_boost: f32,
+    /// Local contrast enhancement strength (0.0 - 1.0)
+    /// Higher values add more local contrast (for dark scenes)
+    pub local_contrast: f32,
 }
 
 /// Calculate adaptive burst parameters based on scene brightness
@@ -197,26 +203,36 @@ pub fn calculate_adaptive_params(brightness: SceneBrightness) -> AdaptiveBurstPa
             frame_count: 1,        // No HDR+ needed - single frame sufficient
             robustness: 0.0,       // Not used for single frame
             motion_threshold: 0.0, // Not used for single frame
+            shadow_boost: 0.0,     // No shadow boost needed - scene is bright
+            local_contrast: 0.0,   // No enhancement needed
         },
         SceneBrightness::Bright => AdaptiveBurstParams {
             frame_count: 2,         // "1-2 images usually sufficient" per HDR+ paper
             robustness: 0.3,        // Very light denoising
             motion_threshold: 0.15, // Strictest motion rejection
+            shadow_boost: 0.1,      // Minimal shadow lift
+            local_contrast: 0.1,    // Minimal contrast enhancement
         },
         SceneBrightness::Medium => AdaptiveBurstParams {
-            frame_count: 4,  // Standard burst
-            robustness: 0.6, // Light denoising
+            frame_count: 4,         // Standard burst
+            robustness: 0.6,        // Light denoising
             motion_threshold: 0.2,
+            shadow_boost: 0.2,      // Default shadow boost
+            local_contrast: 0.15,   // Default contrast enhancement
         },
         SceneBrightness::Low => AdaptiveBurstParams {
-            frame_count: 6,        // More frames for low light
-            robustness: 1.0,       // Moderate denoising
+            frame_count: 6,         // More frames for low light
+            robustness: 1.0,        // Moderate denoising
             motion_threshold: 0.25, // More lenient (motion blur less visible in dark)
+            shadow_boost: 0.4,      // Moderate shadow recovery
+            local_contrast: 0.2,    // Moderate contrast enhancement
         },
         SceneBrightness::VeryDark => AdaptiveBurstParams {
             frame_count: 8,         // Maximum per HDR+ paper (2-8 range)
             robustness: 1.5,        // Aggressive denoising
             motion_threshold: 0.35, // Most lenient
+            shadow_boost: 0.7,      // Strong shadow recovery for night mode
+            local_contrast: 0.3,    // Strong local contrast for dark scenes
         },
     }
 }

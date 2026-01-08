@@ -5,6 +5,7 @@
 //! Handles photo capture, video recording, flash, zoom, and timer functionality.
 
 use crate::app::state::{AppModel, CameraMode, Message, RecordingState};
+use crate::pipelines::photo::burst_mode::burst::{calculate_adaptive_params, estimate_scene_brightness};
 use crate::pipelines::photo::burst_mode::BurstModeConfig;
 use cosmic::Task;
 use std::path::PathBuf;
@@ -256,11 +257,24 @@ impl AppModel {
         config.camera_metadata = camera_metadata;
         config.save_burst_raw_dng = self.config.save_burst_raw;
 
-        // Night mode effect: significantly boost shadows and brightness for low-light
-        // This makes dark scenes much brighter and more visible
-        config.shadow_boost = 0.7; // Strong shadow recovery (default is 0.2)
-        config.local_contrast = 0.3; // Enhanced local contrast (default is 0.15)
-        config.robustness = 1.5; // More aggressive denoising for dark scenes
+        // Calculate adaptive processing parameters based on scene brightness
+        // This ensures bright scenes aren't over-processed while dark scenes
+        // get appropriate shadow boost and denoising
+        if let Some(first_frame) = frames.first() {
+            let (luminance, brightness) = estimate_scene_brightness(first_frame);
+            let adaptive_params = calculate_adaptive_params(brightness);
+            config.shadow_boost = adaptive_params.shadow_boost;
+            config.local_contrast = adaptive_params.local_contrast;
+            config.robustness = adaptive_params.robustness;
+            info!(
+                luminance = luminance,
+                ?brightness,
+                shadow_boost = adaptive_params.shadow_boost,
+                local_contrast = adaptive_params.local_contrast,
+                robustness = adaptive_params.robustness,
+                "Adaptive burst mode parameters applied"
+            );
+        }
 
         // Get selected filter to apply after processing
         let selected_filter = self.selected_filter;
