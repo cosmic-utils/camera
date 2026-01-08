@@ -512,35 +512,51 @@ impl AppModel {
                 // 5px spacing
                 row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
 
-                // Burst mode toggle button
-                // - Toggles HDR+ between Auto and Off
-                // - Shows moon-off icon with strike-through when Off
-                // - Highlighted when burst mode would actually be used (based on scene brightness)
-                let is_hdr_off = !self.config.burst_mode_setting.is_enabled();
-                let moon_icon_bytes = if is_hdr_off { MOON_OFF_ICON } else { MOON_ICON };
-                let moon_icon = widget::icon::from_svg_bytes(moon_icon_bytes).symbolic(true);
+                // HDR+ / Burst mode toggle button visibility and behavior:
+                // - Off setting → button completely hidden
+                // - Auto with 1 frame (bright scene) AND not overridden → button hidden
+                // - Auto with >1 frames OR overridden → button visible
+                // - Fixed frame counts → button visible, can click to override
+                use crate::config::BurstModeSetting;
+                let show_burst_button = match self.config.burst_mode_setting {
+                    BurstModeSetting::Off => false,
+                    BurstModeSetting::Auto => {
+                        // Show button if: would use burst OR override is active
+                        self.auto_detected_frame_count > 1 || self.hdr_override_disabled
+                    }
+                    _ => true, // Fixed frame counts always show button
+                };
 
-                if is_disabled {
-                    row = row.push(
-                        widget::container(widget::icon(moon_icon).size(20))
-                            .style(|_theme| widget::container::Style {
-                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                ..Default::default()
-                            })
-                            .padding([4, 8]),
-                    );
-                } else {
-                    // Highlight when burst mode would actually be triggered
-                    let would_burst = self.would_use_burst_mode();
-                    row = row.push(overlay_icon_button(
-                        moon_icon,
-                        Some(Message::ToggleBurstMode),
-                        would_burst,
-                    ));
+                if show_burst_button {
+                    // Show moon-off icon when HDR+ is disabled (by override or setting)
+                    let is_hdr_active = self.would_use_burst_mode();
+                    let moon_icon_bytes = if is_hdr_active {
+                        MOON_ICON
+                    } else {
+                        MOON_OFF_ICON
+                    };
+                    let moon_icon = widget::icon::from_svg_bytes(moon_icon_bytes).symbolic(true);
+
+                    if is_disabled {
+                        row = row.push(
+                            widget::container(widget::icon(moon_icon).size(20))
+                                .style(|_theme| widget::container::Style {
+                                    text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                    ..Default::default()
+                                })
+                                .padding([4, 8]),
+                        );
+                    } else {
+                        row = row.push(overlay_icon_button(
+                            moon_icon,
+                            Some(Message::ToggleBurstMode),
+                            is_hdr_active,
+                        ));
+                    }
+
+                    // 5px spacing
+                    row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
                 }
-
-                // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
             }
 
             // File open button (only in Virtual mode, hidden when streaming)

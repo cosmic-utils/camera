@@ -2473,6 +2473,7 @@ pub async fn process_burst_mode(
 /// * `encoding_format` - Output format (JPEG, PNG, or DNG)
 /// * `camera_metadata` - Optional camera metadata for DNG encoding
 /// * `filter` - Optional filter to apply to the image (None or Standard = no filter)
+/// * `filename_suffix` - Optional suffix for filename (e.g., "_HDR+"), None for no suffix
 pub async fn save_output(
     frame: &MergedFrame,
     output_dir: std::path::PathBuf,
@@ -2480,6 +2481,7 @@ pub async fn save_output(
     encoding_format: super::EncodingFormat,
     camera_metadata: super::CameraMetadata,
     filter: Option<crate::app::FilterType>,
+    filename_suffix: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
     use super::{EncodingQuality, PhotoEncoder};
     use crate::shaders::apply_filter_gpu_rgba;
@@ -2491,7 +2493,13 @@ pub async fn save_output(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let filename = format!("IMG_NIGHT_{}.{}", timestamp, encoding_format.extension());
+    let suffix = filename_suffix.unwrap_or("");
+    let filename = format!(
+        "IMG_{}{}.{}",
+        timestamp,
+        suffix,
+        encoding_format.extension()
+    );
     let output_path = output_dir.join(&filename);
 
     tokio::fs::create_dir_all(&output_dir)

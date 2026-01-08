@@ -5,7 +5,11 @@
 //! Handles photo capture, video recording, flash, zoom, and timer functionality.
 
 use crate::app::state::{AppModel, CameraMode, Message, RecordingState};
+use crate::backends::camera::v4l2_controls::read_exposure_metadata;
 use crate::pipelines::photo::burst_mode::BurstModeConfig;
+use crate::pipelines::photo::burst_mode::burst::{
+    calculate_adaptive_params, estimate_scene_brightness,
+};
 use cosmic::Task;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,40 +39,33 @@ impl AppModel {
     /// Check if burst mode would be triggered based on current scene brightness
     ///
     /// Returns true if Auto mode would use more than 1 frame (actual burst capture)
-    /// or if a fixed frame count > 1 is set.
+    /// or if a fixed frame count > 1 is set, AND the user hasn't overridden it.
     pub fn would_use_burst_mode(&self) -> bool {
         use crate::config::BurstModeSetting;
+
+        // User override takes precedence
+        if self.hdr_override_disabled {
+            return false;
+        }
 
         match self.config.burst_mode_setting {
             BurstModeSetting::Off => false,
             BurstModeSetting::Frames4
             | BurstModeSetting::Frames6
             | BurstModeSetting::Frames8
-            | BurstModeSetting::Frames50 => {
-                true // Fixed frame counts always use burst
-            }
+            | BurstModeSetting::Frames50 => true, // Fixed frame counts always use burst
             BurstModeSetting::Auto => {
-                // Check scene brightness to determine if burst would be used
-                if let Some(frame) = &self.current_frame {
-                    use crate::pipelines::photo::burst_mode::burst::{
-                        calculate_adaptive_params, estimate_scene_brightness,
-                    };
-                    let (_luminance, brightness) = estimate_scene_brightness(frame);
-                    let params = calculate_adaptive_params(brightness);
-                    params.frame_count > 1
-                } else {
-                    // No frame available, assume burst would be used (conservative)
-                    true
-                }
+                // Use the cached auto-detected frame count (updated every 1 second)
+                self.auto_detected_frame_count > 1
             }
         }
     }
 
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
-        // Use HDR+ burst mode if enabled in settings (Auto or fixed frame count)
-        // No need to toggle the moon button - HDR+ is automatic when enabled
-        if self.config.burst_mode_setting.is_enabled() {
+        // Use HDR+ burst mode only if it would actually be used (frame_count > 1)
+        // This respects auto-detected brightness and user override
+        if self.would_use_burst_mode() {
             return self.capture_burst_mode_photo();
         }
 
@@ -155,29 +152,19 @@ impl AppModel {
             return Task::none();
         }
 
-        // Determine frame count: use config if set, otherwise auto-detect from scene
+        // Determine frame count: use config if set, otherwise use cached auto-detected value
         let frame_count = match self.config.burst_mode_setting.frame_count() {
             Some(count) => {
                 info!(frame_count = count, "Using configured frame count");
                 count
             }
             None => {
-                // Auto-detect based on scene brightness
-                let auto_count = if let Some(frame) = &self.current_frame {
-                    use crate::pipelines::photo::burst_mode::burst::{
-                        calculate_adaptive_params, estimate_scene_brightness,
-                    };
-                    let (_luminance, brightness) = estimate_scene_brightness(frame);
-                    let params = calculate_adaptive_params(brightness);
-                    info!(
-                        brightness = ?brightness,
-                        auto_frame_count = params.frame_count,
-                        "Auto-detected frame count based on scene brightness"
-                    );
-                    params.frame_count
-                } else {
-                    8 // Default fallback
-                };
+                // Use the cached auto-detected frame count (updated every 1 second)
+                let auto_count = self.auto_detected_frame_count;
+                info!(
+                    auto_frame_count = auto_count,
+                    "Using cached auto-detected frame count"
+                );
                 auto_count
             }
         };
@@ -213,6 +200,13 @@ impl AppModel {
             self.flash_active = false;
         }
 
+        // Stop the PipeWire camera stream during HDR+ processing
+        // This frees GPU/CPU resources for burst processing
+        // The stream will be restarted in handle_burst_mode_complete
+        info!("Stopping camera stream for HDR+ processing");
+        self.camera_cancel_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+
         // Update state to processing
         self.burst_mode.start_processing();
 
@@ -244,6 +238,14 @@ impl AppModel {
         // Get encoding format and camera metadata (including exposure info)
         let encoding_format: crate::pipelines::photo::EncodingFormat =
             self.config.photo_output_format.into();
+
+        // Read V4L2 exposure metadata for both camera metadata and brightness analysis
+        let exposure_metadata = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .and_then(|cam| cam.device_info.as_ref())
+            .map(|info| read_exposure_metadata(&info.path));
+
         let camera_metadata = self
             .available_cameras
             .get(self.current_camera_index)
@@ -253,11 +255,8 @@ impl AppModel {
                     camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
                     ..Default::default()
                 };
-                // Read exposure metadata from V4L2 device if available
-                if let Some(device_info) = &cam.device_info {
-                    let exposure = crate::backends::camera::v4l2_controls::read_exposure_metadata(
-                        &device_info.path,
-                    );
+                // Copy exposure metadata if available
+                if let Some(ref exposure) = exposure_metadata {
                     metadata.exposure_time = exposure.exposure_time;
                     metadata.iso = exposure.iso;
                     metadata.gain = exposure.gain;
@@ -273,11 +272,21 @@ impl AppModel {
         config.camera_metadata = camera_metadata;
         config.save_burst_raw_dng = self.config.save_burst_raw;
 
-        // Night mode effect: significantly boost shadows and brightness for low-light
-        // This makes dark scenes much brighter and more visible
-        config.shadow_boost = 0.7; // Strong shadow recovery (default is 0.2)
-        config.local_contrast = 0.3; // Enhanced local contrast (default is 0.15)
-        config.robustness = 1.5; // More aggressive denoising for dark scenes
+        // Calculate adaptive processing parameters based on scene brightness
+        if let Some(first_frame) = frames.first() {
+            let (_luminance, brightness) = estimate_scene_brightness(first_frame);
+            let adaptive_params = calculate_adaptive_params(brightness);
+            config.shadow_boost = adaptive_params.shadow_boost;
+            config.local_contrast = adaptive_params.local_contrast;
+            config.robustness = adaptive_params.robustness;
+            debug!(
+                ?brightness,
+                shadow_boost = adaptive_params.shadow_boost,
+                local_contrast = adaptive_params.local_contrast,
+                robustness = adaptive_params.robustness,
+                "Adaptive burst mode parameters applied"
+            );
+        }
 
         // Get selected filter to apply after processing
         let selected_filter = self.selected_filter;
@@ -331,6 +340,45 @@ impl AppModel {
         Self::delay_task(100, Message::PollBurstModeProgress)
     }
 
+    /// Handle periodic brightness evaluation tick
+    ///
+    /// Evaluates scene brightness every 1 second and updates auto_detected_frame_count.
+    /// Only runs when in Auto mode and not overridden.
+    pub(crate) fn handle_brightness_evaluation_tick(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::config::BurstModeSetting;
+        use crate::pipelines::photo::burst_mode::burst::{
+            calculate_adaptive_params, estimate_scene_brightness,
+        };
+
+        // Only evaluate in Auto mode when not overridden
+        if !matches!(self.config.burst_mode_setting, BurstModeSetting::Auto) {
+            return Task::none();
+        }
+
+        if self.hdr_override_disabled {
+            return Task::none();
+        }
+
+        // Evaluate brightness from current frame
+        if let Some(frame) = &self.current_frame {
+            let (_luminance, brightness) = estimate_scene_brightness(frame);
+            let params = calculate_adaptive_params(brightness);
+
+            // Only update and log if frame count changed
+            if params.frame_count != self.auto_detected_frame_count {
+                debug!(
+                    old_count = self.auto_detected_frame_count,
+                    new_count = params.frame_count,
+                    brightness = ?brightness,
+                    "Auto frame count updated based on scene brightness"
+                );
+                self.auto_detected_frame_count = params.frame_count;
+            }
+        }
+
+        Task::none()
+    }
+
     pub(crate) fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
         // If timer countdown is active, abort it
         if self.photo_timer_countdown.is_some() {
@@ -367,18 +415,56 @@ impl AppModel {
         use crate::config::BurstModeSetting;
         use cosmic::cosmic_config::CosmicConfigEntry;
 
-        // Toggle between Auto and Off
-        self.config.burst_mode_setting = match self.config.burst_mode_setting {
-            BurstModeSetting::Off => BurstModeSetting::Auto,
-            _ => BurstModeSetting::Off,
-        };
+        // Track if config changed (need to save)
+        let mut config_changed = false;
 
-        info!(setting = ?self.config.burst_mode_setting, "HDR+ toggled");
+        match self.config.burst_mode_setting {
+            BurstModeSetting::Off => {
+                // Turning ON: go to Auto mode, clear any override
+                self.config.burst_mode_setting = BurstModeSetting::Auto;
+                self.hdr_override_disabled = false;
+                config_changed = true;
+            }
+            BurstModeSetting::Auto => {
+                if self.hdr_override_disabled {
+                    // Already overridden - toggle back to enabled
+                    self.hdr_override_disabled = false;
+                    info!("HDR+ override cleared - auto mode re-enabled");
+                } else if self.auto_detected_frame_count > 1 {
+                    // HDR+ would be active - set override to disable it
+                    self.hdr_override_disabled = true;
+                    info!("HDR+ override enabled - auto mode disabled until next toggle");
+                } else {
+                    // HDR+ already not active (bright scene, 1 frame) - switch to Off
+                    self.config.burst_mode_setting = BurstModeSetting::Off;
+                    config_changed = true;
+                }
+            }
+            _ => {
+                // Fixed frame count modes - toggle override
+                if self.hdr_override_disabled {
+                    self.hdr_override_disabled = false;
+                    info!("HDR+ override cleared for fixed frame count mode");
+                } else {
+                    self.hdr_override_disabled = true;
+                    info!("HDR+ override enabled for fixed frame count mode");
+                }
+            }
+        }
 
-        // Save to config
-        if let Some(handler) = self.config_handler.as_ref() {
-            if let Err(err) = self.config.write_entry(handler) {
-                error!(?err, "Failed to save HDR+ setting");
+        info!(
+            setting = ?self.config.burst_mode_setting,
+            override_disabled = self.hdr_override_disabled,
+            auto_frame_count = self.auto_detected_frame_count,
+            "HDR+ toggled"
+        );
+
+        // Save config only if setting changed
+        if config_changed {
+            if let Some(handler) = self.config_handler.as_ref() {
+                if let Err(err) = self.config.write_entry(handler) {
+                    error!(?err, "Failed to save HDR+ setting");
+                }
             }
         }
         Task::none()
@@ -407,9 +493,13 @@ impl AppModel {
             5 => BurstModeSetting::Frames50,
             _ => BurstModeSetting::Auto,
         };
+
+        // Reset override when manually changing setting
+        self.hdr_override_disabled = false;
+
         info!(
             setting = ?self.config.burst_mode_setting,
-            "HDR+ setting changed"
+            "HDR+ setting changed (override cleared)"
         );
 
         if let Some(handler) = self.config_handler.as_ref() {
@@ -717,6 +807,19 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.is_capturing = false;
 
+        // Start a short blur transition (200ms) after stream restarts
+        // This keeps the last frame blurred until new frames arrive, then fades out smoothly
+        // Don't disable UI since capture is complete
+        let _ = self.transition_state.start_with_duration(200, false);
+
+        // Restart the camera stream after HDR+ processing
+        // The stream was stopped when processing began to free GPU resources.
+        // Increment the restart counter to change the subscription ID and trigger restart.
+        // Create a new cancel flag so the new subscription isn't immediately cancelled.
+        info!("Restarting camera stream after HDR+ processing");
+        self.camera_stream_restart_counter = self.camera_stream_restart_counter.wrapping_add(1);
+        self.camera_cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
         match result {
             Ok(path) => {
                 info!(path, "Burst mode capture complete");
@@ -794,6 +897,23 @@ async fn process_burst_mode_frames_with_atomic(
         }
     }
 
+    // Save first frame as reference (before HDR+ processing)
+    if let Some(first_frame) = frames.first() {
+        if let Err(e) = save_first_burst_frame(
+            first_frame,
+            &save_dir,
+            crop_rect,
+            encoding_format,
+            &camera_metadata,
+            filter,
+        )
+        .await
+        {
+            warn!(error = %e, "Failed to save first burst frame");
+            // Continue with HDR+ processing even if first frame save fails
+        }
+    }
+
     // Create progress callback that updates the atomic counter
     let progress_callback: ProgressCallback = Arc::new(move |progress: f32| {
         let progress_int = (progress * 1000.0) as u32;
@@ -811,9 +931,44 @@ async fn process_burst_mode_frames_with_atomic(
         encoding_format,
         camera_metadata,
         Some(filter),
+        Some("_HDR+"),
     )
     .await?;
 
     info!(path = %output_path.display(), "Burst mode photo saved");
     Ok(output_path.display().to_string())
+}
+
+/// Save the first frame of a burst as a separate file for comparison
+async fn save_first_burst_frame(
+    frame: &crate::backends::camera::types::CameraFrame,
+    save_dir: &std::path::Path,
+    crop_rect: Option<(u32, u32, u32, u32)>,
+    encoding_format: crate::pipelines::photo::EncodingFormat,
+    camera_metadata: &crate::pipelines::photo::CameraMetadata,
+    filter: crate::app::FilterType,
+) -> Result<PathBuf, String> {
+    use crate::pipelines::photo::burst_mode::{MergedFrame, save_output};
+
+    // Convert CameraFrame to MergedFrame for save_output
+    let merged = MergedFrame {
+        data: frame.data.to_vec(),
+        width: frame.width,
+        height: frame.height,
+    };
+
+    // Reuse save_output with no filename suffix (plain IMG_{timestamp})
+    let path = save_output(
+        &merged,
+        save_dir.to_path_buf(),
+        crop_rect,
+        encoding_format,
+        camera_metadata.clone(),
+        Some(filter),
+        None, // No suffix for first frame
+    )
+    .await?;
+
+    info!(path = %path.display(), "First burst frame saved for comparison");
+    Ok(path)
 }

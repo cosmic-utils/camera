@@ -16,6 +16,8 @@
 
 use crate::backends::camera::CameraBackendManager;
 use crate::backends::camera::types::CameraFrame;
+use crate::backends::camera::v4l2_controls::ExposureMetadata;
+use crate::shaders::{BrightnessMetrics as GpuBrightnessMetrics, analyze_brightness_gpu};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -124,10 +126,17 @@ pub fn validate_config(config: &BurstModeConfig) -> Result<(), String> {
 //=============================================================================
 
 /// Scene brightness classification
+///
+/// Based on HDR+ paper (Hasinoff et al.):
+/// - "In bright scenes, capturing 1-2 images is usually sufficient"
+/// - "In practice, we limit our bursts to 2-8 images"
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SceneBrightness {
+    /// Very bright scene (e.g., direct sunlight, well-exposed outdoor)
+    /// Average luminance > 0.5 - no HDR+ benefit, single frame sufficient
+    VeryBright,
     /// Well-lit scene (e.g., outdoor daylight, bright indoor)
-    /// Average luminance > 0.3
+    /// Average luminance 0.3 - 0.5
     Bright,
     /// Medium lighting (e.g., indoor with lights on, overcast outdoor)
     /// Average luminance 0.1 - 0.3
@@ -142,8 +151,12 @@ pub enum SceneBrightness {
 
 impl SceneBrightness {
     /// Classify scene brightness based on average luminance
+    ///
+    /// Thresholds based on HDR+ paper recommendations for frame count selection
     pub fn from_luminance(avg_luminance: f32) -> Self {
-        if avg_luminance > 0.3 {
+        if avg_luminance > 0.5 {
+            SceneBrightness::VeryBright
+        } else if avg_luminance > 0.3 {
             SceneBrightness::Bright
         } else if avg_luminance > 0.1 {
             SceneBrightness::Medium
@@ -164,11 +177,19 @@ pub struct AdaptiveBurstParams {
     pub robustness: f32,
     /// Maximum motion tolerance before rejecting frame
     pub motion_threshold: f32,
+    /// Shadow boost strength for tone mapping (0.0 - 1.0)
+    /// Higher values lift shadows more aggressively (for dark scenes)
+    pub shadow_boost: f32,
+    /// Local contrast enhancement strength (0.0 - 1.0)
+    /// Higher values add more local contrast (for dark scenes)
+    pub local_contrast: f32,
 }
 
 /// Calculate adaptive burst parameters based on scene brightness
 ///
-/// Based on HDR+ paper recommendations:
+/// Based on HDR+ paper (Hasinoff et al.) recommendations:
+/// - "In bright scenes, capturing 1-2 images is usually sufficient"
+/// - "In practice, we limit our bursts to 2-8 images"
 /// - Darker scenes benefit from more frames (more noise to average out)
 /// - Brighter scenes need fewer frames (less noise, risk of motion blur)
 /// - Robustness parameter scales with darkness (more aggressive denoising)
@@ -180,25 +201,40 @@ pub struct AdaptiveBurstParams {
 /// Recommended burst parameters
 pub fn calculate_adaptive_params(brightness: SceneBrightness) -> AdaptiveBurstParams {
     match brightness {
+        SceneBrightness::VeryBright => AdaptiveBurstParams {
+            frame_count: 1,        // No HDR+ needed - single frame sufficient
+            robustness: 0.0,       // Not used for single frame
+            motion_threshold: 0.0, // Not used for single frame
+            shadow_boost: 0.0,     // No shadow boost needed - scene is bright
+            local_contrast: 0.0,   // No enhancement needed
+        },
         SceneBrightness::Bright => AdaptiveBurstParams {
-            frame_count: 4,        // Minimal frames, low noise already
-            robustness: 0.5,       // Light denoising
-            motion_threshold: 0.2, // Stricter motion rejection
+            frame_count: 2,         // "1-2 images usually sufficient" per HDR+ paper
+            robustness: 0.3,        // Very light denoising
+            motion_threshold: 0.15, // Strictest motion rejection
+            shadow_boost: 0.1,      // Minimal shadow lift
+            local_contrast: 0.1,    // Minimal contrast enhancement
         },
         SceneBrightness::Medium => AdaptiveBurstParams {
-            frame_count: 6,  // Standard burst
-            robustness: 0.8, // Moderate denoising
-            motion_threshold: 0.25,
+            frame_count: 4,  // Standard burst
+            robustness: 0.6, // Light denoising
+            motion_threshold: 0.2,
+            shadow_boost: 0.2,    // Default shadow boost
+            local_contrast: 0.15, // Default contrast enhancement
         },
         SceneBrightness::Low => AdaptiveBurstParams {
-            frame_count: 10,       // More frames for low light
-            robustness: 1.2,       // Stronger denoising
-            motion_threshold: 0.3, // More lenient (motion blur less visible in dark)
+            frame_count: 6,         // More frames for low light
+            robustness: 1.0,        // Moderate denoising
+            motion_threshold: 0.25, // More lenient (motion blur less visible in dark)
+            shadow_boost: 0.4,      // Moderate shadow recovery
+            local_contrast: 0.2,    // Moderate contrast enhancement
         },
         SceneBrightness::VeryDark => AdaptiveBurstParams {
-            frame_count: 15,        // Maximum frames
+            frame_count: 8,         // Maximum per HDR+ paper (2-8 range)
             robustness: 1.5,        // Aggressive denoising
             motion_threshold: 0.35, // Most lenient
+            shadow_boost: 0.7,      // Strong shadow recovery for night mode
+            local_contrast: 0.3,    // Strong local contrast for dark scenes
         },
     }
 }
@@ -249,6 +285,206 @@ pub fn estimate_scene_brightness(frame: &CameraFrame) -> (f32, SceneBrightness) 
     );
 
     (avg_luminance, brightness)
+}
+
+/// Multi-source brightness analysis combining GPU histogram, V4L2 exposure, and luminance
+#[derive(Debug, Clone)]
+pub struct MultiMetricBrightness {
+    /// Simple luminance average (fast, always available)
+    pub luminance_avg: f32,
+    /// GPU histogram metrics (more accurate, may fail on some systems)
+    pub histogram: Option<GpuBrightnessMetrics>,
+    /// V4L2 exposure metadata (camera settings, if available)
+    pub exposure: Option<ExposureMetadata>,
+    /// Final fused brightness classification
+    pub classification: SceneBrightness,
+    /// Confidence in the classification (0.0-1.0)
+    pub confidence: f32,
+}
+
+/// Estimate brightness from V4L2 exposure settings
+///
+/// Uses exposure time and ISO/gain to infer scene brightness.
+/// Cameras use longer exposure or higher ISO in darker scenes.
+fn classify_from_exposure(exposure: &ExposureMetadata) -> Option<(SceneBrightness, f32)> {
+    // Exposure time in seconds
+    let exp_time = exposure.exposure_time?;
+
+    // Get ISO or gain (normalize gain to ISO-like scale)
+    let iso = exposure.iso.map(|i| i as f32).or_else(|| {
+        // Map gain to approximate ISO: gain of 0 ~ ISO 100, gain of 255 ~ ISO 3200
+        exposure
+            .gain
+            .map(|g| 100.0 * (1.0 + g.max(0) as f32 / 32.0))
+    })?;
+
+    // Calculate exposure value (EV) approximation
+    // EV = log2(100 * f^2 / (ISO * t)) for f/2.0 (typical webcam)
+    // Simplified: higher EV = brighter scene
+    let ev = (100.0 * 4.0 / (iso * exp_time as f32)).log2();
+
+    debug!(
+        exposure_time = exp_time,
+        iso, ev, "V4L2 exposure-based brightness estimation"
+    );
+
+    // Map EV to brightness classification
+    // EV ~14+ is very bright (sunny outdoors)
+    // EV ~10-14 is bright (overcast, shade)
+    // EV ~6-10 is medium (indoor lighting)
+    // EV ~2-6 is low (dim indoor)
+    // EV <2 is very dark (night)
+    let (brightness, confidence) = if ev > 12.0 {
+        (SceneBrightness::VeryBright, 0.8)
+    } else if ev > 9.0 {
+        (SceneBrightness::Bright, 0.7)
+    } else if ev > 5.0 {
+        (SceneBrightness::Medium, 0.6)
+    } else if ev > 1.0 {
+        (SceneBrightness::Low, 0.7)
+    } else {
+        (SceneBrightness::VeryDark, 0.8)
+    };
+
+    Some((brightness, confidence))
+}
+
+/// Classify brightness from GPU histogram metrics
+///
+/// Uses histogram-derived metrics for more nuanced classification.
+fn classify_from_histogram(metrics: &GpuBrightnessMetrics) -> (SceneBrightness, f32) {
+    let mean = metrics.mean_luminance;
+    let median = metrics.median_luminance;
+    let p5 = metrics.percentile_5;
+    let p95 = metrics.percentile_95;
+    let dynamic_range = metrics.dynamic_range_stops;
+
+    // Use median as primary indicator (more robust to outliers than mean)
+    // But also consider dynamic range and shadow/highlight distribution
+
+    // High dynamic range scenes need more careful handling
+    let is_high_contrast = dynamic_range > 6.0;
+
+    // Determine base classification from median
+    let base_brightness = if median > 0.5 {
+        SceneBrightness::VeryBright
+    } else if median > 0.3 {
+        SceneBrightness::Bright
+    } else if median > 0.1 {
+        SceneBrightness::Medium
+    } else if median > 0.03 {
+        SceneBrightness::Low
+    } else {
+        SceneBrightness::VeryDark
+    };
+
+    // Calculate confidence based on histogram characteristics
+    let mut confidence: f32 = 0.9;
+
+    // Reduce confidence if mean and median diverge significantly (skewed histogram)
+    let skew = (mean - median).abs();
+    if skew > 0.1 {
+        confidence -= 0.1;
+    }
+
+    // High contrast scenes are harder to classify accurately
+    if is_high_contrast {
+        confidence -= 0.1;
+    }
+
+    // Boost confidence if shadows/highlights match expectation
+    match base_brightness {
+        SceneBrightness::VeryBright => {
+            if metrics.highlight_fraction > 0.2 {
+                confidence += 0.05;
+            }
+        }
+        SceneBrightness::VeryDark => {
+            if metrics.shadow_fraction > 0.3 {
+                confidence += 0.05;
+            }
+        }
+        _ => {}
+    }
+
+    debug!(
+        mean,
+        median,
+        p5,
+        p95,
+        dynamic_range,
+        ?base_brightness,
+        confidence,
+        "Histogram-based brightness classification"
+    );
+
+    (base_brightness, confidence.clamp(0.0, 1.0))
+}
+
+/// Perform comprehensive multi-metric brightness analysis
+///
+/// Combines three sources of brightness information:
+/// 1. GPU histogram (most accurate, uses percentiles and dynamic range)
+/// 2. V4L2 exposure settings (what the camera thinks brightness is)
+/// 3. Simple luminance average (fast fallback)
+///
+/// Returns fused classification with confidence score.
+pub fn analyze_brightness_multi(
+    frame: &CameraFrame,
+    exposure: Option<ExposureMetadata>,
+) -> MultiMetricBrightness {
+    // 1. Always compute simple luminance (fast, always works)
+    let (luminance_avg, simple_brightness) = estimate_scene_brightness(frame);
+    let simple_confidence = 0.5; // Lowest confidence - just averaging
+
+    // 2. Try GPU histogram analysis (most accurate)
+    let histogram = analyze_brightness_gpu(&frame.data, frame.width, frame.height);
+    let histogram_result = histogram.as_ref().map(classify_from_histogram);
+
+    // 3. Try V4L2 exposure analysis
+    let exposure_result = exposure.as_ref().and_then(classify_from_exposure);
+
+    // Fuse results using confidence-weighted voting
+    let mut votes: [(SceneBrightness, f32); 3] = [
+        (simple_brightness, simple_confidence),
+        histogram_result.unwrap_or((simple_brightness, 0.0)),
+        exposure_result.unwrap_or((simple_brightness, 0.0)),
+    ];
+
+    // Sort by confidence (highest first)
+    votes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Use highest confidence result, but boost confidence if sources agree
+    let (classification, mut final_confidence) = votes[0];
+
+    // Check for agreement between sources
+    let sources_agree = votes
+        .iter()
+        .filter(|(b, c)| *c > 0.1 && *b == classification)
+        .count();
+
+    if sources_agree >= 2 {
+        final_confidence = (final_confidence + 0.1).min(1.0);
+    }
+
+    info!(
+        luminance_avg,
+        ?simple_brightness,
+        histogram_available = histogram.is_some(),
+        exposure_available = exposure.is_some(),
+        ?classification,
+        confidence = final_confidence,
+        sources_agreeing = sources_agree,
+        "Multi-metric brightness analysis complete"
+    );
+
+    MultiMetricBrightness {
+        luminance_avg,
+        histogram,
+        exposure,
+        classification,
+        confidence: final_confidence,
+    }
 }
 
 /// Capture a burst with adaptive sizing based on scene brightness
@@ -328,35 +564,49 @@ mod tests {
 
     #[test]
     fn test_scene_brightness_classification() {
-        // Very dark scene
+        // Very bright scene (> 0.5)
         assert_eq!(
-            SceneBrightness::from_luminance(0.01),
-            SceneBrightness::VeryDark
+            SceneBrightness::from_luminance(0.6),
+            SceneBrightness::VeryBright
         );
 
-        // Low light scene
-        assert_eq!(SceneBrightness::from_luminance(0.05), SceneBrightness::Low);
+        // Bright scene (0.3 - 0.5)
+        assert_eq!(
+            SceneBrightness::from_luminance(0.4),
+            SceneBrightness::Bright
+        );
 
-        // Medium scene
+        // Medium scene (0.1 - 0.3)
         assert_eq!(
             SceneBrightness::from_luminance(0.2),
             SceneBrightness::Medium
         );
 
-        // Bright scene
+        // Low light scene (0.03 - 0.1)
+        assert_eq!(SceneBrightness::from_luminance(0.05), SceneBrightness::Low);
+
+        // Very dark scene (< 0.03)
         assert_eq!(
-            SceneBrightness::from_luminance(0.5),
-            SceneBrightness::Bright
+            SceneBrightness::from_luminance(0.01),
+            SceneBrightness::VeryDark
         );
     }
 
     #[test]
     fn test_adaptive_params_scaling() {
+        let very_bright = calculate_adaptive_params(SceneBrightness::VeryBright);
         let bright = calculate_adaptive_params(SceneBrightness::Bright);
         let dark = calculate_adaptive_params(SceneBrightness::VeryDark);
 
-        // Darker scenes should capture more frames
+        // Very bright scenes should use 1 frame (no HDR+)
+        assert_eq!(very_bright.frame_count, 1);
+
+        // Bright scenes should use 2 frames per HDR+ paper
+        assert_eq!(bright.frame_count, 2);
+
+        // Darker scenes should capture more frames (max 8 per HDR+ paper)
         assert!(dark.frame_count > bright.frame_count);
+        assert_eq!(dark.frame_count, 8);
 
         // Darker scenes should use higher robustness
         assert!(dark.robustness > bright.robustness);

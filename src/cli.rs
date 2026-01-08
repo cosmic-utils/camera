@@ -432,7 +432,8 @@ pub fn process_burst_mode(
             None,                 // no crop
             EncodingFormat::Jpeg, // Use JPEG for easier viewing
             camera_metadata,
-            None, // no filter
+            None,          // no filter
+            Some("_HDR+"), // filename suffix
         )
         .await
     })?;

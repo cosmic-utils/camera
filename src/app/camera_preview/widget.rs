@@ -54,10 +54,17 @@ impl AppModel {
             }
 
             // Use custom video widget with GPU primitive rendering
-            // During transitions, use blur shader (video_id=1), otherwise normal shader (video_id=0)
-            let should_blur = self.transition_state.should_blur();
+            // During transitions or HDR+ processing, use blur shader (video_id=1)
+            let is_processing_hdr =
+                self.burst_mode.stage == crate::app::state::BurstModeStage::Processing;
+            let should_blur = self.transition_state.should_blur() || is_processing_hdr;
             if should_blur && count.is_multiple_of(10) {
-                info!("Applying blur to frame during transition");
+                let reason = if is_processing_hdr {
+                    "HDR+ processing"
+                } else {
+                    "transition"
+                };
+                info!("Applying blur to frame during {}", reason);
             }
             let video_id = if should_blur { 1 } else { 0 };
 

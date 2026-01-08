@@ -266,6 +266,8 @@ impl cosmic::Application for AppModel {
             base_exposure_time: None,
             theatre: TheatreState::default(),
             burst_mode: BurstModeState::default(),
+            auto_detected_frame_count: 1, // Start with 1 (no HDR+) until first brightness evaluation
+            hdr_override_disabled: false,
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
@@ -280,6 +282,7 @@ impl cosmic::Application for AppModel {
             picker_selected_resolution: None,
             backend_manager: Some(backend_manager),
             camera_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            camera_stream_restart_counter: 0,
             current_frame: None,
             available_cameras,
             current_camera_index,
@@ -542,6 +545,9 @@ impl cosmic::Application for AppModel {
         // This ensures the subscription restarts when cameras become available
         let cameras_initialized = !self.available_cameras.is_empty();
 
+        // Restart counter forces subscription to restart (e.g., after HDR+ processing)
+        let restart_counter = self.camera_stream_restart_counter;
+
         // Check if file source is active - if so, don't run camera subscription
         // This applies in Virtual mode OR when --preview-source was used (any mode)
         let file_source_active = self.virtual_camera_file_source.is_some();
@@ -560,7 +566,8 @@ impl cosmic::Application for AppModel {
                     // NOTE: mode is NOT included here!
                     // Camera only needs to restart when actual format changes, not on mode switch
                     cameras_initialized,
-                ), // Camera restarts only when format_id or camera_index changes
+                    restart_counter, // Forces restart after HDR+ processing
+                ),
                 cosmic::iced::stream::channel(100, move |mut output| async move {
                     info!(camera_index, "Camera subscription started (PipeWire)");
 
@@ -974,6 +981,24 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        // Brightness evaluation subscription (every 1 second when in Auto mode)
+        // Updates auto_detected_frame_count based on scene brightness
+        // Initial delay of 2 seconds at startup to allow camera to stabilize
+        let brightness_eval_sub = if self.mode == CameraMode::Photo
+            && matches!(
+                self.config.burst_mode_setting,
+                crate::config::BurstModeSetting::Auto
+            )
+            && !self.hdr_override_disabled
+            && self.current_frame.is_some()
+        {
+            // Evaluate brightness every 1 second
+            let interval = std::time::Duration::from_secs(1);
+            cosmic::iced::time::every(interval).map(|_| Message::BrightnessEvaluationTick)
+        } else {
+            Subscription::none()
+        };
+
         Subscription::batch([
             config_sub,
             camera_sub,
@@ -982,6 +1007,7 @@ impl cosmic::Application for AppModel {
             file_source_preview_sub,
             timer_animation_sub,
             privacy_polling_sub,
+            brightness_eval_sub,
         ])
     }
 

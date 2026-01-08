@@ -113,6 +113,13 @@ impl AppModel {
             return task.map(cosmic::Action::App);
         }
 
+        // During HDR+ processing, the camera stream is stopped.
+        // This is a safety fallback to ignore any frames that arrive during shutdown.
+        // The last frame before processing started remains displayed with blur effect.
+        if self.burst_mode.stage == crate::app::state::BurstModeStage::Processing {
+            return Task::none();
+        }
+
         // Collect frames for burst mode capture
         if self.burst_mode.is_collecting_frames() {
             let collection_complete = self.burst_mode.add_frame(Arc::clone(&frame));

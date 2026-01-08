@@ -169,6 +169,7 @@ impl AppModel {
                 debug!("Burst mode state reset");
                 Task::none()
             }
+            Message::BrightnessEvaluationTick => self.handle_brightness_evaluation_tick(),
             Message::CyclePhotoAspectRatio => self.handle_cycle_photo_aspect_ratio(),
             Message::FlashComplete => self.handle_flash_complete(),
             Message::CyclePhotoTimer => self.handle_cycle_photo_timer(),

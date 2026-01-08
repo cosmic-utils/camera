@@ -7,8 +7,10 @@
 //! All filters operate directly on RGBA textures for simplicity and efficiency.
 
 mod gpu_filter;
+mod histogram_pipeline;
 
 pub use gpu_filter::{GpuFilterPipeline, apply_filter_gpu_rgba, get_gpu_filter_pipeline};
+pub use histogram_pipeline::{BrightnessMetrics, analyze_brightness_gpu};
 
 /// Shared filter functions (WGSL)
 /// Contains: luminance(), hash(), apply_filter()
