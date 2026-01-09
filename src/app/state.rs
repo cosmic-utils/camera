@@ -640,8 +640,14 @@ pub struct AppModel {
     pub burst_mode_frame_count_dropdown_options: Vec<String>,
     /// Photo output format dropdown options (JPEG, PNG, DNG)
     pub photo_output_format_dropdown_options: Vec<String>,
+    /// Backend dropdown options
+    pub backend_dropdown_options: Vec<String>,
+    /// Available backend types (corresponding to dropdown options)
+    pub available_backends: Vec<crate::backends::camera::CameraBackendType>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
+    /// Whether the bitrate info matrix is visible
+    pub bitrate_info_visible: bool,
 
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
@@ -1193,6 +1199,8 @@ pub enum Message {
     SelectPhotoOutputFormat(usize),
     /// Toggle saving raw burst frames as DNG (debugging feature)
     ToggleSaveBurstRaw,
+    /// Select camera backend
+    SelectBackend(usize),
     /// Toggle virtual camera feature enabled
     ToggleVirtualCameraEnabled,
 
