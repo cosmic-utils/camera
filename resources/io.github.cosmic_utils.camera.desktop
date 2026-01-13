@@ -1,13 +1,17 @@
 [Desktop Entry]
 Type=Application
 Name=Camera
+Name[cs]=Kamera
 GenericName=Camera
+GenericName[cs]=Kamera
 Comment=Third-party camera app for the COSMIC™ desktop
+Comment[cs]=Aplikace kamery pro prostředí COSMIC™
 Icon=io.github.cosmic_utils.camera
 Exec=camera
 Terminal=false
 Categories=AudioVideo;Video;Recorder;Photography;
 Keywords=camera;webcam;photo;video;
+Keywords[cs]=kamera;webkamera;fotografie;video;
 MimeType=
 StartupNotify=true
 X-GNOME-UsesNotifications=true
