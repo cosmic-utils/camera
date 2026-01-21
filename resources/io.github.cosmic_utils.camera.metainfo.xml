@@ -4,7 +4,9 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>Camera</name>
+  <name xml:lang="cs">Kamera</name>
   <summary>Capture photos and videos</summary>
+  <summary xml:lang="cs">Pořizujte fotografie a videa</summary>
   <description>
     <p>
       Camera is a third-party camera application for the COSMIC™ desktop environment.
@@ -26,6 +28,28 @@
       <li>Multi-camera support: easily switch between cameras and microphones</li>
     </ul>
   </description>
+  <description xml:lang="cs">
+    <p>
+      Aplikace kamery od třetí strany pro desktopové prostředí COSMIC™.
+      Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód, 
+      aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
+    </p>
+    <p>
+      Otevřete aplikaci a začněte zachycovat okamžiky.
+      Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů
+      nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech
+      vypadali skvěle s aplikovaným oblíbeným filtrem.
+    </p>
+    <p>Klíčové funkce:</p>
+    <ul>
+      <li>Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace</li>
+      <li>Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další</li>
+      <li>15 kreativních filtrů: Mono, Sepia, Vivid, Noir, Pencil Sketch a další</li>
+      <li>Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
+      <li>Režim kina: celoobrazovkový náhled bez rušivých prvků</li>
+      <li>Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
+    </ul>
+  </description>
   <launchable type="desktop-id">io.github.cosmic_utils.camera.desktop</launchable>
   <provides>
     <id>com.system76.CosmicApplication</id>
@@ -43,44 +67,54 @@
     <color type="primary" scheme_preference="dark">#1a5fb4</color>
   </branding>
   <screenshots>
-    <screenshot type="default" xml:lang="en">
+    <screenshot type="default">
       <caption>Main camera view (Photo mode)</caption>
+      <caption xml:lang="cs">Náhled hlavní kamery (režim fotografie)</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Main camera view (Photo mode)</caption>
+      <caption xml:lang="cs">Náhled hlavní kamery (režim fotografie)</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Filter picker</caption>
+      <caption xml:lang="cs">Výběr filtrů</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-003.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Video recording in progress</caption>
+      <caption xml:lang="cs">Probíhající natáčení videa</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-004.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>QR code detection</caption>
+      <caption xml:lang="cs">Detekce QR kódu</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Format/resolution picker</caption>
+      <caption xml:lang="cs">Výběr formátu/rozlišení</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Virtual camera streaming</caption>
+      <caption xml:lang="cs">Přenos virtuální kamery</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-007.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Theatre/fullscreen mode</caption>
+      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-008.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Theatre/fullscreen mode</caption>
+      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-009.png</image>
     </screenshot>
-    <screenshot xml:lang="en">
+    <screenshot>
       <caption>Theatre/fullscreen mode</caption>
+      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-010.png</image>
     </screenshot>
   </screenshots>
