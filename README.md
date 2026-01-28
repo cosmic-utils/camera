@@ -200,6 +200,38 @@ just clippy
 just test
 ```
 
+### Distrobox (Atomic Desktops)
+
+For development on atomic/immutable desktops (Fedora Silverblue, Kinoite, Bazzite, etc.):
+
+```bash
+# Create the development container
+distrobox assemble create
+
+# Enter the container
+distrobox enter camera-dev
+
+# Build inside the container
+just build-release
+
+# Run the binary on the host (not inside distrobox)
+# Camera access via PipeWire requires running on the host
+./target/release/camera
+
+# Remove when no longer needed
+distrobox rm camera-dev
+```
+
+To run GUI apps from inside the container, allow local display access on your host:
+
+```bash
+xhost +si:localuser:$USER
+```
+
+Add this to `~/.distroboxrc` to make it permanent.
+
+Note: Camera access requires PipeWire, which doesn't work reliably from inside containers. Build in distrobox, run on host for full functionality.
+
 ### Flatpak Development
 
 ```bash
