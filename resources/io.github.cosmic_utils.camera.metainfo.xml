@@ -13,41 +13,37 @@
       Whether you need to snap a quick photo, record a video, or scan a QR code, Camera
       provides a clean and intuitive interface that stays out of your way.
     </p>
+    <p xml:lang="cs">
+      Aplikace kamery od třetí strany pro desktopové prostředí COSMIC™.
+      Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód,
+      aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
+    </p>
     <p>
       Just open the app and start capturing moments.
       Add fun filters to your photos, scan QR codes to open links or connect to WiFi,
       or use virtual camera mode to look great in video calls with your favorite filter applied.
     </p>
-    <p>Key features:</p>
-    <ul>
-      <li>Photo and video capture: high quality and hardware accelerated</li>
-      <li>QR code scanner: open links, connect to WiFi, and more</li>
-      <li>15 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more</li>
-      <li>Virtual camera: use your filtered camera feed in video calls and other apps</li>
-      <li>Theatre mode: fullscreen, distraction-free preview</li>
-      <li>Multi-camera support: easily switch between cameras and microphones</li>
-    </ul>
-  </description>
-  <description xml:lang="cs">
-    <p>
-      Aplikace kamery od třetí strany pro desktopové prostředí COSMIC™.
-      Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód, 
-      aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
-    </p>
-    <p>
+    <p xml:lang="cs">
       Otevřete aplikaci a začněte zachycovat okamžiky.
       Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů
       nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech
       vypadali skvěle s aplikovaným oblíbeným filtrem.
     </p>
-    <p>Klíčové funkce:</p>
+    <p>Key features:</p>
+    <p xml:lang="cs">Klíčové funkce:</p>
     <ul>
-      <li>Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace</li>
-      <li>Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další</li>
-      <li>15 kreativních filtrů: Mono, Sepia, Vivid, Noir, Pencil Sketch a další</li>
-      <li>Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
-      <li>Režim kina: celoobrazovkový náhled bez rušivých prvků</li>
-      <li>Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
+      <li>Photo and video capture: high quality and hardware accelerated</li>
+      <li xml:lang="cs">Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace</li>
+      <li>QR code scanner: open links, connect to WiFi, and more</li>
+      <li xml:lang="cs">Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další</li>
+      <li>15 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more</li>
+      <li xml:lang="cs">15 kreativních filtrů: Mono, Sepia, Vivid, Noir, Pencil Sketch a další</li>
+      <li>Virtual camera: use your filtered camera feed in video calls and other apps</li>
+      <li xml:lang="cs">Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
+      <li>Theatre mode: fullscreen, distraction-free preview</li>
+      <li xml:lang="cs">Režim kina: celoobrazovkový náhled bez rušivých prvků</li>
+      <li>Multi-camera support: easily switch between cameras and microphones</li>
+      <li xml:lang="cs">Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.cosmic_utils.camera.desktop</launchable>
