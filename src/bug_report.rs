@@ -26,6 +26,7 @@ impl BugReportGenerator {
         video_encoders: &[crate::media::encoders::video::EncoderInfo],
         selected_encoder_index: usize,
         _wgpu_adapter_info: Option<String>,
+        save_folder_name: &str,
     ) -> Result<PathBuf, String> {
         info!("Generating bug report...");
 
@@ -69,7 +70,7 @@ impl BugReportGenerator {
         report.push_str(&Self::get_pipewire_dump().await);
 
         // Save to file
-        let output_path = Self::get_report_path();
+        let output_path = Self::get_report_path(save_folder_name);
         tokio::fs::write(&output_path, report)
             .await
             .map_err(|e| format!("Failed to write bug report: {}", e))?;
@@ -79,13 +80,13 @@ impl BugReportGenerator {
     }
 
     /// Get the path where the bug report will be saved
-    /// Reports are saved in the same directory as photos/videos: ~/Pictures/camera/
-    fn get_report_path() -> PathBuf {
+    /// Reports are saved in the same directory as photos/videos: ~/Pictures/Camera/
+    fn get_report_path(save_folder_name: &str) -> PathBuf {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let filename = format!("camera-bug-report-{}.md", timestamp);
 
         // Use the same directory as photos/videos
-        let report_dir = crate::app::get_photo_directory();
+        let report_dir = crate::app::get_photo_directory(save_folder_name);
 
         // Ensure directory exists
         if let Err(e) = std::fs::create_dir_all(&report_dir) {

@@ -78,7 +78,7 @@ impl AppModel {
         self.is_capturing = true;
 
         let frame_arc = Arc::clone(frame);
-        let save_dir = crate::app::get_photo_directory();
+        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
 
@@ -221,7 +221,7 @@ impl AppModel {
             return Task::none();
         }
 
-        let save_dir = crate::app::get_photo_directory();
+        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
 
         // Calculate crop rectangle based on aspect ratio setting (same as regular photo capture)
         let crop_rect = if let Some(frame) = frames.first() {
@@ -610,7 +610,7 @@ impl AppModel {
                 return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
             }
             Err(err) => {
-                let expected_dir = crate::app::get_photo_directory();
+                let expected_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
                 error!(
                     error = %err,
                     expected_directory = %expected_dir.display(),
@@ -675,7 +675,7 @@ impl AppModel {
                 return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
             }
             Err(err) => {
-                let expected_dir = crate::app::get_photo_directory();
+                let expected_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
                 error!(
                     error = %err,
                     expected_directory = %expected_dir.display(),
@@ -712,7 +712,7 @@ impl AppModel {
 
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let filename = format!("VID_{}.mp4", timestamp);
-        let save_dir = crate::app::get_photo_directory();
+        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         let output_path = save_dir.join(&filename);
 
         info!(

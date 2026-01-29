@@ -17,7 +17,7 @@ impl AppModel {
     // =========================================================================
 
     pub(crate) fn handle_open_gallery(&self) -> Task<cosmic::Action<Message>> {
-        let photo_dir = crate::app::get_photo_directory();
+        let photo_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         info!(path = %photo_dir.display(), "Opening gallery directory");
 
         if let Err(e) = open::that(&photo_dir) {
@@ -29,7 +29,7 @@ impl AppModel {
     }
 
     pub(crate) fn handle_refresh_gallery_thumbnail(&self) -> Task<cosmic::Action<Message>> {
-        let save_dir = crate::app::get_photo_directory();
+        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         Task::perform(
             async move { crate::storage::load_latest_thumbnail(save_dir).await },
             |handle| cosmic::Action::App(Message::GalleryThumbnailLoaded(handle)),
@@ -225,6 +225,7 @@ impl AppModel {
         let audio_devices = self.available_audio_devices.clone();
         let video_encoders = self.available_video_encoders.clone();
         let selected_encoder_index = self.current_video_encoder_index;
+        let save_folder_name = self.config.save_folder_name.clone();
 
         Task::perform(
             async move {
@@ -234,6 +235,7 @@ impl AppModel {
                     &video_encoders,
                     selected_encoder_index,
                     None,
+                    &save_folder_name,
                 )
                 .await
                 .map(|p| p.display().to_string())

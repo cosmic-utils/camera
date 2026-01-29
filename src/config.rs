@@ -140,10 +140,12 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 10]
+#[version = 11]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
+    /// Folder name for saving photos and videos (inside Pictures/Videos directories)
+    pub save_folder_name: String,
     /// Last used camera device path
     pub last_camera_path: Option<String>,
     /// Video mode settings per camera (key = camera device path)
@@ -174,6 +176,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             app_theme: AppTheme::default(), // Default to System theme
+            save_folder_name: "Camera".to_string(),
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),

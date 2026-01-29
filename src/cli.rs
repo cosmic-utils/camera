@@ -333,18 +333,21 @@ fn select_video_format(formats: &[CameraFormat]) -> CameraFormat {
         .unwrap_or_else(|| formats[0].clone())
 }
 
+/// Default folder name for saving photos and videos
+const DEFAULT_SAVE_FOLDER: &str = "Camera";
+
 /// Get default photo directory
 fn get_default_photo_dir() -> PathBuf {
     dirs::picture_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-        .join("camera")
+        .join(DEFAULT_SAVE_FOLDER)
 }
 
 /// Get default video directory
 fn get_default_video_dir() -> PathBuf {
     dirs::video_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-        .join("camera")
+        .join(DEFAULT_SAVE_FOLDER)
 }
 
 /// Process images through the burst mode pipeline

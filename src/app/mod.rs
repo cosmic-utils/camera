@@ -68,7 +68,7 @@ use tracing::{debug, error, info, warn};
 ///
 /// Uses XDG Pictures directory for proper flatpak compatibility.
 /// Falls back to $HOME/Pictures if XDG directory is unavailable.
-pub fn get_photo_directory() -> std::path::PathBuf {
+pub fn get_photo_directory(folder_name: &str) -> std::path::PathBuf {
     let (base_dir, source) = if let Some(xdg_dir) = dirs::picture_dir() {
         (xdg_dir, "XDG Pictures")
     } else {
@@ -78,7 +78,7 @@ pub fn get_photo_directory() -> std::path::PathBuf {
             "$HOME/Pictures fallback",
         )
     };
-    let photo_dir = base_dir.join("camera");
+    let photo_dir = base_dir.join(folder_name);
     debug!(
         path = %photo_dir.display(),
         source = source,
@@ -88,8 +88,8 @@ pub fn get_photo_directory() -> std::path::PathBuf {
 }
 
 /// Ensure the photo directory exists, creating it if necessary
-fn ensure_photo_directory() -> Result<std::path::PathBuf, std::io::Error> {
-    let photo_dir = get_photo_directory();
+fn ensure_photo_directory(folder_name: &str) -> Result<std::path::PathBuf, std::io::Error> {
+    let photo_dir = get_photo_directory(folder_name);
     std::fs::create_dir_all(&photo_dir)?;
     info!(path = %photo_dir.display(), "Photo directory ready");
     Ok(photo_dir)
@@ -165,7 +165,7 @@ impl cosmic::Application for AppModel {
             };
 
         // Ensure photo directory exists
-        if let Err(e) = ensure_photo_directory() {
+        if let Err(e) = ensure_photo_directory(&config.save_folder_name) {
             error!(error = %e, "Failed to create photo directory");
         }
 
@@ -415,8 +415,11 @@ impl cosmic::Application for AppModel {
         );
 
         // Load initial gallery thumbnail
+        let folder_name = app.config.save_folder_name.clone();
         let load_thumbnail_task = Task::perform(
-            async { crate::storage::load_latest_thumbnail(get_photo_directory()).await },
+            async move {
+                crate::storage::load_latest_thumbnail(get_photo_directory(&folder_name)).await
+            },
             |handle| cosmic::Action::App(Message::GalleryThumbnailLoaded(handle)),
         );
 
