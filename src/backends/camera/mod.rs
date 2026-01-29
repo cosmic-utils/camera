@@ -24,11 +24,14 @@
 //! └──────────┬──────────┘
 //!            │
 //!            ▼
-//!       ┌────────┐
-//!       │PipeWire│  ← Concrete implementation
-//!       └────────┘
+//!   ┌────────┴────────┐
+//!   │                 │
+//! ┌────────┐    ┌──────────┐
+//! │PipeWire│    │libcamera │  ← Concrete implementations
+//! └────────┘    └──────────┘
 //! ```
 
+pub mod libcamera;
 pub mod manager;
 pub mod pipewire;
 pub mod types;
@@ -185,12 +188,23 @@ pub trait CameraBackend: Send + Sync {
     fn current_format(&self) -> Option<&CameraFormat>;
 }
 
-/// Get a concrete backend instance (PipeWire only)
-pub fn get_backend() -> Box<dyn CameraBackend> {
-    Box::new(pipewire::PipeWireBackend::new())
+/// Get a concrete backend instance for the specified type
+pub fn get_backend(backend_type: CameraBackendType) -> Box<dyn CameraBackend> {
+    match backend_type {
+        CameraBackendType::PipeWire => Box::new(pipewire::PipeWireBackend::new()),
+        CameraBackendType::Libcamera => Box::new(libcamera::LibcameraBackend::new()),
+    }
 }
 
-/// Get the default backend (PipeWire)
+/// Get the default backend
+///
+/// Uses libcamera priority: try libcamera first if available, fall back to PipeWire.
+/// This ensures mobile users get proper camera support automatically while desktop
+/// users fall back to PipeWire when libcamerasrc is not installed.
 pub fn get_default_backend() -> CameraBackendType {
-    CameraBackendType::PipeWire
+    if libcamera::is_libcamera_available() {
+        CameraBackendType::Libcamera
+    } else {
+        CameraBackendType::PipeWire
+    }
 }

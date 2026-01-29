@@ -10,17 +10,17 @@ use crate::constants::{pipeline, timing};
 use gstreamer::prelude::*;
 use tracing::{error, info, warn};
 
-/// Try to create a GStreamer pipeline for camera capture using PipeWire
+/// Try to create a GStreamer pipeline for camera capture
 ///
-/// This function creates pipelines using pipewiresrc, handling format negotiation
-/// and decoder selection automatically. PipeWire-only application.
+/// This function creates pipelines using the appropriate source element
+/// (pipewiresrc or libcamerasrc) based on the backend type.
 ///
 /// # Arguments
-/// * `device_path` - Device path (e.g., "pipewire-serial-12345" or "/dev/video0" via PipeWire)
+/// * `device_path` - Device path (e.g., "pipewire-serial-12345" or camera ID for libcamera)
 /// * `caps_filter` - GStreamer caps filter string (e.g., "width=1920,height=1080")
 /// * `_decoder` - Decoder element name (unused, kept for API compatibility)
 /// * `pixel_format` - Pixel format FourCC (e.g., "MJPG", "H264", "YUYV")
-/// * `_backend` - Backend type (unused, always PipeWire)
+/// * `backend` - Backend type (PipeWire or Libcamera)
 ///
 /// # Returns
 /// * `Ok(Pipeline)` - Successfully created and started pipeline
@@ -30,9 +30,16 @@ pub fn try_create_pipeline(
     caps_filter: &str,
     _decoder: &str,
     pixel_format: Option<&str>,
-    _backend: PipelineBackend,
+    backend: PipelineBackend,
 ) -> Result<gstreamer::Pipeline, Box<dyn std::error::Error>> {
-    try_create_pipewire_pipeline(device_path, caps_filter, pixel_format)
+    match backend {
+        PipelineBackend::PipeWire => {
+            try_create_pipewire_pipeline(device_path, caps_filter, pixel_format)
+        }
+        PipelineBackend::Libcamera => {
+            try_create_libcamera_pipeline(device_path, caps_filter, pixel_format)
+        }
+    }
 }
 
 /// Try to create a PipeWire pipeline
@@ -310,5 +317,85 @@ fn check_bus_for_errors(pipeline: &gstreamer::Pipeline) {
                 _ => {}
             }
         }
+    }
+}
+
+/// Try to create a libcamera pipeline
+fn try_create_libcamera_pipeline(
+    device_path: Option<&str>,
+    caps_filter: &str,
+    pixel_format: Option<&str>,
+) -> Result<gstreamer::Pipeline, Box<dyn std::error::Error>> {
+    // Check if libcamera source is available
+    gstreamer::ElementFactory::make("libcamerasrc")
+        .build()
+        .map_err(|e| format!("libcamerasrc not available: {}", e))?;
+
+    info!("libcamera available - creating camera pipeline");
+
+    // Build camera-name property if device path is specified
+    let camera_prop = if let Some(path) = device_path {
+        if path.is_empty() {
+            String::new()
+        } else {
+            format!("camera-name=\"{}\" ", path)
+        }
+    } else {
+        String::new()
+    };
+
+    // Build libcamera pipeline based on pixel format
+    let libcamera_pipeline =
+        build_libcamera_pipeline_string(&camera_prop, caps_filter, pixel_format);
+
+    info!(pipeline = %libcamera_pipeline, "Creating libcamera pipeline");
+    try_launch_pipeline_with_bus_errors(&libcamera_pipeline)
+}
+
+/// Build libcamera pipeline string based on pixel format
+fn build_libcamera_pipeline_string(
+    camera_prop: &str,
+    caps_filter: &str,
+    pixel_format: Option<&str>,
+) -> String {
+    if !caps_filter.is_empty() {
+        match pixel_format {
+            Some("MJPG") | Some("MJPEG") => {
+                // MJPEG format (less common on mobile, but possible)
+                format!(
+                    "libcamerasrc {}! image/jpeg,{} ! \
+                     queue max-size-buffers=2 leaky=downstream ! \
+                     jpegdec ! \
+                     videoconvert n-threads={} ! \
+                     video/x-raw,format={} ! \
+                     appsink name=sink",
+                    camera_prop,
+                    caps_filter,
+                    pipeline::videoconvert_threads(),
+                    pipeline::OUTPUT_FORMAT
+                )
+            }
+            _ => {
+                // Raw formats (NV12, YUY2, etc.) - the common case for libcamera
+                format!(
+                    "libcamerasrc {}! video/x-raw,{} ! \
+                     queue max-size-buffers=2 leaky=downstream ! \
+                     videoconvert n-threads={} ! \
+                     video/x-raw,format={} ! \
+                     appsink name=sink",
+                    camera_prop,
+                    caps_filter,
+                    pipeline::videoconvert_threads(),
+                    pipeline::OUTPUT_FORMAT
+                )
+            }
+        }
+    } else {
+        // No specific format - let libcamera auto-negotiate
+        format!(
+            "libcamerasrc {}! videoconvert ! video/x-raw,format={} ! appsink name=sink",
+            camera_prop,
+            pipeline::OUTPUT_FORMAT
+        )
     }
 }
