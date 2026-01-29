@@ -115,6 +115,14 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.22" date="2026-01-29">
+      <description>
+        <p>Release 0.1.22 includes the following changes:</p>
+        <ul>
+          <li>Fix metainfo description localization for Flathub linter</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.21" date="2026-01-28">
       <description>
         <p>Release 0.1.21 includes the following changes:</p>

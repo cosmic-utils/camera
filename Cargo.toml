@@ -1,6 +1,6 @@
 [package]
 name = "camera"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Camera application for the COSMIC™ desktop"
