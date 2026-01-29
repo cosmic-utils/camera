@@ -1371,7 +1371,7 @@ dependencies = [
 [[package]]
 name = "cosmic-config"
 version = "1.0.0"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "atomicwrites",
  "cosmic-config-derive",
@@ -1392,7 +1392,7 @@ dependencies = [
 [[package]]
 name = "cosmic-config-derive"
 version = "1.0.0"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "quote",
  "syn 2.0.111",
@@ -1436,8 +1436,8 @@ dependencies = [
 
 [[package]]
 name = "cosmic-text"
-version = "0.16.0"
-source = "git+https://github.com/pop-os/cosmic-text.git#ee702e50901d90cd842dbd88154687bd2512b52c"
+version = "0.17.0"
+source = "git+https://github.com/pop-os/cosmic-text.git#bdd6657fd7268dc8882214f540a6150eb78cfae0"
 dependencies = [
  "bitflags 2.10.0",
  "fontdb 0.23.0",
@@ -1445,10 +1445,10 @@ dependencies = [
  "linebender_resource_handle",
  "log",
  "rangemap",
- "rustc-hash 1.1.0",
+ "rustc-hash 2.1.1",
  "self_cell",
- "skrifa 0.39.0",
- "smol_str",
+ "skrifa 0.36.0",
+ "smol_str 0.3.5",
  "swash",
  "sys-locale",
  "unicode-bidi",
@@ -1460,7 +1460,7 @@ dependencies = [
 [[package]]
 name = "cosmic-theme"
 version = "1.0.0"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "almost",
  "cosmic-config",
@@ -2214,6 +2214,15 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02a596f5713680923a2080d86de50fe472fb290693cf0f701187a1c8b36996b7"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
+name = "font-types"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39a654f404bbcbd48ea58c617c2993ee91d1cb63727a37bf2323a4edeed1b8c5"
@@ -2823,14 +2832,14 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
-version = "0.4.1"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0caaee032384c10dd597af4579c67dee16650d862a9ccbe1233ff1a379abc07"
+checksum = "75a4c970f1a00edc1626f1e3cc039492b15b73df28b9fff70f95404a571b4fae"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
  "core_maths",
- "read-fonts 0.36.0",
+ "read-fonts 0.34.0",
  "smallvec",
 ]
 
@@ -2999,7 +3008,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "dnd",
  "iced_accessibility",
@@ -3017,7 +3026,7 @@ dependencies = [
 [[package]]
 name = "iced_accessibility"
 version = "0.1.0"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3026,7 +3035,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "bitflags 2.10.0",
  "bytes",
@@ -3042,7 +3051,7 @@ dependencies = [
  "raw-window-handle",
  "rustc-hash 2.1.1",
  "serde",
- "smol_str",
+ "smol_str 0.2.2",
  "thiserror 1.0.69",
  "web-time",
  "window_clipboard",
@@ -3051,7 +3060,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "futures",
  "iced_core",
@@ -3077,7 +3086,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
@@ -3099,7 +3108,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3111,7 +3120,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "bytes",
  "cosmic-client-toolkit",
@@ -3127,7 +3136,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3143,7 +3152,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "as-raw-xcb-connection",
  "bitflags 2.10.0",
@@ -3174,7 +3183,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "cosmic-client-toolkit",
  "dnd",
@@ -3194,7 +3203,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.14.0-dev"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "cosmic-client-toolkit",
  "dnd",
@@ -3712,7 +3721,7 @@ checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 [[package]]
 name = "libcosmic"
 version = "1.0.0"
-source = "git+https://github.com/pop-os/libcosmic.git#cf19ac665f353bbca0bad945403976ccdf6c8191"
+source = "git+https://github.com/pop-os/libcosmic.git#fdcba7d8ececc35c09a7871b018930f752ac784b"
 dependencies = [
  "apply",
  "ashpd 0.12.1",
@@ -3856,9 +3865,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "loop9"
@@ -5563,23 +5572,23 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8941f8e9d5f8ad3aebea330d01ac68c0167600eb31a86ecd86e97be4d13b51f5"
+dependencies = [
+ "bytemuck",
+ "core_maths",
+ "font-types 0.9.0",
+]
+
+[[package]]
+name = "read-fonts"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6717cf23b488adf64b9d711329542ba34de147df262370221940dfabc2c91358"
 dependencies = [
  "bytemuck",
- "font-types",
-]
-
-[[package]]
-name = "read-fonts"
-version = "0.36.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eaa2941a4c05443ee3a7b26ab076a553c343ad5995230cc2b1d3e993bdc6345"
-dependencies = [
- "bytemuck",
- "core_maths",
- "font-types",
+ "font-types 0.10.1",
 ]
 
 [[package]]
@@ -5912,9 +5921,9 @@ dependencies = [
 
 [[package]]
 name = "self_cell"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c2f82143577edb4921b71ede051dac62ca3c16084e918bf7b40c96ae10eb33"
+checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "serde"
@@ -6079,22 +6088,22 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "skrifa"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37004372610e83ee2a4c69c7d896b41f33da6a3dc1a4fe07dd9b2629a549b1dc"
+dependencies = [
+ "bytemuck",
+ "read-fonts 0.34.0",
+]
+
+[[package]]
+name = "skrifa"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c31071dedf532758ecf3fed987cdb4bd9509f900e026ab684b4ecb81ea49841"
 dependencies = [
  "bytemuck",
  "read-fonts 0.35.0",
-]
-
-[[package]]
-name = "skrifa"
-version = "0.39.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9eb0b904a04d09bd68c65d946617b8ff733009999050f3b851c32fb3cfb60e"
-dependencies = [
- "bytemuck",
- "read-fonts 0.36.0",
 ]
 
 [[package]]
@@ -6192,6 +6201,12 @@ checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "smol_str"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f7a918bd2a9951d18ee6e48f076843e8e73a9a5d22cf05bcd4b7a81bdd04e17"
 
 [[package]]
 name = "socket2"
@@ -6932,9 +6947,9 @@ checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 
 [[package]]
 name = "unicode-script"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fb421b350c9aff471779e262955939f565ec18b86c15364e6bdf0d662ca7c1f"
+checksum = "383ad40bb927465ec0ce7720e033cb4ca06912855fc35db31b5755d0de75b1ee"
 
 [[package]]
 name = "unicode-segmentation"
@@ -8176,7 +8191,7 @@ dependencies = [
  "rustix 0.38.44",
  "sctk-adwaita",
  "smithay-client-toolkit 0.19.2",
- "smol_str",
+ "smol_str 0.2.2",
  "tracing",
  "unicode-segmentation",
  "wasm-bindgen",
