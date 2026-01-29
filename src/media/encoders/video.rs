@@ -13,6 +13,12 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use tracing::{debug, info, warn};
 
+/// Blacklisted software AV1 encoders that cause issues in Flatpak environments
+/// See: https://github.com/cosmic-utils/camera/issues/171
+/// - svtav1enc (SVT-AV1): No file is created when recording
+/// - av1enc (AOM AV1): Recording terminates immediately with unplayable output
+const BLACKLISTED_ENCODERS: &[&str] = &["svtav1enc", "av1enc"];
+
 /// Video codec types in priority order
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoCodec {
@@ -233,6 +239,11 @@ pub fn enumerate_video_encoders() -> Vec<EncoderInfo> {
     let mut available_encoders = Vec::new();
 
     for (element_name, display_name, codec, is_hardware, priority) in &encoder_specs {
+        // Skip blacklisted encoders
+        if BLACKLISTED_ENCODERS.contains(element_name) {
+            continue;
+        }
+
         if gst::ElementFactory::make(element_name).build().is_ok() {
             available_encoders.push(EncoderInfo {
                 element_name: element_name.to_string(),
