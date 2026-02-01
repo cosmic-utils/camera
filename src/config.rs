@@ -48,10 +48,10 @@ impl PhotoOutputFormat {
 /// Burst mode setting
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum BurstModeSetting {
-    /// Burst mode disabled
-    Off,
-    /// Auto-detect frame count based on scene brightness (default)
+    /// Burst mode disabled (default - experimental feature)
     #[default]
+    Off,
+    /// Auto-detect frame count based on scene brightness
     Auto,
     /// Fixed 4 frames
     Frames4,
