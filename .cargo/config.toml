@@ -1,0 +1,11 @@
+# Cargo configuration for the camera project
+
+# musl targets default to static linking, but this project requires dynamic
+# linking for GStreamer, Wayland, and other system libraries.
+# This applies to building on Alpine Linux, postmarketOS, and similar distros.
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=-crt-static"]
