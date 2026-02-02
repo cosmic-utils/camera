@@ -37,6 +37,7 @@ pub mod frame_processor;
 mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
+mod menu;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
@@ -475,42 +476,12 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![]
+        vec![menu::menu_bar(&self.core)]
     }
 
     /// Elements to pack at the end of the header bar.
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        let is_disabled = self.transition_state.ui_disabled;
-
-        if is_disabled {
-            // Disabled buttons during transitions
-            let about_button = widget::button::icon(widget::icon::from_name("help-about-symbolic"));
-            let settings_button =
-                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"));
-            vec![
-                widget::container(about_button)
-                    .style(|_theme| widget::container::Style {
-                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                        ..Default::default()
-                    })
-                    .into(),
-                widget::container(settings_button)
-                    .style(|_theme| widget::container::Style {
-                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                        ..Default::default()
-                    })
-                    .into(),
-            ]
-        } else {
-            vec![
-                widget::button::icon(widget::icon::from_name("help-about-symbolic"))
-                    .on_press(Message::ToggleContextPage(ContextPage::About))
-                    .into(),
-                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"))
-                    .on_press(Message::ToggleContextPage(ContextPage::Settings))
-                    .into(),
-            ]
-        }
+        vec![]
     }
 
     /// Display a context drawer if the context page is requested.

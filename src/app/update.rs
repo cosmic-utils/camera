@@ -267,6 +267,10 @@ impl AppModel {
             }
 
             Message::Noop => Task::none(),
+
+            Message::Surface(action) => {
+                cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(action)))
+            }
         }
     }
 }
