@@ -4,9 +4,82 @@
 
 //! Shared types for camera backends
 
+use gstreamer::buffer::{MappedBuffer, Readable};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Frame data storage - either pre-copied bytes or zero-copy GStreamer buffer
+///
+/// This enum allows frames to be passed around without copying the underlying
+/// pixel data when coming from GStreamer pipelines. The `Mapped` variant keeps
+/// the GStreamer buffer mapped and alive until all references are dropped.
+#[derive(Clone)]
+pub enum FrameData {
+    /// Pre-copied bytes (used for photo capture, file sources, tests, etc.)
+    Copied(Arc<[u8]>),
+    /// Zero-copy mapped GStreamer buffer - no data copy, just reference counting
+    Mapped(Arc<MappedBuffer<Readable>>),
+}
+
+impl FrameData {
+    /// Create FrameData from pre-copied bytes
+    pub fn from_bytes(data: Arc<[u8]>) -> Self {
+        FrameData::Copied(data)
+    }
+
+    /// Create FrameData from a mapped GStreamer buffer (zero-copy)
+    pub fn from_mapped_buffer(buffer: MappedBuffer<Readable>) -> Self {
+        FrameData::Mapped(Arc::new(buffer))
+    }
+
+    /// Get the length of the frame data in bytes
+    pub fn len(&self) -> usize {
+        match self {
+            FrameData::Copied(data) => data.len(),
+            FrameData::Mapped(buf) => buf.len(),
+        }
+    }
+
+    /// Check if the frame data is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get a raw pointer to the data for deduplication checks
+    pub fn as_ptr(&self) -> *const u8 {
+        match self {
+            FrameData::Copied(data) => data.as_ptr(),
+            FrameData::Mapped(buf) => buf.as_ptr(),
+        }
+    }
+}
+
+impl std::fmt::Debug for FrameData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FrameData::Copied(data) => write!(f, "FrameData::Copied({} bytes)", data.len()),
+            FrameData::Mapped(buf) => write!(f, "FrameData::Mapped({} bytes)", buf.len()),
+        }
+    }
+}
+
+impl AsRef<[u8]> for FrameData {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            FrameData::Copied(data) => data.as_ref(),
+            FrameData::Mapped(buf) => buf.as_slice(),
+        }
+    }
+}
+
+impl std::ops::Deref for FrameData {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
 
 /// Camera backend type (PipeWire only)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -151,10 +224,24 @@ pub enum PixelFormat {
 pub struct CameraFrame {
     pub width: u32,
     pub height: u32,
-    pub data: Arc<[u8]>,      // Zero-copy frame data (RGBA format)
-    pub format: PixelFormat,  // Pixel format of the data (always RGBA)
-    pub stride: u32,          // Row stride (bytes per row, may include padding)
+    pub data: FrameData, // Frame data (RGBA format) - zero-copy when from GStreamer
+    pub format: PixelFormat, // Pixel format of the data (always RGBA)
+    pub stride: u32,     // Row stride (bytes per row, may include padding)
     pub captured_at: Instant, // Timestamp when frame was captured (for latency diagnostics)
+}
+
+impl CameraFrame {
+    /// Get the frame data as a byte slice
+    #[inline]
+    pub fn data_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Get a raw pointer to the data for deduplication checks
+    #[inline]
+    pub fn data_ptr(&self) -> usize {
+        self.data.as_ptr() as usize
+    }
 }
 
 /// Frame receiver type for preview streams

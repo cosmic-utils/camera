@@ -485,7 +485,7 @@ fn is_supported_image(path: &PathBuf) -> bool {
 
 /// Load a DNG file and convert to RGBA CameraFrame
 fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Error>> {
-    use camera::backends::camera::types::{CameraFrame, PixelFormat};
+    use camera::backends::camera::types::{CameraFrame, FrameData, PixelFormat};
     use image::GenericImageView;
     use std::fs::File;
     use std::io::BufReader;
@@ -499,7 +499,7 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
 
     let (width, height) = img.dimensions();
     let rgba = img.to_rgba8();
-    let data: Arc<[u8]> = Arc::from(rgba.into_raw().into_boxed_slice());
+    let data = FrameData::Copied(Arc::from(rgba.into_raw().into_boxed_slice()));
 
     Ok(CameraFrame {
         width,
@@ -515,7 +515,7 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
 fn load_burst_mode_frames(
     paths: &[PathBuf],
 ) -> Result<Vec<Arc<CameraFrame>>, Box<dyn std::error::Error>> {
-    use camera::backends::camera::types::{CameraFrame, PixelFormat};
+    use camera::backends::camera::types::{CameraFrame, FrameData, PixelFormat};
     use image::GenericImageView;
 
     let mut frames = Vec::new();
@@ -532,7 +532,7 @@ fn load_burst_mode_frames(
             let img = image::open(path)?;
             let (width, height) = img.dimensions();
             let rgba = img.to_rgba8();
-            let data: Arc<[u8]> = Arc::from(rgba.into_raw().into_boxed_slice());
+            let data = FrameData::Copied(Arc::from(rgba.into_raw().into_boxed_slice()));
 
             CameraFrame {
                 width,

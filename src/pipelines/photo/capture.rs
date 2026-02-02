@@ -106,14 +106,14 @@ impl PhotoCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::camera::types::PixelFormat;
+    use crate::backends::camera::types::{FrameData, PixelFormat};
 
     #[test]
     fn test_capture_from_frame() {
         let frame = CameraFrame {
             width: 1920,
             height: 1080,
-            data: Arc::from(vec![0u8; 1920 * 1080 * 4]), // RGBA size (4 bytes per pixel)
+            data: FrameData::Copied(Arc::from(vec![0u8; 1920 * 1080 * 4].into_boxed_slice())), // RGBA size (4 bytes per pixel)
             format: PixelFormat::RGBA,
             stride: 1920 * 4, // RGBA stride
             captured_at: std::time::Instant::now(),

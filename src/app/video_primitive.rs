@@ -8,6 +8,7 @@
 //! - Persistent textures across frames
 
 use crate::app::state::FilterType;
+use crate::backends::camera::types::FrameData;
 use cosmic::iced::Rectangle;
 use cosmic::iced_wgpu::graphics::Viewport;
 use cosmic::iced_wgpu::primitive::{self, Primitive as PrimitiveTrait};
@@ -20,8 +21,8 @@ pub struct VideoFrame {
     pub id: u64,
     pub width: u32,
     pub height: u32,
-    // Frame data buffer (shared Arc - no copy, RGBA format)
-    pub data: Arc<[u8]>,
+    // Frame data buffer (zero-copy when from GStreamer, RGBA format)
+    pub data: FrameData,
     // Row stride for RGBA data (bytes per row including padding)
     pub stride: u32,
 }
@@ -30,7 +31,7 @@ impl VideoFrame {
     /// Get RGBA data slice
     #[inline]
     pub fn rgba_data(&self) -> &[u8] {
-        &self.data[..]
+        &self.data
     }
 }
 
@@ -750,7 +751,8 @@ impl VideoPipeline {
         // Update last frame pointer before upload
         tex.last_frame_ptr = frame_data_ptr;
 
-        // Direct RGBA texture upload
+        // Direct RGBA texture upload (CPU to GPU copy)
+        let gpu_copy_start = Instant::now();
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &tex.texture,
@@ -770,10 +772,24 @@ impl VideoPipeline {
                 depth_or_array_layers: 1,
             },
         );
+        let gpu_copy_time = gpu_copy_start.elapsed();
 
         // Track upload duration for frame skipping decisions
         let upload_duration = upload_start.elapsed();
         self.last_upload_duration.set(upload_duration);
+
+        // Log GPU upload performance periodically (every ~30 frames based on frame.id)
+        if frame.id % 30 == 0 {
+            let size_bytes = frame.rgba_data().len();
+            tracing::debug!(
+                gpu_upload_ms = format!("{:.2}", gpu_copy_time.as_micros() as f64 / 1000.0),
+                total_prepare_ms = format!("{:.2}", upload_duration.as_micros() as f64 / 1000.0),
+                width = frame.width,
+                height = frame.height,
+                size_mb = format!("{:.1}", size_bytes as f64 / 1_000_000.0),
+                "GPU texture upload"
+            );
+        }
 
         // Reset skip counter on successful upload
         if self.frames_skipped.get() > 0 {
