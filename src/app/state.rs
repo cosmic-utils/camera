@@ -920,6 +920,33 @@ pub enum FilterType {
     Pencil,
 }
 
+impl FilterType {
+    /// Get the GPU shader filter code for this filter type.
+    ///
+    /// Used by GPU shaders to select the appropriate filter function.
+    /// These codes must match the filter_mode values in the WGSL shaders.
+    #[inline]
+    pub fn gpu_filter_code(&self) -> u32 {
+        match self {
+            FilterType::Standard => 0,
+            FilterType::Mono => 1,
+            FilterType::Sepia => 2,
+            FilterType::Noir => 3,
+            FilterType::Vivid => 4,
+            FilterType::Cool => 5,
+            FilterType::Warm => 6,
+            FilterType::Fade => 7,
+            FilterType::Duotone => 8,
+            FilterType::Vignette => 9,
+            FilterType::Negative => 10,
+            FilterType::Posterize => 11,
+            FilterType::Solarize => 12,
+            FilterType::ChromaticAberration => 13,
+            FilterType::Pencil => 14,
+        }
+    }
+}
+
 /// The context page to display in the context drawer.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum ContextPage {

@@ -273,6 +273,7 @@ mod tests {
             data: FrameData::Copied(Arc::from(data.as_slice())),
             format: PixelFormat::RGBA,
             stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
+            yuv_planes: None,
             captured_at: std::time::Instant::now(),
         };
 

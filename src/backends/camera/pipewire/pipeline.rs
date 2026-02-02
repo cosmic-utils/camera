@@ -232,6 +232,23 @@ impl PipeWirePipeline {
                         gstreamer::FlowError::Error
                     })?;
 
+                    // Detect pixel format from GStreamer caps
+                    let gst_format = video_info.format();
+                    let pixel_format = match gst_format {
+                        gstreamer_video::VideoFormat::Nv12 => PixelFormat::NV12,
+                        gstreamer_video::VideoFormat::I420 | gstreamer_video::VideoFormat::Yv12 => PixelFormat::I420,
+                        gstreamer_video::VideoFormat::Yuy2 | gstreamer_video::VideoFormat::Uyvy => PixelFormat::YUYV,
+                        gstreamer_video::VideoFormat::Rgba | gstreamer_video::VideoFormat::Rgbx |
+                        gstreamer_video::VideoFormat::Bgra | gstreamer_video::VideoFormat::Bgrx => PixelFormat::RGBA,
+                        _ => {
+                            // Unknown format - log warning and try RGBA
+                            if frame_num % 60 == 0 {
+                                warn!(frame = frame_num, format = ?gst_format, "Unknown video format, assuming RGBA");
+                            }
+                            PixelFormat::RGBA
+                        }
+                    };
+
                     // Get owned buffer (increments refcount, shares underlying memory)
                     // then convert to mapped buffer (zero-copy - keeps buffer mapped until dropped)
                     let owned_buffer = buffer.copy();
@@ -245,32 +262,102 @@ impl PipeWirePipeline {
                     let decode_time = frame_start.elapsed();
                     DECODE_TIME_US.store(decode_time.as_micros() as u64, Ordering::Relaxed);
 
-                    // Extract stride information for RGBA format
-                    let stride = video_info.stride()[0] as u32;
+                    // Extract stride and offset information based on format
+                    let width = video_info.width();
+                    let height = video_info.height();
+                    let strides = video_info.stride();
+                    let offsets = video_info.offset();
 
-                    // Log stride info every 60 frames for debugging
+                    // Log format info every 60 frames for debugging
                     if frame_num % 60 == 0 {
                         info!(
                             frame = frame_num,
-                            width = video_info.width(),
-                            height = video_info.height(),
-                            stride,
-                            "Frame stride information"
+                            width,
+                            height,
+                            format = ?pixel_format,
+                            gst_format = ?gst_format,
+                            strides = ?strides,
+                            offsets = ?offsets,
+                            n_planes = video_info.n_planes(),
+                            "Frame format information"
                         );
                     }
 
                     // Measure frame wrap time (zero-copy: just wraps mapped buffer, no data copy)
                     let copy_start = Instant::now();
-                    let frame_data = FrameData::from_mapped_buffer(mapped);
+
+                    // Extract plane offsets (zero-copy: no data copying, just store offsets)
+                    let (frame_data, yuv_planes, stride) = match pixel_format {
+                        PixelFormat::NV12 => {
+                            // NV12: Y plane + UV interleaved plane (zero-copy with offsets)
+                            let y_stride = strides[0] as u32;
+                            let uv_stride = strides[1] as u32;
+                            let y_offset = offsets[0] as usize;
+                            let uv_offset = offsets[1] as usize;
+                            let y_size = (y_stride as usize) * (height as usize);
+                            let uv_size = (uv_stride as usize) * (height as usize / 2);
+
+                            let yuv = YuvPlanes {
+                                y_offset,
+                                y_size,
+                                uv_offset,
+                                uv_size,
+                                uv_stride,
+                                v_offset: 0,
+                                v_size: 0,
+                                v_stride: 0,
+                            };
+
+                            (FrameData::from_mapped_buffer(mapped), Some(yuv), y_stride)
+                        }
+                        PixelFormat::I420 => {
+                            // I420: Y plane + U plane + V plane (zero-copy with offsets)
+                            let y_stride = strides[0] as u32;
+                            let u_stride = strides[1] as u32;
+                            let v_stride = strides[2] as u32;
+                            let y_offset = offsets[0] as usize;
+                            let u_offset = offsets[1] as usize;
+                            let v_offset = offsets[2] as usize;
+                            let y_size = (y_stride as usize) * (height as usize);
+                            let uv_height = height as usize / 2;
+                            let u_size = (u_stride as usize) * uv_height;
+                            let v_size = (v_stride as usize) * uv_height;
+
+                            let yuv = YuvPlanes {
+                                y_offset,
+                                y_size,
+                                uv_offset: u_offset,
+                                uv_size: u_size,
+                                uv_stride: u_stride,
+                                v_offset,
+                                v_size,
+                                v_stride,
+                            };
+
+                            (FrameData::from_mapped_buffer(mapped), Some(yuv), y_stride)
+                        }
+                        PixelFormat::YUYV => {
+                            // YUYV: Packed format, single plane
+                            let stride = strides[0] as u32;
+                            (FrameData::from_mapped_buffer(mapped), None, stride)
+                        }
+                        PixelFormat::RGBA => {
+                            // RGBA: Single plane, direct passthrough
+                            let stride = strides[0] as u32;
+                            (FrameData::from_mapped_buffer(mapped), None, stride)
+                        }
+                    };
+
                     let copy_time = copy_start.elapsed();
 
                     let frame = CameraFrame {
-                        width: video_info.width(),
-                        height: video_info.height(),
+                        width,
+                        height,
                         data: frame_data,
-                        format: PixelFormat::RGBA,  // Pipeline outputs RGBA
+                        format: pixel_format,
                         stride,
-                        captured_at: frame_start, // Use frame_start as capture timestamp
+                        yuv_planes,
+                        captured_at: frame_start,
                     };
 
                     // Capture size before send (frame is moved)

@@ -116,6 +116,7 @@ mod tests {
             data: FrameData::Copied(Arc::from(vec![0u8; 1920 * 1080 * 4].into_boxed_slice())), // RGBA size (4 bytes per pixel)
             format: PixelFormat::RGBA,
             stride: 1920 * 4, // RGBA stride
+            yuv_planes: None,
             captured_at: std::time::Instant::now(),
         };
 

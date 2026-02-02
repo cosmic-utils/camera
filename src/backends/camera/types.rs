@@ -212,22 +212,125 @@ impl std::fmt::Display for CameraFormat {
 }
 
 /// Pixel format for camera frames
+///
+/// Supports both direct RGBA and various YUV formats for GPU conversion.
+/// YUV formats are converted to RGBA by a GPU compute shader before use
+/// by downstream consumers (filters, histogram, photo capture, etc.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
     /// RGBA - 32-bit with alpha (4 bytes per pixel)
-    /// This is the native format used throughout the pipeline
+    /// This is the canonical format used throughout the pipeline after conversion
     RGBA,
+    /// NV12 - Semi-planar 4:2:0 (Y plane + interleaved UV plane)
+    /// Common output from MJPEG decoders
+    NV12,
+    /// I420 - Planar 4:2:0 (separate Y, U, V planes)
+    /// Common output from software JPEG decoders
+    I420,
+    /// YUYV - Packed 4:2:2 (Y0 U0 Y1 V0 interleaved)
+    /// Common raw format from webcam sensors
+    YUYV,
+}
+
+impl PixelFormat {
+    /// Check if this format is a YUV format requiring GPU conversion
+    pub fn is_yuv(&self) -> bool {
+        matches!(self, Self::NV12 | Self::I420 | Self::YUYV)
+    }
+
+    /// Get the format code for the GPU compute shader
+    pub fn gpu_format_code(&self) -> u32 {
+        match self {
+            Self::RGBA => 0,
+            Self::NV12 => 1,
+            Self::I420 => 2,
+            Self::YUYV => 3,
+        }
+    }
+
+    /// Average bytes per pixel (accounting for chroma subsampling)
+    pub fn bytes_per_pixel(&self) -> f32 {
+        match self {
+            Self::RGBA => 4.0,
+            Self::NV12 | Self::I420 => 1.5, // 4:2:0 subsampling
+            Self::YUYV => 2.0,              // 4:2:2 subsampling
+        }
+    }
+
+    /// Parse format from GStreamer format string
+    pub fn from_gst_format(format: &str) -> Option<Self> {
+        match format {
+            "RGBA" | "RGBx" | "BGRx" | "BGRA" => Some(Self::RGBA),
+            "NV12" => Some(Self::NV12),
+            "I420" | "YV12" => Some(Self::I420),
+            "YUYV" | "YUY2" | "UYVY" => Some(Self::YUYV),
+            _ => None,
+        }
+    }
+}
+
+/// YUV plane offsets for multi-plane formats (NV12, I420)
+///
+/// For planar/semi-planar YUV formats, the planes are stored at different offsets
+/// within a single contiguous buffer. This struct stores the offsets and strides
+/// needed to extract each plane during GPU upload, enabling true zero-copy.
+///
+/// - NV12: Y plane (full resolution) + UV plane (half resolution, interleaved)
+/// - I420: Y plane + U plane + V plane (all separate, U/V at half resolution)
+#[derive(Clone, Copy)]
+pub struct YuvPlanes {
+    /// Y plane offset in bytes from start of buffer
+    pub y_offset: usize,
+    /// Y plane size in bytes
+    pub y_size: usize,
+    /// UV plane offset in bytes (NV12: interleaved UV, I420: U plane)
+    pub uv_offset: usize,
+    /// UV plane size in bytes
+    pub uv_size: usize,
+    /// UV plane stride in bytes
+    pub uv_stride: u32,
+    /// V plane offset in bytes (I420 only, 0 for NV12)
+    pub v_offset: usize,
+    /// V plane size in bytes (I420 only, 0 for NV12)
+    pub v_size: usize,
+    /// V plane stride in bytes (I420 only)
+    pub v_stride: u32,
+}
+
+impl std::fmt::Debug for YuvPlanes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("YuvPlanes")
+            .field("y_offset", &self.y_offset)
+            .field("y_size", &self.y_size)
+            .field("uv_offset", &self.uv_offset)
+            .field("uv_size", &self.uv_size)
+            .field("uv_stride", &self.uv_stride)
+            .field("v_offset", &self.v_offset)
+            .field("v_size", &self.v_size)
+            .field("v_stride", &self.v_stride)
+            .finish()
+    }
 }
 
 /// A single frame from the camera
+///
+/// Supports both RGBA and YUV formats. For YUV formats:
+/// - `data` contains the entire buffer (all planes contiguous, zero-copy)
+/// - `yuv_planes` contains offsets to extract Y, UV, V planes during GPU upload
 #[derive(Debug, Clone)]
 pub struct CameraFrame {
     pub width: u32,
     pub height: u32,
-    pub data: FrameData, // Frame data (RGBA format) - zero-copy when from GStreamer
-    pub format: PixelFormat, // Pixel format of the data (always RGBA)
-    pub stride: u32,     // Row stride (bytes per row, may include padding)
-    pub captured_at: Instant, // Timestamp when frame was captured (for latency diagnostics)
+    /// Frame data: RGBA pixels, Y plane (NV12/I420), or packed YUYV
+    pub data: FrameData,
+    /// Pixel format of the data
+    pub format: PixelFormat,
+    /// Row stride for the main data (bytes per row, may include padding)
+    pub stride: u32,
+    /// Additional YUV planes (for NV12/I420 formats)
+    pub yuv_planes: Option<YuvPlanes>,
+    /// Timestamp when frame was captured (for latency diagnostics)
+    pub captured_at: Instant,
 }
 
 impl CameraFrame {

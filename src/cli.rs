@@ -507,6 +507,7 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
         data,
         format: PixelFormat::RGBA,
         stride: width * 4,
+        yuv_planes: None,
         captured_at: Instant::now(),
     })
 }
@@ -540,6 +541,7 @@ fn load_burst_mode_frames(
                 data,
                 format: PixelFormat::RGBA,
                 stride: width * 4,
+                yuv_planes: None,
                 captured_at: Instant::now(),
             }
         };

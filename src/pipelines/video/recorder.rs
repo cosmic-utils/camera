@@ -583,6 +583,7 @@ impl VideoRecorder {
                                             format:
                                                 crate::backends::camera::types::PixelFormat::RGBA,
                                             stride,
+                                            yuv_planes: None,
                                             captured_at: std::time::Instant::now(),
                                         };
 

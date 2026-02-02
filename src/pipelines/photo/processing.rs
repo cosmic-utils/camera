@@ -12,8 +12,8 @@
 //! avoiding unnecessary format conversions.
 
 use crate::app::FilterType;
-use crate::backends::camera::types::CameraFrame;
-use crate::shaders::apply_filter_gpu_rgba;
+use crate::backends::camera::types::{CameraFrame, PixelFormat};
+use crate::shaders::{YuvFrameInput, apply_filter_gpu_rgba, get_yuv_convert_pipeline};
 use image::RgbImage;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -87,6 +87,7 @@ impl PostProcessor {
         info!(
             width = frame.width,
             height = frame.height,
+            format = ?frame.format,
             "Starting post-processing"
         );
 
@@ -94,9 +95,23 @@ impl PostProcessor {
         let frame_width = frame.width;
         let frame_height = frame.height;
 
+        // Step 0: Convert YUV to RGBA if needed
+        let rgba_data: Vec<u8> = if frame.format.is_yuv() {
+            debug!(format = ?frame.format, "Converting YUV frame to RGBA for photo processing");
+            match Self::convert_yuv_to_rgba(&frame).await {
+                Ok(rgba) => rgba,
+                Err(e) => {
+                    return Err(format!("Failed to convert YUV to RGBA: {}", e));
+                }
+            }
+        } else {
+            // Already RGBA
+            frame.data.to_vec()
+        };
+
         // Step 1: Apply filter on RGBA data directly (more efficient - avoids RGB↔RGBA conversions)
         let filtered_rgba = if config.filter_type != FilterType::Standard {
-            match apply_filter_gpu_rgba(&frame.data, frame_width, frame_height, config.filter_type)
+            match apply_filter_gpu_rgba(&rgba_data, frame_width, frame_height, config.filter_type)
                 .await
             {
                 Ok(filtered_data) => {
@@ -105,11 +120,11 @@ impl PostProcessor {
                 }
                 Err(e) => {
                     warn!(error = %e, "GPU filter failed, using unfiltered frame");
-                    frame.data.to_vec()
+                    rgba_data
                 }
             }
         } else {
-            frame.data.to_vec()
+            rgba_data
         };
 
         // Step 2: Apply aspect ratio cropping if configured
@@ -170,6 +185,92 @@ impl PostProcessor {
             height: final_height,
             image: rgb_image,
         })
+    }
+
+    /// Convert YUV frame to RGBA using GPU compute shader
+    ///
+    /// Uses the same compute shader as the preview pipeline for consistency.
+    async fn convert_yuv_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
+        let buffer_data = frame.data.as_ref();
+        let yuv_planes = frame.yuv_planes.as_ref();
+
+        // Build YuvFrameInput from the frame
+        let input = match frame.format {
+            PixelFormat::NV12 => {
+                let planes = yuv_planes.ok_or("NV12 frame missing yuv_planes")?;
+                let y_end = planes.y_offset + planes.y_size;
+                let uv_end = planes.uv_offset + planes.uv_size;
+
+                YuvFrameInput {
+                    format: frame.format,
+                    width: frame.width,
+                    height: frame.height,
+                    y_data: &buffer_data[planes.y_offset..y_end],
+                    y_stride: frame.stride,
+                    uv_data: Some(&buffer_data[planes.uv_offset..uv_end]),
+                    uv_stride: planes.uv_stride,
+                    v_data: None,
+                    v_stride: 0,
+                }
+            }
+            PixelFormat::I420 => {
+                let planes = yuv_planes.ok_or("I420 frame missing yuv_planes")?;
+                let y_end = planes.y_offset + planes.y_size;
+                let u_end = planes.uv_offset + planes.uv_size;
+                let v_end = planes.v_offset + planes.v_size;
+
+                YuvFrameInput {
+                    format: frame.format,
+                    width: frame.width,
+                    height: frame.height,
+                    y_data: &buffer_data[planes.y_offset..y_end],
+                    y_stride: frame.stride,
+                    uv_data: Some(&buffer_data[planes.uv_offset..u_end]),
+                    uv_stride: planes.uv_stride,
+                    v_data: if planes.v_size > 0 {
+                        Some(&buffer_data[planes.v_offset..v_end])
+                    } else {
+                        None
+                    },
+                    v_stride: planes.v_stride,
+                }
+            }
+            PixelFormat::YUYV => YuvFrameInput {
+                format: frame.format,
+                width: frame.width,
+                height: frame.height,
+                y_data: buffer_data,
+                y_stride: frame.stride,
+                uv_data: None,
+                uv_stride: 0,
+                v_data: None,
+                v_stride: 0,
+            },
+            PixelFormat::RGBA => {
+                // Should not reach here - already RGBA
+                return Ok(buffer_data.to_vec());
+            }
+        };
+
+        // Use GPU compute shader pipeline for conversion
+        let mut pipeline_guard = get_yuv_convert_pipeline()
+            .await
+            .map_err(|e| format!("Failed to get YUV convert pipeline: {}", e))?;
+
+        let pipeline = pipeline_guard
+            .as_mut()
+            .ok_or("YUV convert pipeline not initialized")?;
+
+        // Run GPU conversion (synchronous, just dispatches compute shader)
+        pipeline
+            .convert(&input)
+            .map_err(|e| format!("YUV→RGBA GPU conversion failed: {}", e))?;
+
+        // Read back RGBA data from GPU to CPU memory
+        pipeline
+            .read_rgba_to_cpu(frame.width, frame.height)
+            .await
+            .map_err(|e| format!("Failed to read RGBA from GPU: {}", e))
     }
 
     /// Crop RGBA data to a rectangular region

@@ -8,30 +8,54 @@
 //! - Persistent textures across frames
 
 use crate::app::state::FilterType;
-use crate::backends::camera::types::FrameData;
+use crate::backends::camera::types::{FrameData, PixelFormat, YuvPlanes};
 use cosmic::iced::Rectangle;
 use cosmic::iced_wgpu::graphics::Viewport;
 use cosmic::iced_wgpu::primitive::{self, Primitive as PrimitiveTrait};
 use cosmic::iced_wgpu::wgpu;
 use std::sync::{Arc, Mutex};
 
-/// Video frame data for GPU upload (RGBA format)
+/// Video frame data for GPU upload
+///
+/// Supports both RGBA and YUV formats. For YUV formats, the data is converted
+/// to RGBA by a GPU compute shader before rendering.
 #[derive(Debug, Clone)]
 pub struct VideoFrame {
     pub id: u64,
     pub width: u32,
     pub height: u32,
-    // Frame data buffer (zero-copy when from GStreamer, RGBA format)
+    /// Frame data: RGBA pixels, Y plane (NV12/I420), or packed YUYV
     pub data: FrameData,
-    // Row stride for RGBA data (bytes per row including padding)
+    /// Pixel format (RGBA, NV12, I420, YUYV)
+    pub format: PixelFormat,
+    /// Row stride for main data (bytes per row including padding)
     pub stride: u32,
+    /// Additional YUV planes (for NV12/I420 formats)
+    pub yuv_planes: Option<YuvPlanes>,
 }
 
 impl VideoFrame {
-    /// Get RGBA data slice
+    /// Get data slice for the main plane
+    #[inline]
+    pub fn data_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Get RGBA data slice (only valid for RGBA format)
+    /// For YUV formats, use the YUV conversion pipeline first
     #[inline]
     pub fn rgba_data(&self) -> &[u8] {
+        debug_assert!(
+            self.format == PixelFormat::RGBA,
+            "rgba_data() called on YUV frame"
+        );
         &self.data
+    }
+
+    /// Check if this frame is in a YUV format requiring GPU conversion
+    #[inline]
+    pub fn is_yuv(&self) -> bool {
+        self.format.is_yuv()
     }
 }
 
@@ -114,6 +138,32 @@ struct FilterBinding {
     viewport_buffer: wgpu::Buffer,
 }
 
+/// YUV conversion parameters uniform (must match shader struct)
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct YuvConvertParams {
+    width: u32,
+    height: u32,
+    format: u32,
+    y_stride: u32,
+    uv_stride: u32,
+    v_stride: u32,
+    _pad: [u32; 2],
+}
+
+/// YUV textures for a video source (for YUV→RGBA conversion)
+struct YuvTextures {
+    tex_y: wgpu::Texture,
+    tex_y_view: wgpu::TextureView,
+    tex_uv: wgpu::Texture,
+    tex_uv_view: wgpu::TextureView,
+    tex_v: wgpu::Texture,
+    tex_v_view: wgpu::TextureView,
+    width: u32,
+    height: u32,
+    format: PixelFormat,
+}
+
 /// Custom pipeline for efficient video rendering
 pub struct VideoPipeline {
     pipeline_rgba: wgpu::RenderPipeline,
@@ -133,6 +183,12 @@ pub struct VideoPipeline {
     // GPU timing tracking to detect and handle stalls
     last_upload_duration: std::cell::Cell<std::time::Duration>,
     frames_skipped: std::cell::Cell<u32>,
+    // YUV→RGBA conversion compute pipeline
+    yuv_compute_pipeline: Option<wgpu::ComputePipeline>,
+    yuv_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    yuv_uniform_buffer: Option<wgpu::Buffer>,
+    // YUV textures per video_id
+    yuv_textures: std::collections::HashMap<u64, YuvTextures>,
 }
 
 /// Intermediate texture for multi-pass blur
@@ -295,23 +351,7 @@ impl PrimitiveTrait for VideoPrimitive {
                 VideoContentFit::Cover => 1,
             };
 
-            let filter_mode = match self.filter_type {
-                FilterType::Standard => 0,
-                FilterType::Mono => 1,
-                FilterType::Sepia => 2,
-                FilterType::Noir => 3,
-                FilterType::Vivid => 4,
-                FilterType::Cool => 5,
-                FilterType::Warm => 6,
-                FilterType::Fade => 7,
-                FilterType::Duotone => 8,
-                FilterType::Vignette => 9,
-                FilterType::Negative => 10,
-                FilterType::Posterize => 11,
-                FilterType::Solarize => 12,
-                FilterType::ChromaticAberration => 13,
-                FilterType::Pencil => 14,
-            };
+            let filter_mode = self.filter_type.gpu_filter_code();
 
             // Get or create binding for this (video_id, filter_mode) combination
             // This allows sharing the source texture while having per-filter uniforms
@@ -437,23 +477,7 @@ impl PrimitiveTrait for VideoPrimitive {
         clip_bounds: &Rectangle<u32>,
     ) {
         // Convert filter_type to filter_mode for binding lookup
-        let filter_mode = match self.filter_type {
-            FilterType::Standard => 0,
-            FilterType::Mono => 1,
-            FilterType::Sepia => 2,
-            FilterType::Noir => 3,
-            FilterType::Vivid => 4,
-            FilterType::Cool => 5,
-            FilterType::Warm => 6,
-            FilterType::Fade => 7,
-            FilterType::Duotone => 8,
-            FilterType::Vignette => 9,
-            FilterType::Negative => 10,
-            FilterType::Posterize => 11,
-            FilterType::Solarize => 12,
-            FilterType::ChromaticAberration => 13,
-            FilterType::Pencil => 14,
-        };
+        let filter_mode = self.filter_type.gpu_filter_code();
 
         // Use stored physical bounds for viewport (prevents distortion in scrollable contexts)
         // Fall back to clip_bounds if physical_bounds not available
@@ -661,6 +685,97 @@ impl VideoPipeline {
             ..Default::default()
         });
 
+        // ===== YUV→RGBA Conversion Compute Pipeline =====
+        let yuv_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("yuv_convert_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/yuv_convert.wgsl").into()),
+        });
+
+        let yuv_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("yuv_convert_bind_group_layout"),
+                entries: &[
+                    // tex_y: Y plane or packed YUYV
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // tex_uv: UV plane (NV12) or U plane (I420)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // tex_v: V plane (I420 only)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // output: RGBA storage texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    // params: uniform buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let yuv_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("yuv_convert_pipeline_layout"),
+            bind_group_layouts: &[&yuv_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let yuv_compute_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("yuv_convert_compute_pipeline"),
+                layout: Some(&yuv_pipeline_layout),
+                module: &yuv_shader,
+                entry_point: "main",
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        let yuv_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("yuv_convert_uniform_buffer"),
+            size: std::mem::size_of::<YuvConvertParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             pipeline_rgba,
             pipeline_rgb_blur,
@@ -673,6 +788,10 @@ impl VideoPipeline {
             blur_intermediate_2: std::cell::RefCell::new(None),
             last_upload_duration: std::cell::Cell::new(std::time::Duration::ZERO),
             frames_skipped: std::cell::Cell::new(0),
+            yuv_compute_pipeline: Some(yuv_compute_pipeline),
+            yuv_bind_group_layout: Some(yuv_bind_group_layout),
+            yuv_uniform_buffer: Some(yuv_uniform_buffer),
+            yuv_textures: std::collections::HashMap::new(),
         }
     }
 
@@ -742,36 +861,48 @@ impl VideoPipeline {
             }
         }
 
-        // Now we can safely get the texture
-        let tex = self
-            .textures
-            .get_mut(&frame.id)
-            .expect("Texture should exist");
-
-        // Update last frame pointer before upload
-        tex.last_frame_ptr = frame_data_ptr;
-
-        // Direct RGBA texture upload (CPU to GPU copy)
+        // Handle YUV or RGBA upload
         let gpu_copy_start = Instant::now();
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &tex.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            frame.rgba_data(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(frame.stride),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: frame.width,
-                height: frame.height,
-                depth_or_array_layers: 1,
-            },
-        );
+
+        if frame.is_yuv() {
+            // YUV path: Update last frame pointer, then do YUV conversion
+            {
+                let tex = self
+                    .textures
+                    .get_mut(&frame.id)
+                    .expect("Texture should exist");
+                tex.last_frame_ptr = frame_data_ptr;
+            }
+            // Now self.textures borrow is released, we can call upload_yuv_and_convert
+            self.upload_yuv_and_convert(device, queue, &frame);
+        } else {
+            // Direct RGBA texture upload (CPU to GPU copy)
+            let tex = self
+                .textures
+                .get_mut(&frame.id)
+                .expect("Texture should exist");
+            tex.last_frame_ptr = frame_data_ptr;
+
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &tex.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                frame.rgba_data(),
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(frame.stride),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: frame.width,
+                    height: frame.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         let gpu_copy_time = gpu_copy_start.elapsed();
 
         // Track upload duration for frame skipping decisions
@@ -780,13 +911,14 @@ impl VideoPipeline {
 
         // Log GPU upload performance periodically (every ~30 frames based on frame.id)
         if frame.id % 30 == 0 {
-            let size_bytes = frame.rgba_data().len();
+            let size_bytes = frame.data_slice().len();
             tracing::debug!(
                 gpu_upload_ms = format!("{:.2}", gpu_copy_time.as_micros() as f64 / 1000.0),
                 total_prepare_ms = format!("{:.2}", upload_duration.as_micros() as f64 / 1000.0),
                 width = frame.width,
                 height = frame.height,
                 size_mb = format!("{:.1}", size_bytes as f64 / 1_000_000.0),
+                format = ?frame.format,
                 "GPU texture upload"
             );
         }
@@ -802,6 +934,7 @@ impl VideoPipeline {
     }
 
     /// Create a texture for a video source (shared across filter variations)
+    /// Includes STORAGE_BINDING usage for YUV→RGBA compute shader output
     fn create_texture(&self, device: &wgpu::Device, width: u32, height: u32) -> VideoTexture {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("camera RGBA texture"),
@@ -814,7 +947,10 @@ impl VideoPipeline {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            // Include STORAGE_BINDING for YUV→RGBA compute shader output
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[],
         });
 
@@ -827,6 +963,427 @@ impl VideoPipeline {
             height,
             last_frame_ptr: 0, // Will be set on first upload
         }
+    }
+
+    /// Upload YUV frame data and convert to RGBA using GPU compute shader
+    ///
+    /// This method:
+    /// 1. Uploads YUV plane data to GPU textures
+    /// 2. Runs compute shader to convert YUV→RGBA
+    /// 3. Outputs directly to the RGBA texture used for rendering
+    ///
+    /// All processing stays on GPU - no CPU round-trip between YUV conversion and rendering.
+    fn upload_yuv_and_convert(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &VideoFrame,
+    ) {
+        use std::time::Instant;
+        let convert_start = Instant::now();
+
+        // Ensure YUV textures exist
+        self.ensure_yuv_textures(device, frame.id, frame.width, frame.height, frame.format);
+
+        // Get output texture for compute shader
+        let output_texture = match self.textures.get(&frame.id) {
+            Some(tex) => &tex.texture,
+            None => {
+                tracing::error!("Output texture not found for YUV conversion");
+                return;
+            }
+        };
+
+        let yuv_textures = match self.yuv_textures.get(&frame.id) {
+            Some(t) => t,
+            None => {
+                tracing::error!("YUV textures not found after ensure_yuv_textures");
+                return;
+            }
+        };
+
+        // Get the full buffer data (zero-copy from GStreamer)
+        let buffer_data = frame.data_slice();
+
+        // Upload planes using offsets (zero-copy: we slice from the mapped buffer)
+        match frame.format {
+            PixelFormat::YUYV => {
+                // YUYV: packed as RGBA8 where each texel is [Y0, U, Y1, V]
+                // Texture width is frame.width / 2 (2 pixels per texel)
+                let packed_width = frame.width / 2;
+                queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &yuv_textures.tex_y,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    buffer_data,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(frame.stride),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: packed_width,
+                        height: frame.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            PixelFormat::NV12 => {
+                // NV12: Use offsets to slice Y and UV planes from buffer
+                if let Some(ref yuv_planes) = frame.yuv_planes {
+                    let uv_width = frame.width / 2;
+                    let uv_height = frame.height / 2;
+
+                    // Y plane: full resolution, R8 format
+                    let y_end = yuv_planes.y_offset + yuv_planes.y_size;
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &yuv_textures.tex_y,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &buffer_data[yuv_planes.y_offset..y_end],
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(frame.stride),
+                            rows_per_image: None,
+                        },
+                        wgpu::Extent3d {
+                            width: frame.width,
+                            height: frame.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    // UV plane: interleaved UV as RG8
+                    let uv_end = yuv_planes.uv_offset + yuv_planes.uv_size;
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &yuv_textures.tex_uv,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &buffer_data[yuv_planes.uv_offset..uv_end],
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(yuv_planes.uv_stride),
+                            rows_per_image: None,
+                        },
+                        wgpu::Extent3d {
+                            width: uv_width,
+                            height: uv_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+            }
+            PixelFormat::I420 => {
+                // I420: Use offsets to slice Y, U, V planes from buffer
+                if let Some(ref yuv_planes) = frame.yuv_planes {
+                    let uv_width = frame.width / 2;
+                    let uv_height = frame.height / 2;
+
+                    // Y plane: full resolution, R8 format
+                    let y_end = yuv_planes.y_offset + yuv_planes.y_size;
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &yuv_textures.tex_y,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &buffer_data[yuv_planes.y_offset..y_end],
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(frame.stride),
+                            rows_per_image: None,
+                        },
+                        wgpu::Extent3d {
+                            width: frame.width,
+                            height: frame.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    // U plane: R8 format
+                    let u_end = yuv_planes.uv_offset + yuv_planes.uv_size;
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &yuv_textures.tex_uv,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &buffer_data[yuv_planes.uv_offset..u_end],
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(yuv_planes.uv_stride),
+                            rows_per_image: None,
+                        },
+                        wgpu::Extent3d {
+                            width: uv_width,
+                            height: uv_height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    // V plane: R8 format
+                    if yuv_planes.v_size > 0 {
+                        let v_end = yuv_planes.v_offset + yuv_planes.v_size;
+                        queue.write_texture(
+                            wgpu::ImageCopyTexture {
+                                texture: &yuv_textures.tex_v,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            &buffer_data[yuv_planes.v_offset..v_end],
+                            wgpu::ImageDataLayout {
+                                offset: 0,
+                                bytes_per_row: Some(yuv_planes.v_stride),
+                                rows_per_image: None,
+                            },
+                            wgpu::Extent3d {
+                                width: uv_width,
+                                height: uv_height,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+                }
+            }
+            PixelFormat::RGBA => {
+                // Should not reach here - RGBA is handled by direct upload path
+                tracing::warn!("upload_yuv_and_convert called for RGBA frame");
+                return;
+            }
+        }
+
+        // Update uniform buffer with conversion parameters
+        let format_code = match frame.format {
+            PixelFormat::RGBA => 0u32,
+            PixelFormat::NV12 => 1u32,
+            PixelFormat::I420 => 2u32,
+            PixelFormat::YUYV => 3u32,
+        };
+
+        let params = YuvConvertParams {
+            width: frame.width,
+            height: frame.height,
+            format: format_code,
+            y_stride: frame.stride,
+            uv_stride: frame.yuv_planes.as_ref().map(|p| p.uv_stride).unwrap_or(0),
+            v_stride: frame.yuv_planes.as_ref().map(|p| p.v_stride).unwrap_or(0),
+            _pad: [0, 0],
+        };
+
+        if let Some(ref uniform_buffer) = self.yuv_uniform_buffer {
+            queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&[params]));
+        }
+
+        // Create output texture view for storage binding
+        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create bind group for compute shader
+        let bind_group_layout = match &self.yuv_bind_group_layout {
+            Some(layout) => layout,
+            None => {
+                tracing::error!("YUV bind group layout not initialized");
+                return;
+            }
+        };
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("yuv_convert_bind_group"),
+            layout: bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_y_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_uv_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_v_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&output_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self
+                        .yuv_uniform_buffer
+                        .as_ref()
+                        .unwrap()
+                        .as_entire_binding(),
+                },
+            ],
+        });
+
+        // Dispatch compute shader
+        let compute_pipeline = match &self.yuv_compute_pipeline {
+            Some(pipeline) => pipeline,
+            None => {
+                tracing::error!("YUV compute pipeline not initialized");
+                return;
+            }
+        };
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("yuv_convert_encoder"),
+        });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("yuv_convert_pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            // Dispatch: workgroup size is 16x16, so divide and round up
+            let workgroup_x = (frame.width + 15) / 16;
+            let workgroup_y = (frame.height + 15) / 16;
+            compute_pass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let convert_time = convert_start.elapsed();
+        if frame.id % 60 == 0 {
+            tracing::debug!(
+                format = ?frame.format,
+                width = frame.width,
+                height = frame.height,
+                convert_us = convert_time.as_micros(),
+                "YUV→RGBA GPU conversion"
+            );
+        }
+    }
+
+    /// Create or update YUV textures for a video source
+    fn ensure_yuv_textures(
+        &mut self,
+        device: &wgpu::Device,
+        video_id: u64,
+        width: u32,
+        height: u32,
+        format: PixelFormat,
+    ) {
+        // Check if textures exist and match dimensions/format
+        if let Some(yuv) = self.yuv_textures.get(&video_id) {
+            if yuv.width == width && yuv.height == height && yuv.format == format {
+                return;
+            }
+        }
+
+        // Calculate texture dimensions based on format
+        let (y_width, y_height) = (width, height);
+        let (uv_width, uv_height) = match format {
+            PixelFormat::NV12 | PixelFormat::I420 => (width / 2, height / 2),
+            PixelFormat::YUYV => (width / 2, height), // Packed: 2 pixels per texel
+            PixelFormat::RGBA => (1, 1),              // Dummy
+        };
+
+        // Y plane texture format
+        let y_format = match format {
+            PixelFormat::YUYV => wgpu::TextureFormat::Rgba8Unorm, // Packed YUYV as RGBA
+            _ => wgpu::TextureFormat::R8Unorm,                    // Y plane
+        };
+
+        // UV plane texture format
+        let uv_format = match format {
+            PixelFormat::NV12 => wgpu::TextureFormat::Rg8Unorm, // Interleaved UV
+            _ => wgpu::TextureFormat::R8Unorm,                  // U/V planes
+        };
+
+        // Create Y texture
+        let tex_y = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("yuv_tex_y"),
+            size: wgpu::Extent3d {
+                width: if format == PixelFormat::YUYV {
+                    y_width / 2
+                } else {
+                    y_width
+                },
+                height: y_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: y_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let tex_y_view = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create UV texture
+        let tex_uv = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("yuv_tex_uv"),
+            size: wgpu::Extent3d {
+                width: uv_width.max(1),
+                height: uv_height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: uv_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let tex_uv_view = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create V texture (I420 only, but always create for bind group consistency)
+        let tex_v = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("yuv_tex_v"),
+            size: wgpu::Extent3d {
+                width: uv_width.max(1),
+                height: uv_height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let tex_v_view = tex_v.create_view(&wgpu::TextureViewDescriptor::default());
+
+        self.yuv_textures.insert(
+            video_id,
+            YuvTextures {
+                tex_y,
+                tex_y_view,
+                tex_uv,
+                tex_uv_view,
+                tex_v,
+                tex_v_view,
+                width,
+                height,
+                format,
+            },
+        );
+
+        tracing::debug!(
+            video_id,
+            width,
+            height,
+            ?format,
+            "Created YUV textures for GPU conversion"
+        );
     }
 
     /// Get or create a filter-specific binding for a video

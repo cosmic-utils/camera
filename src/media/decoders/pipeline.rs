@@ -140,6 +140,12 @@ fn log_requested_format(caps_filter: &str) {
 }
 
 /// Build PipeWire pipeline string based on pixel format
+///
+/// For MJPEG and raw YUV formats (YUYV), the pipeline outputs native YUV
+/// which is then converted to RGBA by a GPU compute shader. This is much
+/// faster than CPU-based videoconvert.
+///
+/// For other formats (H264, etc.), videoconvert is still used for RGBA output.
 fn build_pipewire_pipeline_string(
     pw_path_prop: &str,
     caps_filter: &str,
@@ -148,12 +154,10 @@ fn build_pipewire_pipeline_string(
     if !caps_filter.is_empty() {
         match pixel_format {
             Some("MJPG") | Some("MJPEG") => {
-                // MJPEG: use jpegdec with queue for proper buffering at high resolutions
-                // Queue ensures complete JPEG frames before decoding
-                // Allow buffering up to 30MB (enough for ~9 high-res JPEG frames at 4000x3000)
-                // identity sync helps reduce artifacts on incomplete jpeg frames
-                // stream can still flicker with artifacts when there is high CPU usage. The problem is likely that the jpegdec decoder is producing incomplete/corrupted frames when the system is under load, rather
-                //   than dropping them cleanly.
+                // MJPEG: decode to native YUV format (GPU will convert to RGBA)
+                // jpegdec typically outputs I420 or NV12 depending on the decoder
+                // No videoconvert - GPU compute shader handles YUV→RGBA conversion
+                info!("MJPEG pipeline: native YUV output (GPU conversion)");
                 format!(
                     "pipewiresrc {}do-timestamp=true ! \
                     queue max-size-buffers=2 leaky=downstream ! \
@@ -162,19 +166,37 @@ fn build_pipewire_pipeline_string(
                     jpegparse ! \
                     jpegdec max-errors=-1 ! \
                     queue max-size-buffers={} leaky=downstream ! \
-                    videoconvert n-threads={} ! \
-                    video/x-raw,format={} ! \
                     appsink name=sink",
                     pw_path_prop,
                     caps_filter,
-                    pipeline::MAX_BUFFERS,
-                    pipeline::videoconvert_threads(),
-                    pipeline::OUTPUT_FORMAT
+                    pipeline::MAX_BUFFERS
+                )
+            }
+            Some("YUYV") | Some("YUY2") => {
+                // Raw YUYV/YUY2: passthrough without conversion
+                // GPU compute shader handles YUYV→RGBA conversion
+                info!("YUYV pipeline: native passthrough (GPU conversion)");
+                format!(
+                    "pipewiresrc {}do-timestamp=true ! \
+                    video/x-raw,format=YUY2,{} ! \
+                    appsink name=sink",
+                    pw_path_prop, caps_filter
+                )
+            }
+            Some("NV12") => {
+                // Raw NV12: passthrough without conversion
+                // GPU compute shader handles NV12→RGBA conversion
+                info!("NV12 pipeline: native passthrough (GPU conversion)");
+                format!(
+                    "pipewiresrc {}do-timestamp=true ! \
+                    video/x-raw,format=NV12,{} ! \
+                    appsink name=sink",
+                    pw_path_prop, caps_filter
                 )
             }
             Some("H264") => {
-                // H264: use decodebin with queue
-                // Allow buffering up to 30MB for high-resolution streams
+                // H264: use decodebin with videoconvert (keep RGBA for now)
+                // TODO: Could also output native YUV from decoder
                 format!(
                     "pipewiresrc {}do-timestamp=true ! video/x-h264,{} ! \
                      queue max-size-buffers=0 max-size-time=0 max-size-bytes=31457280 leaky=downstream ! \
@@ -186,7 +208,7 @@ fn build_pipewire_pipeline_string(
                 )
             }
             _ => {
-                // Raw format: direct conversion (no queue needed for raw formats)
+                // Other raw formats: use videoconvert for RGBA (fallback)
                 format!(
                     "pipewiresrc {}do-timestamp=true ! video/x-raw,{} ! videoconvert ! video/x-raw,format={} ! appsink name=sink",
                     pw_path_prop,
@@ -196,7 +218,7 @@ fn build_pipewire_pipeline_string(
             }
         }
     } else {
-        // No specific format - let PipeWire auto-negotiate
+        // No specific format - let PipeWire auto-negotiate with RGBA fallback
         format!(
             "pipewiresrc {}do-timestamp=true ! decodebin ! videoconvert ! video/x-raw,format={} ! appsink name=sink",
             pw_path_prop,

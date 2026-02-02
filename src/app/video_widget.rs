@@ -10,7 +10,7 @@
 
 use crate::app::state::{FilterType, Message};
 use crate::app::video_primitive::{VideoFrame, VideoPrimitive};
-use crate::backends::camera::types::CameraFrame;
+use crate::backends::camera::types::{CameraFrame, PixelFormat};
 use cosmic::iced::advanced::widget::Tree;
 use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout};
 use cosmic::iced::event::Status;
@@ -81,13 +81,18 @@ impl VideoWidget {
             16.0 / 9.0 // Default aspect ratio
         };
 
-        // Create VideoFrame for RGBA format
+        // Create VideoFrame (supports RGBA and YUV formats)
         // IMPORTANT: We share the FrameData without copying to maintain zero-copy from GStreamer
         if frame.width > 0 && frame.height > 0 {
             let stride = if frame.stride > 0 {
                 frame.stride
             } else {
-                frame.width * 4 // Fallback: 4 bytes per pixel (RGBA)
+                // Fallback based on format
+                match frame.format {
+                    PixelFormat::RGBA => frame.width * 4,
+                    PixelFormat::YUYV => frame.width * 2, // 2 bytes per pixel
+                    PixelFormat::NV12 | PixelFormat::I420 => frame.width, // Y plane stride
+                }
             };
 
             let video_frame = VideoFrame {
@@ -95,7 +100,9 @@ impl VideoWidget {
                 width: frame.width,
                 height: frame.height,
                 data: frame.data.clone(), // Clone FrameData - just refcount increment, no data copy
+                format: frame.format,
                 stride,
+                yuv_planes: frame.yuv_planes.clone(),
             };
 
             primitive.update_frame(video_frame);
