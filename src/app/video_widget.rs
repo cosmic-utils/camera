@@ -82,7 +82,7 @@ impl VideoWidget {
         };
 
         // Create VideoFrame for RGBA format
-        // IMPORTANT: We share the Arc without copying to avoid ~3MB copy per frame
+        // IMPORTANT: We share the FrameData without copying to maintain zero-copy from GStreamer
         if frame.width > 0 && frame.height > 0 {
             let stride = if frame.stride > 0 {
                 frame.stride
@@ -94,7 +94,7 @@ impl VideoWidget {
                 id: video_id,
                 width: frame.width,
                 height: frame.height,
-                data: Arc::clone(&frame.data), // No copy - just increment refcount
+                data: frame.data.clone(), // Clone FrameData - just refcount increment, no data copy
                 stride,
             };
 

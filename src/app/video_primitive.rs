@@ -8,6 +8,7 @@
 //! - Persistent textures across frames
 
 use crate::app::state::FilterType;
+use crate::backends::camera::types::FrameData;
 use cosmic::iced::Rectangle;
 use cosmic::iced_wgpu::graphics::Viewport;
 use cosmic::iced_wgpu::primitive::{self, Primitive as PrimitiveTrait};
@@ -20,8 +21,8 @@ pub struct VideoFrame {
     pub id: u64,
     pub width: u32,
     pub height: u32,
-    // Frame data buffer (shared Arc - no copy, RGBA format)
-    pub data: Arc<[u8]>,
+    // Frame data buffer (zero-copy when from GStreamer, RGBA format)
+    pub data: FrameData,
     // Row stride for RGBA data (bytes per row including padding)
     pub stride: u32,
 }
@@ -30,7 +31,7 @@ impl VideoFrame {
     /// Get RGBA data slice
     #[inline]
     pub fn rgba_data(&self) -> &[u8] {
-        &self.data[..]
+        &self.data
     }
 }
 

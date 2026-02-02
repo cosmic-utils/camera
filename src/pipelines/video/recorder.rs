@@ -10,11 +10,12 @@
 
 use super::encoder_selection::{EncoderConfig, select_encoders};
 use super::muxer::{create_muxer, link_audio_to_muxer, link_muxer_to_sink, link_video_to_muxer};
-use crate::backends::camera::types::{CameraFrame, SensorRotation};
+use crate::backends::camera::types::{CameraFrame, FrameData, SensorRotation};
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 /// Video recorder using the new pipeline architecture
@@ -574,7 +575,9 @@ impl VideoRecorder {
                                         let stride = video_info.stride()[0] as u32;
 
                                         let frame = CameraFrame {
-                                            data: map.as_slice().to_vec().into(),
+                                            data: FrameData::Copied(Arc::from(
+                                                map.as_slice().to_vec().into_boxed_slice(),
+                                            )),
                                             width: video_info.width(),
                                             height: video_info.height(),
                                             format:

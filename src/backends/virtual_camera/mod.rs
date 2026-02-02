@@ -247,7 +247,7 @@ impl VirtualCameraManager {
 
         // If stride matches expected row size and no flip needed, use data directly
         if stride == row_bytes && !self.flip_horizontal {
-            return pipeline.push_frame_rgba(Arc::clone(&frame.data), frame.width, frame.height);
+            return pipeline.push_frame_rgba(frame.data.clone(), frame.width, frame.height);
         }
 
         // Copy data (and apply horizontal flip if needed)

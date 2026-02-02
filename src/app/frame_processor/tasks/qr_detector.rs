@@ -255,7 +255,7 @@ fn downscale_gray(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::camera::types::PixelFormat;
+    use crate::backends::camera::types::{FrameData, PixelFormat};
 
     #[test]
     fn test_rgba_to_gray() {
@@ -270,7 +270,7 @@ mod tests {
         let frame = CameraFrame {
             width: 2,
             height: 2,
-            data: Arc::from(data.as_slice()),
+            data: FrameData::Copied(Arc::from(data.as_slice())),
             format: PixelFormat::RGBA,
             stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
             captured_at: std::time::Instant::now(),

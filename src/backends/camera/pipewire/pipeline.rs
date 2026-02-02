@@ -9,7 +9,6 @@ use gstreamer::prelude::*;
 use gstreamer_app::AppSink;
 use gstreamer_video::VideoInfo;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
@@ -233,9 +232,12 @@ impl PipeWirePipeline {
                         gstreamer::FlowError::Error
                     })?;
 
-                    let map = buffer.map_readable().map_err(|e| {
+                    // Get owned buffer (increments refcount, shares underlying memory)
+                    // then convert to mapped buffer (zero-copy - keeps buffer mapped until dropped)
+                    let owned_buffer = buffer.copy();
+                    let mapped = owned_buffer.into_mapped_buffer_readable().map_err(|_| {
                         if frame_num % 30 == 0 {
-                            error!(frame = frame_num, error = ?e, "Failed to map buffer");
+                            error!(frame = frame_num, "Failed to map buffer for zero-copy");
                         }
                         gstreamer::FlowError::Error
                     })?;
@@ -257,9 +259,9 @@ impl PipeWirePipeline {
                         );
                     }
 
-                    // Measure frame data copy time (Arc::from copies the slice data)
+                    // Measure frame wrap time (zero-copy: just wraps mapped buffer, no data copy)
                     let copy_start = Instant::now();
-                    let frame_data = Arc::from(map.as_slice());
+                    let frame_data = FrameData::from_mapped_buffer(mapped);
                     let copy_time = copy_start.elapsed();
 
                     let frame = CameraFrame {
@@ -270,6 +272,9 @@ impl PipeWirePipeline {
                         stride,
                         captured_at: frame_start, // Use frame_start as capture timestamp
                     };
+
+                    // Capture size before send (frame is moved)
+                    let size_bytes = frame.data.len();
 
                     // Send frame to the app (non-blocking using try_send)
                     let send_start = Instant::now();
@@ -282,12 +287,6 @@ impl PipeWirePipeline {
                             // Performance stats every N frames
                             if frame_num % timing::FRAME_LOG_INTERVAL == 0 {
                                 let total_time = frame_start.elapsed();
-                                let size_bytes = map.as_slice().len();
-                                let copy_throughput_mbps = if copy_time.as_micros() > 0 {
-                                    (size_bytes as f64 / 1_000_000.0) / (copy_time.as_micros() as f64 / 1_000_000.0)
-                                } else {
-                                    0.0
-                                };
                                 debug!(
                                     frame = frame_num,
                                     decode_ms = format!("{:.2}", decode_time.as_micros() as f64 / 1000.0),
@@ -297,8 +296,7 @@ impl PipeWirePipeline {
                                     width = video_info.width(),
                                     height = video_info.height(),
                                     size_mb = format!("{:.1}", size_bytes as f64 / 1_000_000.0),
-                                    copy_throughput_mbps = format!("{:.0}", copy_throughput_mbps),
-                                    "Frame capture"
+                                    "Frame capture (zero-copy)"
                                 );
                             }
                         }
