@@ -762,7 +762,7 @@ impl cosmic::Application for AppModel {
                                                 frame.captured_at.elapsed().as_micros();
 
                                             if frame_count.is_multiple_of(30) {
-                                                info!(
+                                                debug!(
                                                     frame = frame_count,
                                                     width = frame.width,
                                                     height = frame.height,
@@ -787,7 +787,7 @@ impl cosmic::Application for AppModel {
                                             {
                                                 Ok(_) => {
                                                     if frame_count.is_multiple_of(30) {
-                                                        info!(
+                                                        debug!(
                                                             frame = frame_count,
                                                             "Frame forwarded to UI"
                                                         );

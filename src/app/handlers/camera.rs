@@ -83,7 +83,7 @@ impl AppModel {
         static FRAME_MSG_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = FRAME_MSG_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if count.is_multiple_of(30) {
-            info!(
+            debug!(
                 message = count,
                 width = frame.width,
                 height = frame.height,

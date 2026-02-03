@@ -79,13 +79,13 @@ impl PipeWireBackend {
 
 impl CameraBackend for PipeWireBackend {
     fn enumerate_cameras(&self) -> Vec<CameraDevice> {
-        info!("Using PipeWire backend for camera enumeration");
+        debug!("Using PipeWire backend for camera enumeration");
 
         if let Some(cameras) = enumerate_pipewire_cameras() {
-            info!(count = cameras.len(), "PipeWire cameras enumerated");
+            debug!(count = cameras.len(), "PipeWire cameras enumerated");
             cameras
         } else {
-            info!("PipeWire enumeration returned None");
+            debug!("PipeWire enumeration returned None");
             Vec::new()
         }
     }

@@ -8,7 +8,7 @@ use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Background, Length};
 use cosmic::widget;
-use tracing::info;
+use tracing::{debug, info};
 
 impl AppModel {
     /// Build the camera preview widget
@@ -44,7 +44,7 @@ impl AppModel {
                 std::sync::atomic::AtomicU64::new(0);
             let count = VIEW_FRAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if count.is_multiple_of(30) {
-                info!(
+                debug!(
                     frame = count,
                     width = frame.width,
                     height = frame.height,

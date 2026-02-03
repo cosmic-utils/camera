@@ -29,7 +29,7 @@ pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
         return None;
     }
 
-    info!("✓ PipeWire available for camera enumeration");
+    debug!("PipeWire available for camera enumeration");
 
     // PipeWire camera enumeration strategy:
     // 1. Try to discover cameras through pw-cli/pactl (if available)
@@ -38,7 +38,7 @@ pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
     let cameras = try_enumerate_with_pw_cli().or_else(try_enumerate_with_pactl);
 
     if let Some(ref cams) = cameras {
-        info!(count = cams.len(), "Found PipeWire cameras");
+        debug!(count = cams.len(), "Found PipeWire cameras");
         return Some(cams.clone());
     }
 
@@ -206,7 +206,7 @@ fn try_enumerate_with_pw_cli() -> Option<Vec<CameraDevice>> {
         debug!("No cameras found via pw-cli");
         None
     } else {
-        info!(count = cameras.len(), "Enumerated cameras via pw-cli");
+        debug!(count = cameras.len(), "Enumerated cameras via pw-cli");
         Some(cameras)
     }
 }

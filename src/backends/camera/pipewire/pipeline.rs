@@ -326,7 +326,7 @@ impl PipeWirePipeline {
 
                     // Log format info every 60 frames for debugging
                     if frame_num.is_multiple_of(60) {
-                        info!(
+                        debug!(
                             frame = frame_num,
                             width,
                             height,
