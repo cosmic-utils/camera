@@ -155,6 +155,44 @@ impl AppModel {
         Task::none()
     }
 
+    pub(crate) fn handle_toggle_record_audio(&mut self) -> Task<cosmic::Action<Message>> {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        self.config.record_audio = !self.config.record_audio;
+        info!(
+            record_audio = self.config.record_audio,
+            "Toggled record audio"
+        );
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to save record audio setting");
+            }
+        }
+        Task::none()
+    }
+
+    pub(crate) fn handle_select_audio_encoder(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::config::AudioEncoder;
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        if index < AudioEncoder::ALL.len() {
+            let encoder = AudioEncoder::ALL[index];
+            info!(?encoder, "Selected audio encoder");
+            self.config.audio_encoder = encoder;
+
+            if let Some(handler) = self.config_handler.as_ref() {
+                if let Err(err) = self.config.write_entry(handler) {
+                    error!(?err, "Failed to save audio encoder selection");
+                }
+            }
+        }
+        Task::none()
+    }
+
     pub(crate) fn handle_toggle_save_burst_raw(&mut self) -> Task<cosmic::Action<Message>> {
         self.config.save_burst_raw = !self.config.save_burst_raw;
         info!(

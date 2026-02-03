@@ -374,6 +374,10 @@ impl cosmic::Application for AppModel {
                 .iter()
                 .map(|f| f.display_name().to_string())
                 .collect(),
+            audio_encoder_dropdown_options: crate::config::AudioEncoder::ALL
+                .iter()
+                .map(|e| e.display_name().to_string())
+                .collect(),
             device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default

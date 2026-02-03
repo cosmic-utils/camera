@@ -732,10 +732,14 @@ impl AppModel {
         let framerate = format.framerate.unwrap_or(30);
         let pixel_format = format.pixel_format.clone();
 
-        let audio_device = self
-            .available_audio_devices
-            .get(self.current_audio_device_index)
-            .map(|dev| format!("pipewire-serial-{}", dev.serial));
+        // Only get audio device if audio recording is enabled in settings
+        let audio_device = if self.config.record_audio {
+            self.available_audio_devices
+                .get(self.current_audio_device_index)
+                .map(|dev| format!("pipewire-serial-{}", dev.serial))
+        } else {
+            None
+        };
 
         let selected_encoder = self
             .available_video_encoders
