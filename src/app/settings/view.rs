@@ -3,7 +3,7 @@
 //! Settings drawer view
 
 use crate::app::state::{AppModel, Message};
-use crate::config::{AppTheme, PhotoOutputFormat};
+use crate::config::{AppTheme, AudioEncoder, PhotoOutputFormat};
 use crate::constants::BitratePreset;
 use crate::fl;
 use cosmic::Element;
@@ -91,8 +91,14 @@ impl AppModel {
             )),
         );
 
+        // Audio encoder index
+        let current_audio_encoder_index = AudioEncoder::ALL
+            .iter()
+            .position(|e| *e == self.config.audio_encoder)
+            .unwrap_or(0); // Default to Opus (index 0)
+
         // Video section
-        let video_section = widget::settings::section()
+        let mut video_section = widget::settings::section()
             .title(fl!("settings-video"))
             .add(
                 widget::settings::item::builder(fl!("settings-encoder")).control(widget::dropdown(
@@ -109,14 +115,32 @@ impl AppModel {
                 )),
             )
             .add(
-                widget::settings::item::builder(fl!("settings-microphone")).control(
-                    widget::dropdown(
-                        &self.audio_dropdown_options,
-                        Some(self.current_audio_device_index),
-                        Message::SelectAudioDevice,
-                    ),
-                ),
+                widget::settings::item::builder(fl!("settings-record-audio"))
+                    .toggler(self.config.record_audio, |_| Message::ToggleRecordAudio),
             );
+
+        // Only show audio encoder and microphone selection when audio is enabled
+        if self.config.record_audio {
+            video_section = video_section
+                .add(
+                    widget::settings::item::builder(fl!("settings-audio-encoder")).control(
+                        widget::dropdown(
+                            &self.audio_encoder_dropdown_options,
+                            Some(current_audio_encoder_index),
+                            Message::SelectAudioEncoder,
+                        ),
+                    ),
+                )
+                .add(
+                    widget::settings::item::builder(fl!("settings-microphone")).control(
+                        widget::dropdown(
+                            &self.audio_dropdown_options,
+                            Some(self.current_audio_device_index),
+                            Message::SelectAudioDevice,
+                        ),
+                    ),
+                );
+        }
 
         // Photo section (output format and HDR+ settings)
         use crate::config::BurstModeSetting;

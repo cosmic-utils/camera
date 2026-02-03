@@ -639,6 +639,8 @@ pub struct AppModel {
     pub burst_mode_frame_count_dropdown_options: Vec<String>,
     /// Photo output format dropdown options (JPEG, PNG, DNG)
     pub photo_output_format_dropdown_options: Vec<String>,
+    /// Audio encoder dropdown options (Opus, AAC)
+    pub audio_encoder_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -1221,6 +1223,10 @@ pub enum Message {
     SelectVideoEncoder(usize),
     /// Select photo output format (JPEG, PNG, DNG)
     SelectPhotoOutputFormat(usize),
+    /// Toggle recording audio with video
+    ToggleRecordAudio,
+    /// Select audio encoder (Opus, AAC)
+    SelectAudioEncoder(usize),
     /// Toggle saving raw burst frames as DNG (debugging feature)
     ToggleSaveBurstRaw,
     /// Toggle virtual camera feature enabled

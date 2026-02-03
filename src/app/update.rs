@@ -228,6 +228,8 @@ impl AppModel {
             Message::SelectPhotoOutputFormat(index) => {
                 self.handle_select_photo_output_format(index)
             }
+            Message::ToggleRecordAudio => self.handle_toggle_record_audio(),
+            Message::SelectAudioEncoder(index) => self.handle_select_audio_encoder(index),
             Message::ToggleSaveBurstRaw => self.handle_toggle_save_burst_raw(),
 
             // ===== System & Recovery =====

@@ -92,6 +92,29 @@ impl BurstModeSetting {
     ];
 }
 
+/// Audio encoder preference
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AudioEncoder {
+    /// Opus codec (preferred - best quality)
+    #[default]
+    Opus,
+    /// AAC codec (fallback - good compatibility)
+    AAC,
+}
+
+impl AudioEncoder {
+    /// Get display name for this encoder
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            AudioEncoder::Opus => "Opus",
+            AudioEncoder::AAC => "AAC",
+        }
+    }
+
+    /// Get all available encoders
+    pub const ALL: [AudioEncoder; 2] = [AudioEncoder::Opus, AudioEncoder::AAC];
+}
+
 /// Application theme preference
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AppTheme {
@@ -140,7 +163,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 11]
+#[version = 12]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -170,6 +193,10 @@ pub struct Config {
     pub save_burst_raw: bool,
     /// Burst mode setting (Off, Auto, or fixed frame count)
     pub burst_mode_setting: BurstModeSetting,
+    /// Record audio with video
+    pub record_audio: bool,
+    /// Audio encoder preference (Opus or AAC)
+    pub audio_encoder: AudioEncoder,
 }
 
 impl Default for Config {
@@ -191,6 +218,8 @@ impl Default for Config {
             photo_output_format: PhotoOutputFormat::default(), // Default to JPEG
             save_burst_raw: false, // Disabled by default (debugging feature)
             burst_mode_setting: BurstModeSetting::default(), // Default to Auto
+            record_audio: true,   // Enable audio recording by default
+            audio_encoder: AudioEncoder::default(), // Default to Opus
         }
     }
 }
