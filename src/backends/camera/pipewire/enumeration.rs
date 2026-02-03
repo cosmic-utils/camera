@@ -498,12 +498,12 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
         }
 
         // When we hit a new Object, save the previous format
-        if trimmed.starts_with("Object:") && !current_framerates.is_empty() {
+        if trimmed.starts_with("Object:") {
             if let (Some(w), Some(h), Some(subtype)) =
                 (current_width, current_height, &current_subtype)
             {
                 // Determine the pixel format string:
-                // - For raw formats: use VideoFormat (YUY2, NV12, etc.)
+                // - For raw formats: use VideoFormat (YUY2, NV12, RGBA, etc.)
                 // - For compressed formats: use MediaSubtype (MJPG, H264, etc.)
                 let pixel_format = if subtype == "raw" {
                     current_video_format
@@ -513,17 +513,35 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
                     subtype.to_uppercase()
                 };
 
-                // Create a format for each framerate
-                for fps in &current_framerates {
+                // Check if this is a libcamera device (no framerates in EnumFormat)
+                // libcamera uses FrameDurationLimits for flexible framerate control,
+                // which is not exposed via PipeWire's EnumFormat.
+                let is_libcamera = current_framerates.is_empty();
+
+                if is_libcamera {
+                    // libcamera doesn't expose framerates via PipeWire EnumFormat.
+                    // Only offer VFR/Auto mode - let libcamera negotiate the best framerate
+                    // per resolution via FrameDurationLimits.
                     formats.push(CameraFormat {
                         width: w,
                         height: h,
-                        framerate: Some(*fps),
-                        hardware_accelerated: pixel_format == "MJPG", // MJPEG is hardware accelerated
+                        framerate: None, // VFR/Auto - libcamera manages via FrameDurationLimits
+                        hardware_accelerated: false,
                         pixel_format: pixel_format.clone(),
                     });
+                } else {
+                    // V4L2 device with explicit framerates - use them
+                    for fps in &current_framerates {
+                        formats.push(CameraFormat {
+                            width: w,
+                            height: h,
+                            framerate: Some(*fps),
+                            hardware_accelerated: pixel_format == "MJPG", // MJPEG is hardware accelerated
+                            pixel_format: pixel_format.clone(),
+                        });
+                    }
                 }
-                debug!(width = w, height = h, pixel_format = %pixel_format, framerates = current_framerates.len(), "Completed format group");
+                debug!(width = w, height = h, pixel_format = %pixel_format, framerates = current_framerates.len(), is_libcamera = is_libcamera, "Completed format group");
             }
             current_width = None;
             current_height = None;
@@ -534,9 +552,7 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
     }
 
     // Don't forget the last format
-    if !current_framerates.is_empty()
-        && let (Some(w), Some(h), Some(subtype)) = (current_width, current_height, &current_subtype)
-    {
+    if let (Some(w), Some(h), Some(subtype)) = (current_width, current_height, &current_subtype) {
         let pixel_format = if subtype == "raw" {
             current_video_format
                 .clone()
@@ -545,14 +561,30 @@ fn try_enumerate_formats_from_node(node_id: &str) -> Option<Vec<CameraFormat>> {
             subtype.to_uppercase()
         };
 
-        for fps in &current_framerates {
+        // Check if this is a libcamera device (no framerates in EnumFormat)
+        let is_libcamera = current_framerates.is_empty();
+
+        if is_libcamera {
+            // libcamera doesn't expose framerates via PipeWire EnumFormat.
+            // Only offer VFR/Auto mode - let libcamera negotiate the best framerate.
             formats.push(CameraFormat {
                 width: w,
                 height: h,
-                framerate: Some(*fps),
-                hardware_accelerated: pixel_format == "MJPG",
+                framerate: None, // VFR/Auto - libcamera manages via FrameDurationLimits
+                hardware_accelerated: false,
                 pixel_format: pixel_format.clone(),
             });
+        } else {
+            // V4L2 device with explicit framerates - use them
+            for fps in &current_framerates {
+                formats.push(CameraFormat {
+                    width: w,
+                    height: h,
+                    framerate: Some(*fps),
+                    hardware_accelerated: pixel_format == "MJPG",
+                    pixel_format: pixel_format.clone(),
+                });
+            }
         }
     }
 

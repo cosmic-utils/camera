@@ -180,9 +180,15 @@ impl AppModel {
             crate::app::format_picker::preferences::select_max_resolution_format(&formats)
         };
 
-        // Set default aspect ratio based on selected format dimensions
+        // Set default aspect ratio based on selected format dimensions (accounting for rotation)
         if let Some(fmt) = &self.active_format {
-            self.photo_aspect_ratio = PhotoAspectRatio::default_for_frame(fmt.width, fmt.height);
+            let rotation = self
+                .available_cameras
+                .get(self.current_camera_index)
+                .map(|c| c.rotation)
+                .unwrap_or_default();
+            self.photo_aspect_ratio =
+                PhotoAspectRatio::default_for_frame_with_rotation(fmt.width, fmt.height, rotation);
         }
 
         self.update_mode_options();

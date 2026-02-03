@@ -885,6 +885,53 @@ impl PhotoAspectRatio {
             Some((0.0, offset, 1.0, 1.0 - offset))
         }
     }
+
+    /// Get the default aspect ratio accounting for sensor rotation
+    /// For 90°/270° rotations, the frame dimensions are swapped after GStreamer applies rotation
+    pub fn default_for_frame_with_rotation(
+        width: u32,
+        height: u32,
+        rotation: crate::backends::camera::types::SensorRotation,
+    ) -> Self {
+        // For 90°/270° rotations, swap dimensions to match the rotated frame
+        let (effective_width, effective_height) = if rotation.swaps_dimensions() {
+            (height, width)
+        } else {
+            (width, height)
+        };
+        Self::default_for_frame(effective_width, effective_height)
+    }
+
+    /// Calculate crop UV coordinates for shader use, accounting for sensor rotation
+    /// For 90°/270° rotations, the frame dimensions are swapped before calculating crop
+    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range
+    pub fn crop_uv_with_rotation(
+        &self,
+        frame_width: u32,
+        frame_height: u32,
+        rotation: crate::backends::camera::types::SensorRotation,
+    ) -> Option<(f32, f32, f32, f32)> {
+        // For 90°/270° rotations, the sensor dimensions are swapped
+        // but the frame we receive has already been rotated by GStreamer
+        // So we use the frame dimensions as-is
+        let _ = rotation; // Rotation is already applied by GStreamer videoflip
+        self.crop_uv(frame_width, frame_height)
+    }
+
+    /// Calculate crop rectangle accounting for sensor rotation
+    /// For 90°/270° rotations, adjusts the crop to account for dimension swapping
+    pub fn crop_rect_with_rotation(
+        &self,
+        frame_width: u32,
+        frame_height: u32,
+        rotation: crate::backends::camera::types::SensorRotation,
+    ) -> (u32, u32, u32, u32) {
+        // For 90°/270° rotations, the sensor dimensions are swapped
+        // but the frame we receive has already been rotated by GStreamer
+        // So we use the frame dimensions as-is
+        let _ = rotation; // Rotation is already applied by GStreamer videoflip
+        self.crop_rect(frame_width, frame_height)
+    }
 }
 
 /// Filter types for camera preview

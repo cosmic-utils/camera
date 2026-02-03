@@ -35,15 +35,24 @@ impl AppModel {
     }
 
     /// Update framerate dropdown options based on current resolution (sorted highest to lowest)
+    /// Includes "Auto" option for VFR (variable framerate) when available
     pub fn update_framerate_options(&mut self) {
         use crate::backends::camera::types::Framerate;
 
         if let Some(active) = &self.active_format {
-            // Get all unique framerates for current resolution
-            let mut available_framerates: Vec<Framerate> = self
+            // Get all formats for current resolution
+            let formats_for_res: Vec<_> = self
                 .available_formats
                 .iter()
                 .filter(|f| f.width == active.width && f.height == active.height)
+                .collect();
+
+            // Check if VFR (framerate=None) is available
+            let has_vfr = formats_for_res.iter().any(|f| f.framerate.is_none());
+
+            // Get all unique fixed framerates
+            let mut available_framerates: Vec<Framerate> = formats_for_res
+                .iter()
                 .filter_map(|f| f.framerate)
                 .collect::<HashSet<_>>()
                 .into_iter()
@@ -56,10 +65,16 @@ impl AppModel {
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
 
+            // Build the options list
             self.framerate_dropdown_options = available_framerates
                 .into_iter()
                 .map(|fps| fps.to_string())
                 .collect();
+
+            // Add "Auto" option at the end for VFR (libcamera dynamic framerate)
+            if has_vfr {
+                self.framerate_dropdown_options.push("Auto".to_string());
+            }
         } else {
             self.framerate_dropdown_options.clear();
         }
@@ -162,14 +177,14 @@ impl AppModel {
         self.mode_dropdown_options = modes
             .iter()
             .map(|f| {
-                let framerate_str = f
-                    .framerate
-                    .map(|fr| fr.to_string())
-                    .unwrap_or_else(|| "0".to_string());
+                let framerate_str = match f.framerate {
+                    Some(fr) => format!("{}fps", fr),
+                    None => "Auto".to_string(), // VFR - libcamera manages framerate
+                };
                 let codec_desc = get_codec_short_description(&f.pixel_format);
                 let codec_detail = get_codec_display_detail(&f.pixel_format);
                 format!(
-                    "{}x{} @ {}fps - {} ({})",
+                    "{}x{} @ {} - {} ({})",
                     f.width, f.height, framerate_str, codec_desc, codec_detail
                 )
             })

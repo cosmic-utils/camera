@@ -19,6 +19,14 @@ impl AppModel {
     // Format Selection Handlers
     // =========================================================================
 
+    /// Get the current camera's sensor rotation
+    fn current_camera_rotation(&self) -> crate::backends::camera::types::SensorRotation {
+        self.available_cameras
+            .get(self.current_camera_index)
+            .map(|c| c.rotation)
+            .unwrap_or_default()
+    }
+
     pub(crate) fn handle_set_mode(&mut self, mode: CameraMode) -> Task<cosmic::Action<Message>> {
         if self.mode == mode {
             return Task::none();
@@ -182,9 +190,17 @@ impl AppModel {
         &mut self,
         framerate_str: String,
     ) -> Task<cosmic::Action<Message>> {
+        // Handle "Auto" for VFR (variable framerate) - libcamera manages dynamically
+        if framerate_str == "Auto" {
+            info!("Switching to VFR (Auto framerate - libcamera managed)");
+            self.change_framerate_optional(None);
+            let _ = self.transition_state.start();
+            return self.query_exposure_controls_task();
+        }
+
         if let Ok(fps) = framerate_str.parse::<u32>() {
             info!(fps, "Switching to framerate");
-            self.change_framerate(fps);
+            self.change_framerate_optional(Some(fps));
             let _ = self.transition_state.start();
 
             // Re-query exposure controls to get fresh defaults for new framerate
@@ -244,9 +260,12 @@ impl AppModel {
 
                 if let Some(fmt) = &self.active_format {
                     info!(width, format = %fmt, "Applied resolution with framerate preservation");
-                    // Update aspect ratio default for new dimensions
-                    self.photo_aspect_ratio =
-                        PhotoAspectRatio::default_for_frame(fmt.width, fmt.height);
+                    // Update aspect ratio default for new dimensions (accounting for rotation)
+                    self.photo_aspect_ratio = PhotoAspectRatio::default_for_frame_with_rotation(
+                        fmt.width,
+                        fmt.height,
+                        self.current_camera_rotation(),
+                    );
                 }
                 self.zoom_level = 1.0; // Reset zoom when changing resolution
                 self.save_settings();
@@ -266,9 +285,12 @@ impl AppModel {
 
             if let Some(fmt) = &self.active_format {
                 info!(format = %fmt, "Selected format from picker");
-                // Update aspect ratio default for new dimensions
-                self.photo_aspect_ratio =
-                    PhotoAspectRatio::default_for_frame(fmt.width, fmt.height);
+                // Update aspect ratio default for new dimensions (accounting for rotation)
+                self.photo_aspect_ratio = PhotoAspectRatio::default_for_frame_with_rotation(
+                    fmt.width,
+                    fmt.height,
+                    self.current_camera_rotation(),
+                );
             }
             self.zoom_level = 1.0; // Reset zoom when changing format
             self.save_settings();

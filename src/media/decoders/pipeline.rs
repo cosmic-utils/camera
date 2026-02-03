@@ -6,10 +6,27 @@
 //! with appropriate decoder selection and format negotiation.
 
 use super::PipelineBackend;
+use crate::backends::camera::types::SensorRotation;
 use crate::constants::{pipeline, timing};
 use gstreamer::prelude::*;
 use std::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+
+/// Get videoflip element string for rotation correction in preview pipeline.
+/// The sensor rotation value indicates how the sensor is physically mounted.
+/// To correct the image, we rotate in the opposite direction.
+/// Returns empty string if no rotation needed, otherwise "videoflip method=N ! "
+fn get_videoflip_element(rotation: SensorRotation) -> &'static str {
+    match rotation {
+        SensorRotation::None => "",
+        // Sensor mounted at 90° CW -> rotate image 90° CCW to correct
+        SensorRotation::Rotate90 => "videoflip method=counterclockwise ! ",
+        // Sensor mounted at 180° -> rotate image 180° to correct
+        SensorRotation::Rotate180 => "videoflip method=rotate-180 ! ",
+        // Sensor mounted at 270° CW (90° CCW) -> rotate image 90° CW to correct
+        SensorRotation::Rotate270 => "videoflip method=clockwise ! ",
+    }
+}
 
 /// Format category for pipeline construction
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +105,7 @@ pub fn get_full_pipeline_string() -> Option<String> {
 /// * `_decoder` - Decoder element name (unused, kept for API compatibility)
 /// * `pixel_format` - Pixel format FourCC (e.g., "MJPG", "H264", "YUYV")
 /// * `_backend` - Backend type (unused, always PipeWire)
+/// * `rotation` - Sensor rotation to correct preview orientation
 ///
 /// # Returns
 /// * `Ok(Pipeline)` - Successfully created and started pipeline
@@ -98,8 +116,9 @@ pub fn try_create_pipeline(
     _decoder: &str,
     pixel_format: Option<&str>,
     _backend: PipelineBackend,
+    rotation: SensorRotation,
 ) -> Result<gstreamer::Pipeline, Box<dyn std::error::Error>> {
-    try_create_pipewire_pipeline(device_path, caps_filter, pixel_format)
+    try_create_pipewire_pipeline(device_path, caps_filter, pixel_format, rotation)
 }
 
 /// Maximum retries for pipeline creation (handles PipeWire race conditions)
@@ -112,6 +131,7 @@ fn try_create_pipewire_pipeline(
     device_path: Option<&str>,
     caps_filter: &str,
     pixel_format: Option<&str>,
+    rotation: SensorRotation,
 ) -> Result<gstreamer::Pipeline, Box<dyn std::error::Error>> {
     // Check if PipeWire source is available
     gstreamer::ElementFactory::make("pipewiresrc")
@@ -126,9 +146,14 @@ fn try_create_pipewire_pipeline(
     // Log requested format
     log_requested_format(caps_filter);
 
+    // Log rotation if any
+    if rotation != SensorRotation::None {
+        debug!(rotation = %rotation.degrees(), "Applying sensor rotation correction in preview pipeline");
+    }
+
     // Build PipeWire pipeline based on pixel format
     let pipewire_pipeline =
-        build_pipewire_pipeline_string(&pw_path_prop, caps_filter, pixel_format);
+        build_pipewire_pipeline_string(&pw_path_prop, caps_filter, pixel_format, rotation);
 
     // Store full pipeline string for insights
     if let Ok(mut guard) = FULL_PIPELINE_STRING.write() {
@@ -244,11 +269,16 @@ fn log_requested_format(caps_filter: &str) {
 ///
 /// For unsupported raw formats, the pipeline converts to NV12 via videoconvert
 /// which the GPU shader can then process.
+///
+/// If rotation is specified, a videoflip element is added to correct sensor orientation.
 fn build_pipewire_pipeline_string(
     pw_path_prop: &str,
     caps_filter: &str,
     pixel_format: Option<&str>,
+    rotation: SensorRotation,
 ) -> String {
+    // Get videoflip element string (empty if no rotation needed)
+    let videoflip = get_videoflip_element(rotation);
     if !caps_filter.is_empty() {
         let category = get_format_category(pixel_format);
         info!(?pixel_format, ?category, "Building pipeline for format");
@@ -268,11 +298,12 @@ fn build_pipewire_pipeline_string(
                     jpegparse ! \
                     {} ! \
                     queue max-size-buffers={} leaky=downstream ! \
-                    appsink name=sink",
+                    {}appsink name=sink",
                     pw_path_prop,
                     caps_filter,
                     decoder_chain,
-                    pipeline::MAX_BUFFERS
+                    pipeline::MAX_BUFFERS,
+                    videoflip
                 )
             }
 
@@ -290,8 +321,8 @@ fn build_pipewire_pipeline_string(
                      {} ! \
                      video/x-raw ! \
                      queue max-size-buffers=8 leaky=downstream ! \
-                     appsink name=sink sync=false",
-                    pw_path_prop, caps_filter, decoder_chain
+                     {}appsink name=sink sync=false",
+                    pw_path_prop, caps_filter, decoder_chain, videoflip
                 )
             }
 
@@ -307,8 +338,8 @@ fn build_pipewire_pipeline_string(
                      {} ! \
                      video/x-raw ! \
                      queue max-size-buffers=8 leaky=downstream ! \
-                     appsink name=sink sync=false",
-                    pw_path_prop, caps_filter, decoder_chain
+                     {}appsink name=sink sync=false",
+                    pw_path_prop, caps_filter, decoder_chain, videoflip
                 )
             }
 
@@ -323,8 +354,8 @@ fn build_pipewire_pipeline_string(
                      video/x-bayer,{} ! \
                      bayer2rgb ! \
                      video/x-raw,format=RGBA ! \
-                     appsink name=sink",
-                    pw_path_prop, caps_filter
+                     {}appsink name=sink",
+                    pw_path_prop, caps_filter, videoflip
                 )
             }
 
@@ -342,8 +373,8 @@ fn build_pipewire_pipeline_string(
                 format!(
                     "pipewiresrc {}do-timestamp=true ! \
                     video/x-raw,format={},{} ! \
-                    appsink name=sink",
-                    pw_path_prop, gst_fmt, caps_filter
+                    {}appsink name=sink",
+                    pw_path_prop, gst_fmt, caps_filter, videoflip
                 )
             }
 
@@ -356,8 +387,8 @@ fn build_pipewire_pipeline_string(
                 format!(
                     "pipewiresrc {}do-timestamp=true ! \
                     video/x-raw,format={},{} ! \
-                    appsink name=sink",
-                    pw_path_prop, fmt, caps_filter
+                    {}appsink name=sink",
+                    pw_path_prop, fmt, caps_filter, videoflip
                 )
             }
 
@@ -367,8 +398,8 @@ fn build_pipewire_pipeline_string(
                 format!(
                     "pipewiresrc {}do-timestamp=true ! \
                     video/x-raw,format=GRAY8,{} ! \
-                    appsink name=sink",
-                    pw_path_prop, caps_filter
+                    {}appsink name=sink",
+                    pw_path_prop, caps_filter, videoflip
                 )
             }
 
@@ -383,11 +414,12 @@ fn build_pipewire_pipeline_string(
                     video/x-raw,format={},{} ! \
                     videoconvert n-threads={} ! \
                     video/x-raw,format=RGBA ! \
-                    appsink name=sink",
+                    {}appsink name=sink",
                     pw_path_prop,
                     fmt,
                     caps_filter,
-                    pipeline::videoconvert_threads()
+                    pipeline::videoconvert_threads(),
+                    videoflip
                 )
             }
 
@@ -402,8 +434,8 @@ fn build_pipewire_pipeline_string(
                 format!(
                     "pipewiresrc {}do-timestamp=true ! \
                     video/x-raw,format={},{} ! \
-                    appsink name=sink",
-                    pw_path_prop, fmt, caps_filter
+                    {}appsink name=sink",
+                    pw_path_prop, fmt, caps_filter, videoflip
                 )
             }
 
@@ -418,11 +450,12 @@ fn build_pipewire_pipeline_string(
                     video/x-raw,format={},{} ! \
                     videoconvert n-threads={} ! \
                     video/x-raw,format=NV12 ! \
-                    appsink name=sink",
+                    {}appsink name=sink",
                     pw_path_prop,
                     fmt,
                     caps_filter,
-                    pipeline::videoconvert_threads()
+                    pipeline::videoconvert_threads(),
+                    videoflip
                 )
             }
 
@@ -431,10 +464,11 @@ fn build_pipewire_pipeline_string(
                 info!("Generic pipeline with auto-negotiation");
                 format!(
                     "pipewiresrc {}do-timestamp=true ! video/x-raw,{} ! \
-                     videoconvert n-threads={} ! video/x-raw,format=NV12 ! appsink name=sink",
+                     videoconvert n-threads={} ! video/x-raw,format=NV12 ! {}appsink name=sink",
                     pw_path_prop,
                     caps_filter,
-                    pipeline::videoconvert_threads()
+                    pipeline::videoconvert_threads(),
+                    videoflip
                 )
             }
         }
@@ -443,9 +477,10 @@ fn build_pipewire_pipeline_string(
         info!("No format specified: using decodebin with NV12 output");
         format!(
             "pipewiresrc {}do-timestamp=true ! decodebin ! \
-             videoconvert n-threads={} ! video/x-raw,format=NV12 ! appsink name=sink",
+             videoconvert n-threads={} ! video/x-raw,format=NV12 ! {}appsink name=sink",
             pw_path_prop,
-            pipeline::videoconvert_threads()
+            pipeline::videoconvert_threads(),
+            videoflip
         )
     }
 }
