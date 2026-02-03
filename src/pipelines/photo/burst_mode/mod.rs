@@ -41,8 +41,9 @@ pub mod fft_gpu;
 mod gpu_helpers;
 pub mod params;
 
-use crate::backends::camera::types::CameraFrame;
+use crate::backends::camera::types::{CameraFrame, PixelFormat};
 use crate::gpu::{self, wgpu};
+use crate::shaders::{GpuFrameInput, get_gpu_convert_pipeline};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
@@ -103,6 +104,113 @@ const fn div_ceil(dimension: u32, divisor: u32) -> u32 {
 #[inline]
 pub(crate) fn u8_to_f32_normalized(data: &[u8]) -> Vec<f32> {
     data.iter().map(|&x| x as f32 / 255.0).collect()
+}
+
+/// Convert a camera frame to RGBA format using GPU compute shader
+///
+/// If the frame is already RGBA, returns a copy of the data.
+/// For YUV and other formats, uses GPU compute shader for conversion.
+async fn convert_frame_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
+    // Fast path: already RGBA
+    if frame.format == PixelFormat::RGBA {
+        return Ok(frame.data.to_vec());
+    }
+
+    let buffer_data = frame.data.as_ref();
+    let yuv_planes = frame.yuv_planes.as_ref();
+
+    // Build GpuFrameInput from the frame
+    let input = match frame.format {
+        PixelFormat::NV12 | PixelFormat::NV21 => {
+            let planes = yuv_planes.ok_or("NV12/NV21 frame missing yuv_planes")?;
+            let y_end = planes.y_offset + planes.y_size;
+            let uv_end = planes.uv_offset + planes.uv_size;
+
+            GpuFrameInput {
+                format: frame.format,
+                width: frame.width,
+                height: frame.height,
+                y_data: &buffer_data[planes.y_offset..y_end],
+                y_stride: frame.stride,
+                uv_data: Some(&buffer_data[planes.uv_offset..uv_end]),
+                uv_stride: planes.uv_stride,
+                v_data: None,
+                v_stride: 0,
+            }
+        }
+        PixelFormat::I420 => {
+            let planes = yuv_planes.ok_or("I420 frame missing yuv_planes")?;
+            let y_end = planes.y_offset + planes.y_size;
+            let u_end = planes.uv_offset + planes.uv_size;
+            let v_end = planes.v_offset + planes.v_size;
+
+            GpuFrameInput {
+                format: frame.format,
+                width: frame.width,
+                height: frame.height,
+                y_data: &buffer_data[planes.y_offset..y_end],
+                y_stride: frame.stride,
+                uv_data: Some(&buffer_data[planes.uv_offset..u_end]),
+                uv_stride: planes.uv_stride,
+                v_data: if planes.v_size > 0 {
+                    Some(&buffer_data[planes.v_offset..v_end])
+                } else {
+                    None
+                },
+                v_stride: planes.v_stride,
+            }
+        }
+        // Packed 4:2:2 formats - all have same structure, just different byte order
+        PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
+            GpuFrameInput {
+                format: frame.format,
+                width: frame.width,
+                height: frame.height,
+                y_data: buffer_data,
+                y_stride: frame.stride,
+                uv_data: None,
+                uv_stride: 0,
+                v_data: None,
+                v_stride: 0,
+            }
+        }
+        // Single-plane formats: Gray8, RGB24
+        PixelFormat::Gray8 | PixelFormat::RGB24 => GpuFrameInput {
+            format: frame.format,
+            width: frame.width,
+            height: frame.height,
+            y_data: buffer_data,
+            y_stride: frame.stride,
+            uv_data: None,
+            uv_stride: 0,
+            v_data: None,
+            v_stride: 0,
+        },
+        PixelFormat::RGBA => {
+            // Should not reach here - handled at function start
+            return Ok(buffer_data.to_vec());
+        }
+    };
+
+    // Use GPU compute shader pipeline for conversion
+    let mut pipeline_guard = get_gpu_convert_pipeline()
+        .await
+        .map_err(|e| format!("Failed to get GPU convert pipeline: {}", e))?;
+
+    let pipeline = pipeline_guard
+        .as_mut()
+        .ok_or("GPU convert pipeline not initialized")?;
+
+    // Run GPU conversion (synchronous, just dispatches compute shader)
+    pipeline
+        .convert(&input)
+        .map_err(|e| format!("GPU conversion failed: {}", e))?;
+
+    // Read back RGBA data from GPU to CPU memory
+    pipeline
+        .read_rgba_to_cpu(frame.width, frame.height)
+        .await
+        .map_err(|e| format!("Failed to read RGBA from GPU: {}", e))
 }
 
 /// Hierarchical alignment configuration per pyramid level.
@@ -975,8 +1083,11 @@ impl BurstModeGpuPipeline {
         let height = frame.height;
         let pixel_count = (width * height) as usize;
 
+        // Convert frame to RGBA if needed (handles YUV formats)
+        let rgba_data = convert_frame_to_rgba(frame).await?;
+
         // Convert to f32
-        let frame_f32 = u8_to_f32_normalized(&frame.data);
+        let frame_f32 = u8_to_f32_normalized(&rgba_data);
 
         // Create buffers
         let frame_buffer = self.create_storage_buffer(
@@ -2038,10 +2149,13 @@ impl BurstModeGpuPipeline {
         let width = reference.width;
         let height = reference.height;
 
+        // Convert reference frame to RGBA if needed (handles YUV formats)
+        let reference_rgba = convert_frame_to_rgba(reference).await?;
+
         // Estimate noise using GPU
         let step_start = std::time::Instant::now();
         let noise_sd = self
-            .estimate_noise_gpu(&reference.data, width, height)
+            .estimate_noise_gpu(&reference_rgba, width, height)
             .await?;
         info!(
             elapsed_ms = step_start.elapsed().as_millis(),
@@ -2052,7 +2166,7 @@ impl BurstModeGpuPipeline {
         let result = self
             .fft_pipeline
             .merge_gpu(
-                &reference.data,
+                &reference_rgba,
                 aligned,
                 width,
                 height,
@@ -2611,8 +2725,13 @@ pub async fn export_raw_frames(
         let filename = format!("frame_{:03}.png", i);
         let output_path = burst_dir.join(&filename);
 
+        // Convert frame to RGBA if needed (handles YUV formats)
+        let rgba_data = convert_frame_to_rgba(frame)
+            .await
+            .map_err(|e| format!("Failed to convert frame {} to RGBA: {}", i, e))?;
+
         let img: ImageBuffer<Rgba<u8>, _> =
-            ImageBuffer::from_raw(frame.width, frame.height, frame.data.clone())
+            ImageBuffer::from_raw(frame.width, frame.height, rgba_data)
                 .ok_or_else(|| format!("Failed to create image buffer for frame {}", i))?;
 
         let output_path_clone = output_path.clone();
@@ -2679,10 +2798,13 @@ pub async fn export_burst_frames_dng(
         let filename = format!("frame_{:03}.dng", i);
         let output_path = burst_dir.join(&filename);
 
-        // Convert RGBA to RGB - need to convert Arc<[u8]> to Vec<u8>
-        let data_vec: Vec<u8> = frame.data.to_vec();
+        // Convert frame to RGBA if needed (handles YUV formats)
+        let rgba_data = convert_frame_to_rgba(frame)
+            .await
+            .map_err(|e| format!("Failed to convert frame {} to RGBA: {}", i, e))?;
+
         let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_raw(frame.width, frame.height, data_vec)
+            ImageBuffer::from_raw(frame.width, frame.height, rgba_data)
                 .ok_or_else(|| format!("Failed to create image buffer for frame {}", i))?;
 
         let rgb_img = image::DynamicImage::ImageRgba8(img).to_rgb8();

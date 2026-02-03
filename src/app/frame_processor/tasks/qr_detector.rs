@@ -7,7 +7,7 @@
 //! returning their positions and decoded content.
 
 use crate::app::frame_processor::types::{FrameRegion, QrDetection};
-use crate::backends::camera::types::CameraFrame;
+use crate::backends::camera::types::{CameraFrame, PixelFormat};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
@@ -63,8 +63,8 @@ impl QrDetector {
 fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     let start = std::time::Instant::now();
 
-    // Convert RGBA frame to grayscale
-    let (gray_data, width, height) = convert_rgba_to_gray(frame);
+    // Convert frame to grayscale (handles all pixel formats)
+    let (gray_data, width, height) = convert_to_gray(frame);
 
     let conversion_time = start.elapsed();
     trace!(
@@ -176,30 +176,163 @@ fn detect_sync(frame: &CameraFrame, max_dimension: u32) -> Vec<QrDetection> {
     detections
 }
 
-/// Convert RGBA frame to grayscale
-fn convert_rgba_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
+/// Convert frame to grayscale, handling all pixel formats
+///
+/// For YUV formats (NV12, I420, YUYV, etc.), the Y plane IS the luminance,
+/// so we can extract it directly - this is more efficient than RGB conversion.
+fn convert_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
     let width = frame.width as usize;
     let height = frame.height as usize;
     let stride = frame.stride as usize;
 
-    let mut gray = Vec::with_capacity(width * height);
-
-    for y in 0..height {
-        let row_start = y * stride;
-        for x in 0..width {
-            let offset = row_start + x * 4;
-            if offset + 2 < frame.data.len() {
-                let r = frame.data[offset] as u32;
-                let g = frame.data[offset + 1] as u32;
-                let b = frame.data[offset + 2] as u32;
-                // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
-                let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
-                gray.push(gray_val);
+    match frame.format {
+        // RGBA: Convert RGB to grayscale
+        PixelFormat::RGBA => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x * 4;
+                    if offset + 2 < frame.data.len() {
+                        let r = frame.data[offset] as u32;
+                        let g = frame.data[offset + 1] as u32;
+                        let b = frame.data[offset + 2] as u32;
+                        // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B
+                        let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+                        gray.push(gray_val);
+                    }
+                }
             }
+            (gray, frame.width, frame.height)
+        }
+
+        // Gray8: Already grayscale, just copy
+        PixelFormat::Gray8 => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x;
+                    if offset < frame.data.len() {
+                        gray.push(frame.data[offset]);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // RGB24: Convert RGB to grayscale (no alpha)
+        PixelFormat::RGB24 => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x * 3;
+                    if offset + 2 < frame.data.len() {
+                        let r = frame.data[offset] as u32;
+                        let g = frame.data[offset + 1] as u32;
+                        let b = frame.data[offset + 2] as u32;
+                        let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+                        gray.push(gray_val);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // NV12/NV21: Extract Y plane (full resolution luminance)
+        PixelFormat::NV12 | PixelFormat::NV21 => {
+            let mut gray = Vec::with_capacity(width * height);
+            if let Some(ref planes) = frame.yuv_planes {
+                for y in 0..height {
+                    let row_start = planes.y_offset + y * stride;
+                    for x in 0..width {
+                        let offset = row_start + x;
+                        if offset < frame.data.len() {
+                            gray.push(frame.data[offset]);
+                        }
+                    }
+                }
+            } else {
+                // Fallback: assume Y plane is at start of buffer
+                for y in 0..height {
+                    let row_start = y * stride;
+                    for x in 0..width {
+                        let offset = row_start + x;
+                        if offset < frame.data.len() {
+                            gray.push(frame.data[offset]);
+                        }
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // I420: Extract Y plane (full resolution luminance)
+        PixelFormat::I420 => {
+            let mut gray = Vec::with_capacity(width * height);
+            if let Some(ref planes) = frame.yuv_planes {
+                for y in 0..height {
+                    let row_start = planes.y_offset + y * stride;
+                    for x in 0..width {
+                        let offset = row_start + x;
+                        if offset < frame.data.len() {
+                            gray.push(frame.data[offset]);
+                        }
+                    }
+                }
+            } else {
+                // Fallback: assume Y plane is at start of buffer
+                for y in 0..height {
+                    let row_start = y * stride;
+                    for x in 0..width {
+                        let offset = row_start + x;
+                        if offset < frame.data.len() {
+                            gray.push(frame.data[offset]);
+                        }
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // YUYV/UYVY/YVYU/VYUY: Extract Y values from packed format
+        // YUYV: Y0 U Y1 V (Y at positions 0, 2)
+        // UYVY: U Y0 V Y1 (Y at positions 1, 3)
+        // YVYU: Y0 V Y1 U (Y at positions 0, 2)
+        // VYUY: V Y0 U Y1 (Y at positions 1, 3)
+        PixelFormat::YUYV | PixelFormat::YVYU => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    // In YUYV/YVYU: Y0 is at byte 0, Y1 is at byte 2 of each 4-byte pair
+                    let pair_offset = row_start + (x / 2) * 4;
+                    let y_offset = pair_offset + (x % 2) * 2;
+                    if y_offset < frame.data.len() {
+                        gray.push(frame.data[y_offset]);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        PixelFormat::UYVY | PixelFormat::VYUY => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    // In UYVY/VYUY: Y0 is at byte 1, Y1 is at byte 3 of each 4-byte pair
+                    let pair_offset = row_start + (x / 2) * 4;
+                    let y_offset = pair_offset + 1 + (x % 2) * 2;
+                    if y_offset < frame.data.len() {
+                        gray.push(frame.data[y_offset]);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
         }
     }
-
-    (gray, frame.width, frame.height)
 }
 
 /// Downscale grayscale image using bilinear interpolation
@@ -275,7 +408,7 @@ mod tests {
             captured_at: std::time::Instant::now(),
         };
 
-        let (gray, w, h) = convert_rgba_to_gray(&frame);
+        let (gray, w, h) = convert_to_gray(&frame);
         assert_eq!(w, 2);
         assert_eq!(h, 2);
         assert_eq!(gray.len(), 4);
