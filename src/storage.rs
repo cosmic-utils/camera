@@ -9,31 +9,52 @@ use tracing::{debug, warn};
 
 /// Load latest thumbnail for gallery button
 ///
-/// Scans the directory for photo and video files, finds the most recent one,
+/// Scans both photo and video directories for files, finds the most recent one,
 /// and loads it as both an image handle and RGBA data for custom rendering.
 /// For videos, extracts the first frame as a thumbnail.
 /// Returns (Handle, RGBA bytes wrapped in Arc, width, height)
 pub async fn load_latest_thumbnail(
     photos_dir: PathBuf,
+    videos_dir: PathBuf,
 ) -> Option<(cosmic::widget::image::Handle, Arc<Vec<u8>>, u32, u32)> {
-    // Get list of photo and video files (using blocking std::fs)
-    let photos_dir_clone = photos_dir.clone();
+    // Get list of photo and video files from both directories (using blocking std::fs)
     let mut entries = tokio::task::spawn_blocking(move || {
-        let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&photos_dir_clone) {
+        let mut files: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+
+        // Scan photos directory for image files
+        if let Ok(entries) = std::fs::read_dir(&photos_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(ext) = path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
-                    // Include both image and video files
-                    if file_formats::is_image_extension(&ext_str)
-                        || file_formats::is_video_extension(&ext_str)
-                    {
-                        files.push(entry);
+                    if file_formats::is_image_extension(&ext_str) {
+                        if let Ok(metadata) = entry.metadata() {
+                            if let Ok(modified) = metadata.modified() {
+                                files.push((path, modified));
+                            }
+                        }
                     }
                 }
             }
         }
+
+        // Scan videos directory for video files
+        if let Ok(entries) = std::fs::read_dir(&videos_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if file_formats::is_video_extension(&ext_str) {
+                        if let Ok(metadata) = entry.metadata() {
+                            if let Ok(modified) = metadata.modified() {
+                                files.push((path, modified));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         files
     })
     .await
@@ -44,14 +65,9 @@ pub async fn load_latest_thumbnail(
     }
 
     // Sort by modification time (newest first)
-    entries.sort_by_key(|e| {
-        e.metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .map(std::cmp::Reverse)
-    });
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
 
-    let latest_path = entries.first()?.path();
+    let latest_path = entries.first()?.0.clone();
     let extension = latest_path
         .extension()
         .and_then(|e| e.to_str())
