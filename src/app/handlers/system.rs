@@ -67,9 +67,7 @@ impl AppModel {
             self.virtual_camera.set_filter(filter);
         }
 
-        // Reset color settings to defaults when applying any filter (including Standard)
-        // This ensures filters work with neutral camera settings
-        self.reset_color_settings_to_defaults()
+        Task::none()
     }
 
     // =========================================================================
