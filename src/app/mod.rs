@@ -454,9 +454,14 @@ impl cosmic::Application for AppModel {
 
         // Load initial gallery thumbnail
         let folder_name = app.config.save_folder_name.clone();
+        let folder_name2 = folder_name.clone();
         let load_thumbnail_task = Task::perform(
             async move {
-                crate::storage::load_latest_thumbnail(get_photo_directory(&folder_name)).await
+                crate::storage::load_latest_thumbnail(
+                    get_photo_directory(&folder_name),
+                    get_video_directory(&folder_name2),
+                )
+                .await
             },
             |handle| cosmic::Action::App(Message::GalleryThumbnailLoaded(handle)),
         );

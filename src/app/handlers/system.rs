@@ -29,9 +29,10 @@ impl AppModel {
     }
 
     pub(crate) fn handle_refresh_gallery_thumbnail(&self) -> Task<cosmic::Action<Message>> {
-        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
+        let photos_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
+        let videos_dir = crate::app::get_video_directory(&self.config.save_folder_name);
         Task::perform(
-            async move { crate::storage::load_latest_thumbnail(save_dir).await },
+            async move { crate::storage::load_latest_thumbnail(photos_dir, videos_dir).await },
             |handle| cosmic::Action::App(Message::GalleryThumbnailLoaded(handle)),
         )
     }
