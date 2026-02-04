@@ -17,6 +17,8 @@ struct ViewportUniform {
     uv_scale: vec2<f32>,        // UV scale for scroll clipping (0-1)
     crop_uv_min: vec2<f32>,     // Crop UV min (u_min, v_min) - normalized 0-1
     crop_uv_max: vec2<f32>,     // Crop UV max (u_max, v_max) - normalized 0-1
+    zoom_level: f32,            // Unused in blur, but kept for struct compatibility
+    rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
 }
 
 @group(0) @binding(2)
@@ -49,8 +51,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var tex_coords = viewport.uv_offset + in.tex_coords * viewport.uv_scale;
 
     // Apply horizontal mirror if enabled (selfie mode)
+    // This happens BEFORE rotation so the mirror is in screen space
     if (viewport.mirror_horizontal == 1u) {
         tex_coords.x = 1.0 - tex_coords.x;
+    }
+
+    // Apply rotation correction for sensor orientation
+    if (viewport.rotation == 1u) {
+        // 90 CW sensor -> sample rotated 90 CW: (u,v) -> (1-v, u)
+        tex_coords = vec2<f32>(1.0 - tex_coords.y, tex_coords.x);
+    } else if (viewport.rotation == 2u) {
+        // 180 sensor -> rotate 180: (u,v) -> (1-u, 1-v)
+        tex_coords = vec2<f32>(1.0 - tex_coords.x, 1.0 - tex_coords.y);
+    } else if (viewport.rotation == 3u) {
+        // 270 CW sensor -> sample rotated 270 CW: (u,v) -> (v, 1-u)
+        tex_coords = vec2<f32>(tex_coords.y, 1.0 - tex_coords.x);
     }
 
     // Apply crop UV mapping (aspect ratio cropping)
@@ -59,8 +74,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Apply Cover mode adjustment if enabled
     if (viewport.content_fit_mode == 1u) {
-        // Get texture dimensions
-        let tex_size_dim = vec2<f32>(textureDimensions(texture_blur));
+        // Get texture dimensions, accounting for rotation
+        let raw_tex_size = vec2<f32>(textureDimensions(texture_blur));
+        var tex_size_dim = raw_tex_size;
+        if (viewport.rotation == 1u || viewport.rotation == 3u) {
+            tex_size_dim = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
+        }
 
         // Calculate aspect ratios
         let tex_aspect = tex_size_dim.x / tex_size_dim.y;
@@ -72,6 +91,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             scale = vec2<f32>(viewport_aspect / tex_aspect, 1.0);
         } else {
             scale = vec2<f32>(1.0, tex_aspect / viewport_aspect);
+        }
+
+        // For 90/270 rotations, swap scale factors since we're in rotated UV space
+        if (viewport.rotation == 1u || viewport.rotation == 3u) {
+            scale = vec2<f32>(scale.y, scale.x);
         }
 
         // Adjust UV coordinates to center and scale the texture

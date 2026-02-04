@@ -19,6 +19,22 @@ fn framerate_matches_config(framerate: Option<&Framerate>, config_fps: Option<u3
 }
 
 impl AppModel {
+    /// Start a blur transition, capturing the current frame rotation for use during blur.
+    /// This ensures the blurred frame uses the rotation of the camera that produced it,
+    /// not the rotation of the camera being switched to.
+    pub fn start_blur_transition(&mut self) {
+        self.blur_frame_rotation = self.current_frame_rotation;
+        let _ = self.transition_state.start();
+    }
+
+    /// Start a blur transition with custom duration
+    pub fn start_blur_transition_with_duration(&mut self, duration_ms: u64, disable_ui: bool) {
+        self.blur_frame_rotation = self.current_frame_rotation;
+        let _ = self
+            .transition_state
+            .start_with_duration(duration_ms, disable_ui);
+    }
+
     /// Check if switching to a different mode would change the camera format
     /// Returns true if the format would change, false if it would stay the same
     pub fn would_format_change_for_mode(&self, new_mode: CameraMode) -> bool {

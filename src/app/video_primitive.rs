@@ -397,8 +397,15 @@ impl PrimitiveTrait for VideoPrimitive {
                         // Blur video: use Contain mode with texture dimensions for Pass 1
                         // Apply mirror in first pass since this reads from source texture
                         // Apply filter in first pass so the filter is visible during transition
+                        // For 90/270 rotation, use effective (swapped) dimensions for viewport
+                        let (effective_width, effective_height) =
+                            if self.rotation == 1 || self.rotation == 3 {
+                                (tex_height as f32, tex_width as f32)
+                            } else {
+                                (tex_width as f32, tex_height as f32)
+                            };
                         let blur_uniform = ViewportUniform {
-                            viewport_size: [tex_width as f32, tex_height as f32],
+                            viewport_size: [effective_width, effective_height],
                             content_fit_mode: 0, // Contain mode - no Cover cropping in Pass 1
                             filter_mode,         // Apply filter during blur (visible in transition)
                             corner_radius: 0.0,  // No rounded corners for blur passes

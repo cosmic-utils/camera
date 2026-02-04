@@ -86,12 +86,9 @@ impl AppModel {
             // Use the flag that tracks if the current frame is actually from a file source
             let should_mirror = self.config.mirror_preview && !self.current_frame_is_file_source;
 
-            // Get rotation from current camera (or None if no camera)
-            let sensor_rotation = self
-                .available_cameras
-                .get(self.current_camera_index)
-                .map(|c| c.rotation)
-                .unwrap_or_default();
+            // Use the rotation stored with the current frame
+            // This ensures correct rotation during camera switch blur transitions
+            let sensor_rotation = self.current_frame_rotation;
             let rotation = sensor_rotation.gpu_rotation_code();
 
             // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)

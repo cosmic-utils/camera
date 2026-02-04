@@ -518,6 +518,9 @@ pub struct AppModel {
     pub virtual_camera_file_source: Option<FileSource>,
     /// Whether the current frame is from a file source (vs camera)
     pub current_frame_is_file_source: bool,
+    /// Rotation of the camera that produced the current frame
+    /// (used during blur transitions to maintain correct rotation)
+    pub current_frame_rotation: crate::backends::camera::types::SensorRotation,
     /// Video file playback progress (position_secs, duration_secs, progress 0.0-1.0)
     pub video_file_progress: Option<(f64, f64, f64)>,
     /// Video preview seek position (used when not streaming to store desired start position)

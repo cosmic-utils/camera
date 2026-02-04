@@ -53,7 +53,7 @@ impl AppModel {
 
         if would_change_format {
             info!("Mode switch will change format - triggering camera reload with blur");
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
             self.camera_cancel_flag
                 .store(true, std::sync::atomic::Ordering::Release);
             self.camera_cancel_flag =
@@ -150,7 +150,7 @@ impl AppModel {
                 "Switching to mode from consolidated dropdown"
             );
             self.change_format(format);
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
 
             // Re-query exposure controls to reset to defaults for new format
             return self.query_exposure_controls_task();
@@ -164,7 +164,7 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         info!(pixel_format = %pixel_format, "Switching to pixel format");
         self.change_pixel_format(pixel_format);
-        let _ = self.transition_state.start();
+        self.start_blur_transition();
 
         // Re-query exposure controls to get fresh defaults for new format
         self.query_exposure_controls_task()
@@ -178,7 +178,7 @@ impl AppModel {
             info!(width, height, "Switching to resolution");
             self.change_resolution(width, height);
             self.zoom_level = 1.0; // Reset zoom when changing resolution
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
 
             // Re-query exposure controls to get fresh defaults for new resolution
             return self.query_exposure_controls_task();
@@ -194,14 +194,14 @@ impl AppModel {
         if framerate_str == "Auto" {
             info!("Switching to VFR (Auto framerate - libcamera managed)");
             self.change_framerate_optional(None);
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
             return self.query_exposure_controls_task();
         }
 
         if let Ok(fps) = framerate_str.parse::<u32>() {
             info!(fps, "Switching to framerate");
             self.change_framerate_optional(Some(fps));
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
 
             // Re-query exposure controls to get fresh defaults for new framerate
             return self.query_exposure_controls_task();
@@ -269,7 +269,7 @@ impl AppModel {
                 }
                 self.zoom_level = 1.0; // Reset zoom when changing resolution
                 self.save_settings();
-                let _ = self.transition_state.start();
+                self.start_blur_transition();
             }
         }
         Task::none()
@@ -294,7 +294,7 @@ impl AppModel {
             }
             self.zoom_level = 1.0; // Reset zoom when changing format
             self.save_settings();
-            let _ = self.transition_state.start();
+            self.start_blur_transition();
 
             // Re-query exposure controls to reset to defaults for new format
             return self.query_exposure_controls_task();

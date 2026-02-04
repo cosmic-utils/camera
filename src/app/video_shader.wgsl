@@ -130,6 +130,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             scale = vec2<f32>(1.0, tex_aspect / viewport_aspect);
         }
 
+        // For 90/270 rotations, we're in rotated UV space where x and y are swapped
+        // So swap the scale factors to apply them to the correct axes
+        if (viewport.rotation == 1u || viewport.rotation == 3u) {
+            scale = vec2<f32>(scale.y, scale.x);
+        }
+
         // Adjust UV coordinates to center and scale the texture
         tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
     }

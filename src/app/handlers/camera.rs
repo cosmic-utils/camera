@@ -114,9 +114,20 @@ impl AppModel {
         // Track whether this frame is from a file source (for mirror handling)
         let is_file_source = self.virtual_camera.is_file_source();
 
+        // Get rotation from current camera (None for file sources)
+        let frame_rotation = if is_file_source {
+            crate::backends::camera::types::SensorRotation::None
+        } else {
+            self.available_cameras
+                .get(self.current_camera_index)
+                .map(|c| c.rotation)
+                .unwrap_or_default()
+        };
+
         if let Some(task) = self.transition_state.on_frame_received() {
             self.current_frame = Some(Arc::clone(&frame));
             self.current_frame_is_file_source = is_file_source;
+            self.current_frame_rotation = frame_rotation;
             return task.map(cosmic::Action::App);
         }
 
@@ -140,12 +151,14 @@ impl AppModel {
             if collection_complete {
                 self.current_frame = Some(frame);
                 self.current_frame_is_file_source = is_file_source;
+                self.current_frame_rotation = frame_rotation;
                 return Task::done(cosmic::Action::App(Message::BurstModeFramesCollected));
             }
         }
 
         self.current_frame = Some(frame);
         self.current_frame_is_file_source = is_file_source;
+        self.current_frame_rotation = frame_rotation;
         Task::none()
     }
 
