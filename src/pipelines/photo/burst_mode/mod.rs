@@ -568,7 +568,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, *bind_group, &[]);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -2591,6 +2591,7 @@ pub async fn process_burst_mode(
 /// * `filter` - Optional filter to apply to the image (None or Standard = no filter)
 /// * `rotation` - Sensor rotation to correct the image orientation
 /// * `filename_suffix` - Optional suffix for filename (e.g., "_HDR+"), None for no suffix
+#[allow(clippy::too_many_arguments)]
 pub async fn save_output(
     frame: &MergedFrame,
     output_dir: std::path::PathBuf,

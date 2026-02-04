@@ -73,7 +73,6 @@ pub async fn create_low_priority_compute_device(
                 required_features: wgpu::Features::empty(),
                 required_limits: adapter_limits.clone(),
                 memory_hints: wgpu::MemoryHints::Performance,
-                ..Default::default()
             },
             None,
         )
