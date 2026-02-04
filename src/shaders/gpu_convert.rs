@@ -218,7 +218,7 @@ impl GpuConvertPipeline {
                 label: Some("nv12_pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("main"),
+                entry_point: "main",
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -301,7 +301,7 @@ impl GpuConvertPipeline {
                 label: Some("nv21_pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("main"),
+                entry_point: "main",
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -398,7 +398,7 @@ impl GpuConvertPipeline {
                 label: Some("i420_pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("main"),
+                entry_point: "main",
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -473,7 +473,7 @@ impl GpuConvertPipeline {
                 label: Some(&format!("{}_pipeline", name)),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("main"),
+                entry_point: "main",
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -548,7 +548,7 @@ impl GpuConvertPipeline {
                 label: Some("gray8_pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
-                entry_point: Some("main"),
+                entry_point: "main",
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -738,7 +738,7 @@ impl GpuConvertPipeline {
             });
 
             compute_pass.set_pipeline(&format_pipeline.pipeline);
-            compute_pass.set_bind_group(0, Some(&bind_group), &[]);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
 
             let workgroups_x = input.width.div_ceil(16);
             let workgroups_y = input.height.div_ceil(16);
@@ -775,14 +775,14 @@ impl GpuConvertPipeline {
             // Packed 4:2:2 formats
             PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
                 self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
+                    wgpu::ImageCopyTexture {
                         texture: tex_y,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
                     input.y_data,
-                    wgpu::TexelCopyBufferLayout {
+                    wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(input.y_stride),
                         rows_per_image: Some(input.height),
@@ -799,14 +799,14 @@ impl GpuConvertPipeline {
             PixelFormat::NV12 | PixelFormat::NV21 => {
                 // Y plane
                 self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
+                    wgpu::ImageCopyTexture {
                         texture: tex_y,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
                     input.y_data,
-                    wgpu::TexelCopyBufferLayout {
+                    wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(input.y_stride),
                         rows_per_image: Some(input.height),
@@ -822,14 +822,14 @@ impl GpuConvertPipeline {
                 if let Some(uv_data) = input.uv_data {
                     let uv_height = input.height / 2;
                     self.queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
+                        wgpu::ImageCopyTexture {
                             texture: tex_uv,
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                             aspect: wgpu::TextureAspect::All,
                         },
                         uv_data,
-                        wgpu::TexelCopyBufferLayout {
+                        wgpu::ImageDataLayout {
                             offset: 0,
                             bytes_per_row: Some(input.uv_stride),
                             rows_per_image: Some(uv_height),
@@ -847,14 +847,14 @@ impl GpuConvertPipeline {
             PixelFormat::I420 => {
                 // Y plane
                 self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
+                    wgpu::ImageCopyTexture {
                         texture: tex_y,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
                     input.y_data,
-                    wgpu::TexelCopyBufferLayout {
+                    wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(input.y_stride),
                         rows_per_image: Some(input.height),
@@ -870,14 +870,14 @@ impl GpuConvertPipeline {
                 if let Some(uv_data) = input.uv_data {
                     let uv_height = input.height / 2;
                     self.queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
+                        wgpu::ImageCopyTexture {
                             texture: tex_uv,
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                             aspect: wgpu::TextureAspect::All,
                         },
                         uv_data,
-                        wgpu::TexelCopyBufferLayout {
+                        wgpu::ImageDataLayout {
                             offset: 0,
                             bytes_per_row: Some(input.uv_stride),
                             rows_per_image: Some(uv_height),
@@ -894,14 +894,14 @@ impl GpuConvertPipeline {
                 if let Some(v_data) = input.v_data {
                     let v_height = input.height / 2;
                     self.queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
+                        wgpu::ImageCopyTexture {
                             texture: tex_v,
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                             aspect: wgpu::TextureAspect::All,
                         },
                         v_data,
-                        wgpu::TexelCopyBufferLayout {
+                        wgpu::ImageDataLayout {
                             offset: 0,
                             bytes_per_row: Some(input.v_stride),
                             rows_per_image: Some(v_height),
@@ -918,14 +918,14 @@ impl GpuConvertPipeline {
             // Gray8: single channel
             PixelFormat::Gray8 => {
                 self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
+                    wgpu::ImageCopyTexture {
                         texture: tex_y,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
                     input.y_data,
-                    wgpu::TexelCopyBufferLayout {
+                    wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(input.y_stride),
                         rows_per_image: Some(input.height),
@@ -1086,15 +1086,15 @@ impl GpuConvertPipeline {
             });
 
         encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
+            wgpu::ImageCopyTexture {
                 texture: output,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::TexelCopyBufferInfo {
+            wgpu::ImageCopyBuffer {
                 buffer: &staging_buffer,
-                layout: wgpu::TexelCopyBufferLayout {
+                layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_bytes_per_row),
                     rows_per_image: Some(height),
@@ -1115,7 +1115,7 @@ impl GpuConvertPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
 
         receiver
             .await

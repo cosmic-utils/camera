@@ -68,7 +68,7 @@ pub fn create_pipeline(
         label: Some(label),
         layout: Some(layout),
         module,
-        entry_point: Some(entry_point),
+        entry_point,
         compilation_options: Default::default(),
         cache: None,
     })

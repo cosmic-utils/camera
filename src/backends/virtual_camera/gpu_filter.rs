@@ -137,7 +137,7 @@ impl GpuFilterRenderer {
             label: Some("vcam_filter_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("main"),
+            entry_point: "main",
             compilation_options: Default::default(),
             cache: None,
         });
@@ -245,14 +245,14 @@ impl GpuFilterRenderer {
 
         // Upload RGBA data
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
+            wgpu::ImageCopyTexture {
                 texture: texture_rgba,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &frame.data,
-            wgpu::TexelCopyBufferLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(frame.stride),
                 rows_per_image: None,
@@ -314,7 +314,7 @@ impl GpuFilterRenderer {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, Some(&bind_group), &[]);
+            pass.set_bind_group(0, &bind_group, &[]);
             let workgroups_x = frame.width.div_ceil(16);
             let workgroups_y = frame.height.div_ceil(16);
             pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
@@ -342,7 +342,7 @@ impl GpuFilterRenderer {
             let _ = tx.send(result);
         });
 
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
 
         rx.recv()
             .map_err(|e| BackendError::Other(format!("Failed to map buffer: {}", e)))?

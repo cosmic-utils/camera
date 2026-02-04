@@ -41,19 +41,6 @@ libc = "0.2.180"
 dng = "1.5"
 async-stream = "0.3"
 
-# Separate wgpu for compute pipelines (independent from libcosmic's wgpu for UI)
-# This allows us to use the latest wgpu features like open_with_callback for low-priority queues
-[dependencies.wgpu-compute]
-package = "wgpu"
-version = "27.0.1"
-default-features = false
-features = ["vulkan", "wgsl"]
-
-# Vulkan bindings for VK_EXT_global_priority support
-# Must match the version used by wgpu-hal
-[dependencies.ash]
-version = "0.38"
-
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.

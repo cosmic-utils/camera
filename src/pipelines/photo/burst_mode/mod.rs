@@ -493,7 +493,7 @@ impl BurstModeGpuPipeline {
             label: Some(label),
             layout: Some(layout),
             module,
-            entry_point: Some(entry_point),
+            entry_point,
             compilation_options: Default::default(),
             cache: None,
         })
@@ -568,7 +568,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, Some(*bind_group), &[]);
+            pass.set_bind_group(0, *bind_group, &[]);
             pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -582,7 +582,7 @@ impl BurstModeGpuPipeline {
     /// to ensure work is submitted; no explicit sleep needed.
     async fn yield_to_compositor(&self) {
         // Poll to submit pending work - the low-priority queue handles preemption
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
     }
 
     /// Copy data between GPU buffers
@@ -622,7 +622,7 @@ impl BurstModeGpuPipeline {
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = sender.send(result);
         });
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?
@@ -1164,7 +1164,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.sharpness_tiles);
-            pass.set_bind_group(0, Some(&bind_group), &[]);
+            pass.set_bind_group(0, &bind_group, &[]);
             pass.dispatch_workgroups(n_tiles_x, n_tiles_y, 1);
         }
 
@@ -1175,7 +1175,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.sharpness_reduce);
-            pass.set_bind_group(0, Some(&bind_group), &[]);
+            pass.set_bind_group(0, &bind_group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
 
@@ -1198,7 +1198,7 @@ impl BurstModeGpuPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?
@@ -2334,7 +2334,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.tonemap_local_lum);
-            pass.set_bind_group(0, Some(&local_lum_bind_group), &[]);
+            pass.set_bind_group(0, &local_lum_bind_group, &[]);
             pass.dispatch_workgroups(lum_width.div_ceil(16), lum_height.div_ceil(16), 1);
         }
 
@@ -2355,7 +2355,7 @@ impl BurstModeGpuPipeline {
         brightness_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
         rx.await
             .map_err(|_| "Failed to receive brightness map result")?
             .map_err(|e| format!("Failed to map brightness buffer: {:?}", e))?;
@@ -2435,7 +2435,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.tonemap_apply);
-            pass.set_bind_group(0, Some(&tonemap_bind_group), &[]);
+            pass.set_bind_group(0, &tonemap_bind_group, &[]);
             pass.dispatch_workgroups(width.div_ceil(16), height.div_ceil(16), 1);
         }
 
@@ -2457,7 +2457,7 @@ impl BurstModeGpuPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?

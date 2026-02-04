@@ -141,7 +141,7 @@ impl HistogramPipeline {
             label: Some("histogram_pass_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("histogram_pass"),
+            entry_point: "histogram_pass",
             compilation_options: Default::default(),
             cache: None,
         });
@@ -151,7 +151,7 @@ impl HistogramPipeline {
             label: Some("reduce_pass_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: Some("reduce_pass"),
+            entry_point: "reduce_pass",
             compilation_options: Default::default(),
             cache: None,
         });
@@ -255,14 +255,14 @@ impl HistogramPipeline {
 
         // Upload texture
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
+            wgpu::ImageCopyTexture {
                 texture: input_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             data,
-            wgpu::TexelCopyBufferLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
@@ -361,7 +361,7 @@ impl HistogramPipeline {
         // Map staging buffer and read results
         let buffer_slice = staging_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::Maintain::Wait);
 
         let metrics: BrightnessMetrics = {
             let data = buffer_slice.get_mapped_range();
