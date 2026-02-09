@@ -55,7 +55,6 @@ pub struct PipeWirePipeline {
     pipeline: gstreamer::Pipeline,
     _appsink: AppSink,
     pub decoder: String,
-    recording: bool,
 }
 
 impl PipeWirePipeline {
@@ -424,6 +423,7 @@ impl PipeWirePipeline {
                         stride,
                         yuv_planes,
                         captured_at: frame_start,
+                        libcamera_metadata: None,
                     };
 
                     // Capture size before send (frame is moved)
@@ -492,7 +492,6 @@ impl PipeWirePipeline {
             pipeline,
             _appsink: appsink,
             decoder: decoder_name,
-            recording: false,
         })
     }
 
@@ -546,33 +545,27 @@ impl PipeWirePipeline {
     }
 
     /// Start recording video
+    ///
+    /// Note: This method exists for trait compliance but is NOT used by the app.
+    /// The app uses VideoRecorder (src/pipelines/video/recorder.rs) directly,
+    /// which creates its own pipewiresrc. PipeWire supports multi-consumer
+    /// access so both preview and recording can access the same camera.
     pub fn start_recording(&mut self, _output_path: PathBuf) -> BackendResult<()> {
-        if self.recording {
-            return Err(BackendError::RecordingInProgress);
-        }
-
-        // TODO: Implement recording for PipeWire
-        // For now, return error
         Err(BackendError::Other(
-            "Video recording not yet implemented for PipeWire backend".to_string(),
+            "Use VideoRecorder directly for recording (this method is unused)".to_string(),
         ))
     }
 
-    /// Stop recording video
+    /// Stop recording video (see start_recording note)
     pub fn stop_recording(&mut self) -> BackendResult<PathBuf> {
-        if !self.recording {
-            return Err(BackendError::NoRecordingInProgress);
-        }
-
-        // TODO: Implement recording stop
         Err(BackendError::Other(
-            "Video recording not yet implemented for PipeWire backend".to_string(),
+            "Use VideoRecorder directly for recording (this method is unused)".to_string(),
         ))
     }
 
-    /// Check if currently recording
+    /// Check if currently recording (always false - see start_recording note)
     pub fn is_recording(&self) -> bool {
-        self.recording
+        false
     }
 
     /// Get decoder name

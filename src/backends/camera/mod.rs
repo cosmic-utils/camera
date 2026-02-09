@@ -29,6 +29,10 @@
 //!       └────────┘
 //! ```
 
+#[cfg(feature = "libcamera-backend")]
+pub mod libcamera;
+#[cfg(feature = "libcamera-backend")]
+pub mod libcamera_controls;
 pub mod manager;
 pub mod pipewire;
 pub mod types;

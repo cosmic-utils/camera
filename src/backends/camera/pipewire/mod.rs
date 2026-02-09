@@ -8,9 +8,11 @@
 //! It's the modern, recommended approach for Linux camera access.
 
 mod enumeration;
+mod native;
 pub mod pipeline;
 
 pub use enumeration::{enumerate_pipewire_cameras, get_pipewire_formats, is_pipewire_available};
+pub use native::{enumerate_cameras_native, CameraEvent, PipeWireHotplugWatcher};
 pub use pipeline::PipeWirePipeline;
 
 use super::CameraBackend;

@@ -11,6 +11,12 @@ use tracing::{debug, info, warn};
 
 /// Enumerate cameras using PipeWire
 /// Returns list of available cameras discovered through PipeWire
+///
+/// Enumeration strategy (in order):
+/// 1. Native PipeWire bindings (pipewire-rs) - most efficient, no subprocess
+/// 2. pw-cli subprocess - fallback if native fails
+/// 3. pactl subprocess - legacy fallback
+/// 4. Default camera - final fallback lets PipeWire auto-select
 pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
     debug!("Attempting to enumerate cameras via PipeWire");
 
@@ -31,18 +37,22 @@ pub fn enumerate_pipewire_cameras() -> Option<Vec<CameraDevice>> {
 
     debug!("PipeWire available for camera enumeration");
 
-    // PipeWire camera enumeration strategy:
-    // 1. Try to discover cameras through pw-cli/pactl (if available)
-    // 2. Otherwise, provide generic "Default Camera" that lets PipeWire auto-select
+    // Strategy 1: Native PipeWire bindings (most efficient)
+    if let Some(cameras) = super::native::enumerate_cameras_native() {
+        info!(count = cameras.len(), "Enumerated cameras via native PipeWire");
+        return Some(cameras);
+    }
+    debug!("Native PipeWire enumeration failed, trying pw-cli fallback");
 
+    // Strategy 2-3: Subprocess fallbacks
     let cameras = try_enumerate_with_pw_cli().or_else(try_enumerate_with_pactl);
 
     if let Some(ref cams) = cameras {
-        debug!(count = cams.len(), "Found PipeWire cameras");
+        debug!(count = cams.len(), "Found PipeWire cameras via subprocess");
         return Some(cams.clone());
     }
 
-    // Fallback: Let PipeWire use its default camera
+    // Strategy 4: Let PipeWire use its default camera
     info!("Using PipeWire auto-selection (default camera)");
     Some(vec![CameraDevice {
         name: "Default Camera (PipeWire)".to_string(),

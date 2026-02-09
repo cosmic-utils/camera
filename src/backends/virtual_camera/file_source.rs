@@ -210,6 +210,7 @@ fn extract_frame_from_sample(sample: &gstreamer::Sample) -> BackendResult<Camera
         format: PixelFormat::RGBA,
         yuv_planes: None,
         captured_at: Instant::now(),
+        libcamera_metadata: None,
     })
 }
 
@@ -299,6 +300,7 @@ pub fn load_image_as_frame(path: &Path) -> BackendResult<CameraFrame> {
         format: PixelFormat::RGBA,
         yuv_planes: None,
         captured_at: Instant::now(),
+        libcamera_metadata: None,
     })
 }
 
@@ -515,6 +517,7 @@ impl VideoDecoder {
             format: PixelFormat::RGBA,
             yuv_planes: None,
             captured_at: Instant::now(),
+            libcamera_metadata: None,
         })
     }
 
