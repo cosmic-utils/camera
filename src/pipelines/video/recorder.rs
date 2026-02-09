@@ -609,6 +609,7 @@ impl VideoRecorder {
                                     stride,
                                     yuv_planes: None,
                                     captured_at: std::time::Instant::now(),
+                                    libcamera_metadata: None,
                                 };
 
                                 let _ = preview_sender.send(frame).await;

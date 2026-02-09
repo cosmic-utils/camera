@@ -41,6 +41,15 @@ libc = "0.2.180"
 dng = "1.5"
 async-stream = "0.3"
 
+# Native PipeWire bindings for camera enumeration and hotplug detection
+# Replaces subprocess-based pw-cli calls with proper library integration
+pipewire = "0.9.2"
+
+# Native libcamera bindings for proper camera control integration
+# Provides per-frame controls, metadata feedback, and ISP coordination
+# Optional: only available on systems with libcamera installed
+libcamera = { version = "0.6.0", optional = true }
+
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
@@ -72,6 +81,11 @@ features = [
 # libcosmic = { path = "../libcosmic" }
 # cosmic-config = { path = "../libcosmic/cosmic-config" }
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
+
+[features]
+default = ["libcamera-backend"]
+# Enable libcamera backend for direct camera access (requires libcamera system library)
+libcamera-backend = ["dep:libcamera"]
 
 [dev-dependencies]
 naga = { version = "28.0.0", features = ["wgsl-in"] }

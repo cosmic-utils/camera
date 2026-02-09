@@ -515,6 +515,7 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
         stride: width * 4,
         yuv_planes: None,
         captured_at: Instant::now(),
+        libcamera_metadata: None,
     })
 }
 
@@ -549,6 +550,7 @@ fn load_burst_mode_frames(
                 stride: width * 4,
                 yuv_planes: None,
                 captured_at: Instant::now(),
+                libcamera_metadata: None,
             }
         };
 

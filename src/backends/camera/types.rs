@@ -384,6 +384,64 @@ impl PixelFormat {
     }
 }
 
+/// Autofocus state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AfState {
+    #[default]
+    Idle,
+    Scanning,
+    Focused,
+    Failed,
+}
+
+/// Auto exposure state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AeState {
+    #[default]
+    Inactive,
+    Searching,
+    Converged,
+    Locked,
+}
+
+/// Auto white balance state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AwbState {
+    #[default]
+    Inactive,
+    Searching,
+    Converged,
+    Locked,
+}
+
+/// Frame metadata extracted from libcamera completed requests
+///
+/// This struct contains the actual values applied by the ISP for a given frame,
+/// as reported by libcamera. Only populated when using the libcamera backend.
+#[derive(Debug, Clone, Default)]
+pub struct FrameMetadata {
+    /// Actual exposure time applied (microseconds)
+    pub exposure_time: Option<u64>,
+    /// Actual analogue gain applied
+    pub analogue_gain: Option<f32>,
+    /// Actual digital gain applied
+    pub digital_gain: Option<f32>,
+    /// Color temperature (Kelvin)
+    pub colour_temperature: Option<u32>,
+    /// Lens position (for AF cameras)
+    pub lens_position: Option<f32>,
+    /// Sensor timestamp (nanoseconds since boot)
+    pub sensor_timestamp: Option<u64>,
+    /// Frame sequence number
+    pub sequence: Option<u32>,
+    /// Focus status (scanning, focused, failed)
+    pub af_state: Option<AfState>,
+    /// Auto exposure state
+    pub ae_state: Option<AeState>,
+    /// Auto white balance state
+    pub awb_state: Option<AwbState>,
+}
+
 /// YUV plane offsets for multi-plane formats (NV12, I420)
 ///
 /// For planar/semi-planar YUV formats, the planes are stored at different offsets
@@ -446,6 +504,9 @@ pub struct CameraFrame {
     pub yuv_planes: Option<YuvPlanes>,
     /// Timestamp when frame was captured (for latency diagnostics)
     pub captured_at: Instant,
+    /// libcamera metadata (actual exposure, gain, focus state, etc.)
+    /// Only populated when using libcamera control integration
+    pub libcamera_metadata: Option<FrameMetadata>,
 }
 
 impl CameraFrame {
@@ -485,6 +546,7 @@ impl CameraFrame {
             stride: self.stride,
             yuv_planes: self.yuv_planes,
             captured_at: self.captured_at,
+            libcamera_metadata: self.libcamera_metadata.clone(),
         }
     }
 }
