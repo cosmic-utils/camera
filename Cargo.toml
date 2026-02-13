@@ -37,7 +37,7 @@ uuid = { version = "1.20.0", features = ["v4"] }
 clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.30"
 crossterm = "0.29"
-libc = "0.2.181"
+libc = "0.2.182"
 dng = "1.5"
 async-stream = "0.3"
 
