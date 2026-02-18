@@ -768,7 +768,7 @@ impl cosmic::Application for AppModel {
                                             // Drain any queued frames to get the most recent one (reduces latency)
                                             let mut latest_frame = frame;
                                             let mut drained_count = 0u32;
-                                            while let Ok(Some(newer_frame)) = receiver.try_next() {
+                                            while let Ok(newer_frame) = receiver.try_recv() {
                                                 latest_frame = newer_frame;
                                                 drained_count += 1;
                                             }

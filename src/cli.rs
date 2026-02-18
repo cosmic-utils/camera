@@ -137,15 +137,14 @@ pub fn take_photo(
     let mut frame: Option<CameraFrame> = None;
 
     while start.elapsed() < timeout {
-        match receiver.try_next() {
-            Ok(Some(f)) => {
+        match receiver.try_recv() {
+            Ok(f) => {
                 frame = Some(f);
                 // After warmup period, use the next good frame
                 if start.elapsed() > warmup {
                     break;
                 }
             }
-            Ok(None) => break, // Channel closed
             Err(_) => {
                 // No frame available yet, wait a bit
                 std::thread::sleep(Duration::from_millis(16));
