@@ -67,11 +67,7 @@ impl CameraPipeline {
 
     fn try_get_frame(&mut self) -> Option<CameraFrame> {
         // Non-blocking receive
-        match self.receiver.try_next() {
-            Ok(Some(frame)) => Some(frame),
-            Ok(None) => None, // Channel closed
-            Err(_) => None,   // No frame available
-        }
+        self.receiver.try_recv().ok()
     }
 }
 
