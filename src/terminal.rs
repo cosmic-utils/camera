@@ -8,7 +8,7 @@
 use crate::backends::camera::pipewire::{
     PipeWirePipeline, enumerate_pipewire_cameras, get_pipewire_formats,
 };
-use crate::backends::camera::types::{CameraDevice, CameraFormat, CameraFrame};
+use crate::backends::camera::types::{CameraDevice, CameraFormat, CameraFrame, PixelFormat};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -295,17 +295,153 @@ impl Widget for &FrameWidget {
 fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
     let x = x.min(frame.width - 1);
     let y = y.min(frame.height - 1);
+    let data = frame.data_slice();
 
-    let idx = (y * frame.stride + x * 4) as usize;
+    match frame.format {
+        PixelFormat::RGBA => {
+            let idx = (y * frame.stride + x * 4) as usize;
+            if idx + 2 < data.len() {
+                Color::Rgb(data[idx], data[idx + 1], data[idx + 2])
+            } else {
+                Color::Black
+            }
+        }
+        PixelFormat::RGB24 => {
+            let idx = (y * frame.stride + x * 3) as usize;
+            if idx + 2 < data.len() {
+                Color::Rgb(data[idx], data[idx + 1], data[idx + 2])
+            } else {
+                Color::Black
+            }
+        }
+        PixelFormat::Gray8 => {
+            let idx = (y * frame.stride + x) as usize;
+            if idx < data.len() {
+                let v = data[idx];
+                Color::Rgb(v, v, v)
+            } else {
+                Color::Black
+            }
+        }
+        PixelFormat::NV12 | PixelFormat::NV21 => {
+            let y_idx = (y * frame.stride + x) as usize;
+            if y_idx >= data.len() {
+                return Color::Black;
+            }
+            let luma = data[y_idx];
 
-    if idx + 2 < frame.data.len() {
-        let r = frame.data[idx];
-        let g = frame.data[idx + 1];
-        let b = frame.data[idx + 2];
-        Color::Rgb(r, g, b)
-    } else {
-        Color::Black
+            // UV plane is after the Y plane, at half resolution
+            let (uv_offset, uv_stride) = if let Some(planes) = &frame.yuv_planes {
+                (planes.uv_offset, planes.uv_stride)
+            } else {
+                // Fallback: UV plane starts right after Y plane
+                ((frame.stride * frame.height) as usize, frame.stride)
+            };
+            let uv_x = (x & !1) as usize; // round down to even
+            let uv_y = (y / 2) as usize;
+            let uv_idx = uv_offset + uv_y * uv_stride as usize + uv_x;
+
+            if uv_idx + 1 >= data.len() {
+                return Color::Rgb(luma, luma, luma);
+            }
+
+            let (u, v) = if frame.format == PixelFormat::NV12 {
+                (data[uv_idx], data[uv_idx + 1])
+            } else {
+                (data[uv_idx + 1], data[uv_idx])
+            };
+
+            yuv_to_rgb(luma, u, v)
+        }
+        PixelFormat::I420 => {
+            let y_idx = (y * frame.stride + x) as usize;
+            if y_idx >= data.len() {
+                return Color::Black;
+            }
+            let luma = data[y_idx];
+
+            let (u_offset, u_stride, v_offset, v_stride) = if let Some(planes) = &frame.yuv_planes {
+                (
+                    planes.uv_offset,
+                    planes.uv_stride,
+                    planes.v_offset,
+                    planes.v_stride,
+                )
+            } else {
+                // Fallback: standard I420 layout
+                let y_size = (frame.stride * frame.height) as usize;
+                let half_stride = (frame.stride / 2) as u32;
+                let u_size = (half_stride * frame.height / 2) as usize;
+                (y_size, half_stride, y_size + u_size, half_stride)
+            };
+
+            let cx = (x / 2) as usize;
+            let cy = (y / 2) as usize;
+            let u_idx = u_offset + cy * u_stride as usize + cx;
+            let v_idx = v_offset + cy * v_stride as usize + cx;
+
+            if u_idx >= data.len() || v_idx >= data.len() {
+                return Color::Rgb(luma, luma, luma);
+            }
+
+            yuv_to_rgb(luma, data[u_idx], data[v_idx])
+        }
+        PixelFormat::YUYV | PixelFormat::YVYU => {
+            // Packed 4:2:2: two pixels share chroma
+            // YUYV: Y0 U  Y1 V  (4 bytes per 2 pixels)
+            // YVYU: Y0 V  Y1 U
+            let pair_x = (x & !1) as usize; // round to even
+            let base = (y as usize) * (frame.stride as usize) + pair_x * 2;
+            if base + 3 >= data.len() {
+                return Color::Black;
+            }
+            let luma = if x & 1 == 0 {
+                data[base]
+            } else {
+                data[base + 2]
+            };
+            let (u, v) = if frame.format == PixelFormat::YUYV {
+                (data[base + 1], data[base + 3])
+            } else {
+                (data[base + 3], data[base + 1])
+            };
+            yuv_to_rgb(luma, u, v)
+        }
+        PixelFormat::UYVY | PixelFormat::VYUY => {
+            // Packed 4:2:2: two pixels share chroma
+            // UYVY: U  Y0 V  Y1 (4 bytes per 2 pixels)
+            // VYUY: V  Y0 U  Y1
+            let pair_x = (x & !1) as usize;
+            let base = (y as usize) * (frame.stride as usize) + pair_x * 2;
+            if base + 3 >= data.len() {
+                return Color::Black;
+            }
+            let luma = if x & 1 == 0 {
+                data[base + 1]
+            } else {
+                data[base + 3]
+            };
+            let (u, v) = if frame.format == PixelFormat::UYVY {
+                (data[base], data[base + 2])
+            } else {
+                (data[base + 2], data[base])
+            };
+            yuv_to_rgb(luma, u, v)
+        }
     }
+}
+
+/// Convert YUV (BT.601) to RGB
+fn yuv_to_rgb(y: u8, u: u8, v: u8) -> Color {
+    let y = y as f32;
+    let u = u as f32 - 128.0;
+    let v = v as f32 - 128.0;
+
+    let r = (y + 1.402 * v).clamp(0.0, 255.0) as u8;
+    let g = (y - 0.344136 * u - 0.714136 * v).clamp(0.0, 255.0) as u8;
+    let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
+
+    Color::Rgb(r, g, b)
 }
 
 /// Status bar widget
