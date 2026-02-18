@@ -21,6 +21,7 @@ use ratatui::{
     widgets::Widget,
 };
 use std::io::{self, stdout};
+use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -82,14 +83,13 @@ fn run_app(
 
     info!(count = cameras.len(), "Found cameras");
 
+    let multi_camera = cameras.len() > 1;
     let mut current_camera_index = 0;
     let mut pipeline = initialize_camera(&cameras[current_camera_index])?;
 
     let mut frame_widget = FrameWidget::new();
-    let mut status_message = format!(
-        "Camera: {} | Press 's' to switch, 'q' or Ctrl+C to quit",
-        cameras[current_camera_index].name
-    );
+    let mut show_help = false;
+    let mut status_message = build_status_message(multi_camera);
 
     loop {
         // Poll for frames (non-blocking) - drain all available frames to get latest
@@ -135,8 +135,25 @@ fn run_app(
                 break;
             }
 
+            // 'p' to take a picture
+            if key.code == KeyCode::Char('p') {
+                show_help = false;
+                if let Some(frame) = &frame_widget.frame {
+                    match save_photo(frame) {
+                        Ok(path) => {
+                            status_message = format!("Saved: {}", path.display());
+                        }
+                        Err(e) => {
+                            error!("Failed to save photo: {}", e);
+                            status_message = format!("Error: {}", e);
+                        }
+                    }
+                }
+            }
+
             // 's' to switch camera
-            if key.code == KeyCode::Char('s') && cameras.len() > 1 {
+            if key.code == KeyCode::Char('s') && multi_camera {
+                show_help = false;
                 current_camera_index = (current_camera_index + 1) % cameras.len();
 
                 // Drop old pipeline first
@@ -145,10 +162,7 @@ fn run_app(
                 match initialize_camera(&cameras[current_camera_index]) {
                     Ok(new_pipeline) => {
                         pipeline = new_pipeline;
-                        status_message = format!(
-                            "Camera: {} | Press 's' to switch, 'q' or Ctrl+C to quit",
-                            cameras[current_camera_index].name
-                        );
+                        status_message = build_status_message(multi_camera);
                         frame_widget = FrameWidget::new(); // Clear old frame
                     }
                     Err(e) => {
@@ -163,6 +177,16 @@ fn run_app(
                         pipeline = initialize_camera(&cameras[current_camera_index])?;
                     }
                 }
+            }
+
+            // 'h' to toggle help
+            if key.code == KeyCode::Char('h') {
+                show_help = !show_help;
+                status_message = if show_help {
+                    build_help_message(multi_camera)
+                } else {
+                    build_status_message(multi_camera)
+                };
             }
 
             // 'q' also quits
@@ -188,6 +212,56 @@ fn initialize_camera(device: &CameraDevice) -> Result<CameraPipeline, Box<dyn st
 
     info!(format = %format, "Selected format");
     CameraPipeline::new(device, &format)
+}
+
+fn build_status_message(multi_camera: bool) -> String {
+    let mut msg = "'p' picture".to_string();
+    if multi_camera {
+        msg.push_str(" | 's' switch camera");
+    }
+    msg.push_str(" | 'h' help | 'q' quit");
+    msg
+}
+
+fn build_help_message(multi_camera: bool) -> String {
+    let mut msg = String::from("p: Take picture | ");
+    if multi_camera {
+        msg.push_str("s: Switch camera | ");
+    }
+    msg.push_str("h: Toggle help | q/Ctrl+C: Quit");
+    msg
+}
+
+/// Save the current frame as a JPEG photo
+fn save_photo(frame: &CameraFrame) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let width = frame.width;
+    let height = frame.height;
+
+    // Convert frame to RGB bytes
+    let mut rgb_data = Vec::with_capacity((width * height * 3) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            let (r, g, b) = sample_pixel_rgb(frame, x, y);
+            rgb_data.push(r);
+            rgb_data.push(g);
+            rgb_data.push(b);
+        }
+    }
+
+    let img: image::RgbImage =
+        image::ImageBuffer::from_raw(width, height, rgb_data).ok_or("Failed to create image")?;
+
+    let photo_dir = crate::app::get_photo_directory("Camera");
+    std::fs::create_dir_all(&photo_dir)?;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("IMG_{}.jpg", timestamp);
+    let filepath = photo_dir.join(&filename);
+
+    img.save(&filepath)?;
+    info!(path = %filepath.display(), "Photo saved");
+
+    Ok(filepath)
 }
 
 fn select_terminal_format(formats: &[CameraFormat]) -> CameraFormat {
@@ -293,6 +367,11 @@ impl Widget for &FrameWidget {
 }
 
 fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
+    let (r, g, b) = sample_pixel_rgb(frame, x, y);
+    Color::Rgb(r, g, b)
+}
+
+fn sample_pixel_rgb(frame: &CameraFrame, x: u32, y: u32) -> (u8, u8, u8) {
     let x = x.min(frame.width - 1);
     let y = y.min(frame.height - 1);
     let data = frame.data_slice();
@@ -301,32 +380,32 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
         PixelFormat::RGBA => {
             let idx = (y * frame.stride + x * 4) as usize;
             if idx + 2 < data.len() {
-                Color::Rgb(data[idx], data[idx + 1], data[idx + 2])
+                (data[idx], data[idx + 1], data[idx + 2])
             } else {
-                Color::Black
+                (0, 0, 0)
             }
         }
         PixelFormat::RGB24 => {
             let idx = (y * frame.stride + x * 3) as usize;
             if idx + 2 < data.len() {
-                Color::Rgb(data[idx], data[idx + 1], data[idx + 2])
+                (data[idx], data[idx + 1], data[idx + 2])
             } else {
-                Color::Black
+                (0, 0, 0)
             }
         }
         PixelFormat::Gray8 => {
             let idx = (y * frame.stride + x) as usize;
             if idx < data.len() {
                 let v = data[idx];
-                Color::Rgb(v, v, v)
+                (v, v, v)
             } else {
-                Color::Black
+                (0, 0, 0)
             }
         }
         PixelFormat::NV12 | PixelFormat::NV21 => {
             let y_idx = (y * frame.stride + x) as usize;
             if y_idx >= data.len() {
-                return Color::Black;
+                return (0, 0, 0);
             }
             let luma = data[y_idx];
 
@@ -342,7 +421,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
             let uv_idx = uv_offset + uv_y * uv_stride as usize + uv_x;
 
             if uv_idx + 1 >= data.len() {
-                return Color::Rgb(luma, luma, luma);
+                return (luma, luma, luma);
             }
 
             let (u, v) = if frame.format == PixelFormat::NV12 {
@@ -356,7 +435,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
         PixelFormat::I420 => {
             let y_idx = (y * frame.stride + x) as usize;
             if y_idx >= data.len() {
-                return Color::Black;
+                return (0, 0, 0);
             }
             let luma = data[y_idx];
 
@@ -381,7 +460,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
             let v_idx = v_offset + cy * v_stride as usize + cx;
 
             if u_idx >= data.len() || v_idx >= data.len() {
-                return Color::Rgb(luma, luma, luma);
+                return (luma, luma, luma);
             }
 
             yuv_to_rgb(luma, data[u_idx], data[v_idx])
@@ -393,7 +472,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
             let pair_x = (x & !1) as usize; // round to even
             let base = (y as usize) * (frame.stride as usize) + pair_x * 2;
             if base + 3 >= data.len() {
-                return Color::Black;
+                return (0, 0, 0);
             }
             let luma = if x & 1 == 0 {
                 data[base]
@@ -414,7 +493,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
             let pair_x = (x & !1) as usize;
             let base = (y as usize) * (frame.stride as usize) + pair_x * 2;
             if base + 3 >= data.len() {
-                return Color::Black;
+                return (0, 0, 0);
             }
             let luma = if x & 1 == 0 {
                 data[base + 1]
@@ -432,7 +511,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
 }
 
 /// Convert YUV (BT.601) to RGB
-fn yuv_to_rgb(y: u8, u: u8, v: u8) -> Color {
+fn yuv_to_rgb(y: u8, u: u8, v: u8) -> (u8, u8, u8) {
     let y = y as f32;
     let u = u as f32 - 128.0;
     let v = v as f32 - 128.0;
@@ -441,7 +520,7 @@ fn yuv_to_rgb(y: u8, u: u8, v: u8) -> Color {
     let g = (y - 0.344136 * u - 0.714136 * v).clamp(0.0, 255.0) as u8;
     let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
 
-    Color::Rgb(r, g, b)
+    (r, g, b)
 }
 
 /// Status bar widget
