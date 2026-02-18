@@ -374,13 +374,14 @@
     <keyword>recording</keyword>
     <keyword>capture</keyword>
     <keyword>cosmic</keyword>
-    <keyword>камера</keyword>
-    <keyword>вебкамера</keyword>
-    <keyword>знімок</keyword>
-    <keyword>фото</keyword>
-    <keyword>видиво</keyword>
-    <keyword>запис</keyword>
-    <keyword>космік</keyword>
+    <keyword xml:lang="uk">камера</keyword>
+    <keyword xml:lang="uk">вебкамера</keyword>
+    <keyword xml:lang="uk">знімок</keyword>
+    <keyword xml:lang="uk">фото</keyword>
+    <keyword xml:lang="uk">видиво</keyword>
+    <keyword xml:lang="uk">відео</keyword>
+    <keyword xml:lang="uk">запис</keyword>
+    <keyword xml:lang="uk">космік</keyword>
   </keywords>
   <requires>
     <display_length compare="ge">360</display_length>

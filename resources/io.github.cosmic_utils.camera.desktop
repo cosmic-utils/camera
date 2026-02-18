@@ -14,6 +14,7 @@ Terminal=false
 Categories=AudioVideo;Video;Recorder;Photography;
 Keywords=camera;webcam;photo;video;
 Keywords[cs]=kamera;webkamera;fotografie;video;
+Keywords[uk]=камера;вебкамера;знімок;фото;видиво;відео;запис;космік;
 MimeType=
 StartupNotify=true
 X-GNOME-UsesNotifications=true
