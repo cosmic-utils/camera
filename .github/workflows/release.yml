@@ -41,6 +41,12 @@ jobs:
           - target: riscv64gc-unknown-linux-gnu
             arch: riscv64
             use_cross: true
+          - target: x86_64-unknown-linux-musl
+            arch: x86_64-musl
+            use_cross: true
+          - target: aarch64-unknown-linux-musl
+            arch: aarch64-musl
+            use_cross: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -78,7 +84,8 @@ jobs:
       - name: Build release binary
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+            CROSS_BUILD_OPTS="--build-arg RUST_VERSION=$(rustc -V | cut -d' ' -f2)" \
+              cross build --release --target ${{ matrix.target }}
           else
             just build-release --target ${{ matrix.target }}
           fi
@@ -256,6 +263,8 @@ jobs:
           mv artifacts/binary-aarch64/camera-aarch64-linux.tar.gz release-assets/
           mv artifacts/binary-armhf/camera-armhf-linux.tar.gz release-assets/
           mv artifacts/binary-riscv64/camera-riscv64-linux.tar.gz release-assets/
+          mv artifacts/binary-x86_64-musl/camera-x86_64-musl-linux.tar.gz release-assets/
+          mv artifacts/binary-aarch64-musl/camera-aarch64-musl-linux.tar.gz release-assets/
           mv artifacts/flatpak-x86_64/camera-x86_64.flatpak release-assets/
           # aarch64 flatpak is optional (only built when manually triggered)
           if [ -d "artifacts/flatpak-aarch64" ]; then
@@ -293,6 +302,8 @@ jobs:
           | `camera-aarch64-linux.tar.gz` | Linux binary for ARM64 |
           | `camera-armhf-linux.tar.gz` | Linux binary for armhf (32-bit) |
           | `camera-riscv64-linux.tar.gz` | Linux binary for RISC-V 64 |
+          | `camera-x86_64-musl-linux.tar.gz` | Linux binary for x86_64 (musl/static) |
+          | `camera-aarch64-musl-linux.tar.gz` | Linux binary for ARM64 (musl/static) |
           | `camera-${{ github.ref_name }}-source.zip` | Source code |
           EOF
           # Add aarch64 flatpak to release notes if it was built
