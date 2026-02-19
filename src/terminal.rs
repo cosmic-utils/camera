@@ -449,7 +449,7 @@ fn sample_pixel_rgb(frame: &CameraFrame, x: u32, y: u32) -> (u8, u8, u8) {
             } else {
                 // Fallback: standard I420 layout
                 let y_size = (frame.stride * frame.height) as usize;
-                let half_stride = (frame.stride / 2) as u32;
+                let half_stride = frame.stride / 2;
                 let u_size = (half_stride * frame.height / 2) as usize;
                 (y_size, half_stride, y_size + u_size, half_stride)
             };
