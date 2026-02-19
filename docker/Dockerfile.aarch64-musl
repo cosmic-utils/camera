@@ -1,0 +1,54 @@
+# Cross-compilation image for aarch64-unknown-linux-musl
+FROM alpine:edge
+
+# Install host build tools and clang/lld for cross-compilation
+# clang is a native cross-compiler — no separate toolchain download needed
+RUN apk add --no-cache \
+    alpine-keys \
+    build-base \
+    clang \
+    curl \
+    lld \
+    pkgconf
+
+# Install Rust natively (musl-linked) so cargo runs without glibc.
+# RUST_VERSION is passed as a build arg to keep the image in sync with the host
+# toolchain and to bust Docker's layer cache when the version changes.
+ARG RUST_VERSION=stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain "${RUST_VERSION}" --target aarch64-unknown-linux-musl
+
+# Set up aarch64 musl sysroot with Alpine aarch64 packages
+RUN mkdir -p /aarch64-sysroot/etc/apk && \
+    cp -r /etc/apk/keys /aarch64-sysroot/etc/apk/ && \
+    cp /etc/apk/repositories /aarch64-sysroot/etc/apk/repositories && \
+    apk --arch aarch64 --root /aarch64-sysroot --initdb --no-cache --allow-untrusted --no-scripts add \
+        gcc \
+        musl-dev \
+        glib-dev \
+        gstreamer-dev \
+        gst-plugins-base-dev \
+        gst-plugins-bad-dev \
+        wayland-dev \
+        libxkbcommon-dev \
+        libinput-dev \
+        eudev-dev \
+        libseat-dev
+
+# Create cross-compilation wrapper scripts using clang
+RUN printf '#!/bin/sh\nexec clang --target=aarch64-linux-musl --sysroot=/aarch64-sysroot -fuse-ld=lld "$@"\n' \
+        > /usr/local/bin/aarch64-linux-musl-clang && \
+    chmod +x /usr/local/bin/aarch64-linux-musl-clang && \
+    printf '#!/bin/sh\nexec clang++ --target=aarch64-linux-musl --sysroot=/aarch64-sysroot -fuse-ld=lld "$@"\n' \
+        > /usr/local/bin/aarch64-linux-musl-clang++ && \
+    chmod +x /usr/local/bin/aarch64-linux-musl-clang++
+
+# Set up environment for cross-compilation
+# Put native cargo first in PATH so it's found before cross-mounted /rust/bin
+ENV PATH="/root/.cargo/bin:${PATH}" \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-clang \
+    CC_aarch64_unknown_linux_musl=aarch64-linux-musl-clang \
+    CXX_aarch64_unknown_linux_musl=aarch64-linux-musl-clang++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/aarch64-sysroot/usr/lib/pkgconfig:/aarch64-sysroot/usr/share/pkgconfig \
+    PKG_CONFIG_SYSROOT_DIR=/aarch64-sysroot

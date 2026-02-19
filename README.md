@@ -200,6 +200,45 @@ just clippy
 just test
 ```
 
+### Cross-Compilation
+
+Cross-compilation for other architectures uses [cross](https://github.com/cross-rs/cross) with custom Dockerfiles in `docker/`.
+
+```bash
+# Install cross
+cargo install cross --git https://github.com/cross-rs/cross
+
+# Debug build
+cross build --target aarch64-unknown-linux-gnu
+
+# Release build
+cross build --release --target aarch64-unknown-linux-gnu
+```
+
+| Target | Dockerfile | Base |
+|--------|-----------|------|
+| `aarch64-unknown-linux-gnu` | `docker/Dockerfile.aarch64` | Ubuntu 24.04 |
+| `armv7-unknown-linux-gnueabihf` | `docker/Dockerfile.armhf` | Ubuntu 24.04 |
+| `riscv64gc-unknown-linux-gnu` | `docker/Dockerfile.riscv64` | Ubuntu 24.04 |
+| `x86_64-unknown-linux-musl` | `docker/Dockerfile.x86_64-musl` | Alpine |
+| `aarch64-unknown-linux-musl` | `docker/Dockerfile.aarch64-musl` | Alpine + clang |
+
+The configuration is in `Cross.toml`. Docker or Podman is required.
+
+**Podman users:** If your system uses btrfs, configure the storage driver:
+
+```bash
+mkdir -p ~/.config/containers
+printf '[storage]\ndriver = "btrfs"\n' > ~/.config/containers/storage.conf
+podman system reset --force
+```
+
+If your kernel lacks the `tun` module (check with `modprobe tun`), pass host networking:
+
+```bash
+CROSS_BUILD_OPTS="--network=host" CROSS_CONTAINER_OPTS="--network=host" cross build --target ...
+```
+
 ### Distrobox (Atomic Desktops)
 
 For development on atomic/immutable desktops (Fedora Silverblue, Kinoite, Bazzite, etc.):

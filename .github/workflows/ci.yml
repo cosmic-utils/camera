@@ -110,6 +110,12 @@ jobs:
           - arch: riscv64
             target: riscv64gc-unknown-linux-gnu
             use_cross: true
+          - arch: x86_64-musl
+            target: x86_64-unknown-linux-musl
+            use_cross: true
+          - arch: aarch64-musl
+            target: aarch64-unknown-linux-musl
+            use_cross: true
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
@@ -159,52 +165,11 @@ jobs:
       - name: Build debug binary
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --target ${{ matrix.target }}
+            CROSS_BUILD_OPTS="--build-arg RUST_VERSION=$(rustc -V | cut -d' ' -f2)" \
+              cross build --target ${{ matrix.target }}
           else
             just build-debug --target ${{ matrix.target }}
           fi
-
-  # Native Alpine/musl build (for postmarketOS compatibility)
-  build-alpine:
-    name: Build (Alpine/musl)
-    runs-on: ubuntu-latest
-    needs: check
-    container:
-      image: alpine:edge
-    steps:
-      - name: Install system dependencies
-        run: |
-          apk add --no-cache \
-            git \
-            curl \
-            build-base \
-            pkgconf \
-            glib-dev \
-            gstreamer-dev \
-            gst-plugins-base-dev \
-            gst-plugins-bad-dev \
-            wayland-dev \
-            libxkbcommon-dev \
-            libinput-dev \
-            eudev-dev \
-            libseat-dev \
-            mesa-dev \
-            vulkan-loader-dev
-
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-tags: true
-
-      - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Build debug binary
-        run: |
-          . "$HOME/.cargo/env"
-          cargo build
 
   flatpak-x86_64:
     name: Flatpak (x86_64)
