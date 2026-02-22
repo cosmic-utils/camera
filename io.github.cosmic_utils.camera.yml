@@ -36,6 +36,26 @@ finish-args:
   - --system-talk-name=org.freedesktop.NetworkManager
 
 modules:
+  # Build libcamera from source so the Rust crate can link against it.
+  # The camera module uses LIBCAMERA_SOURCE=pkg-config to find it via pkg-config
+  # instead of the vendored meson build (which would require the git submodule).
+  - name: libcamera
+    buildsystem: meson
+    config-opts:
+      - -Dcam=disabled
+      - -Dqcam=disabled
+      - -Dgstreamer=disabled
+      - -Dtracing=disabled
+      - -Dpycamera=disabled
+      - -Dlc-compliance=disabled
+      - -Ddocumentation=disabled
+      - -Dtest=false
+      - -Dv4l2=disabled
+    sources:
+      - type: git
+        url: https://git.libcamera.org/libcamera/libcamera.git
+        tag: v0.7.0
+
   - name: camera
     buildsystem: simple
     build-options:
@@ -43,6 +63,9 @@ modules:
       env:
         CARGO_HOME: /run/build/camera/cargo
         CARGO_TARGET_DIR: /run/build/camera/target
+        # Use the libcamera built by the module above instead of the vendored
+        # meson build (which needs the git submodule source tree).
+        LIBCAMERA_SOURCE: pkg-config
     build-commands:
       # Build the application with cargo (version is passed via .flatpak-version file)
       - |

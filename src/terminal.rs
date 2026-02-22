@@ -374,7 +374,7 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
 fn sample_pixel_rgb(frame: &CameraFrame, x: u32, y: u32) -> (u8, u8, u8) {
     let x = x.min(frame.width - 1);
     let y = y.min(frame.height - 1);
-    let data = frame.data_slice();
+    let data: &[u8] = &frame.data;
 
     match frame.format {
         PixelFormat::RGBA => {
@@ -506,6 +506,68 @@ fn sample_pixel_rgb(frame: &CameraFrame, x: u32, y: u32) -> (u8, u8, u8) {
                 (data[base + 2], data[base])
             };
             yuv_to_rgb(luma, u, v)
+        }
+        PixelFormat::ABGR => {
+            // A B G R byte order — 4 bytes per pixel
+            let idx = (y * frame.stride + x * 4) as usize;
+            if idx + 3 < data.len() {
+                (data[idx + 3], data[idx + 2], data[idx + 1])
+            } else {
+                (0, 0, 0)
+            }
+        }
+        PixelFormat::BGRA => {
+            // B G R A byte order — 4 bytes per pixel
+            let idx = (y * frame.stride + x * 4) as usize;
+            if idx + 2 < data.len() {
+                (data[idx + 2], data[idx + 1], data[idx])
+            } else {
+                (0, 0, 0)
+            }
+        }
+        PixelFormat::BayerRGGB
+        | PixelFormat::BayerBGGR
+        | PixelFormat::BayerGRBG
+        | PixelFormat::BayerGBRG => {
+            // Simple nearest-neighbor debayer from 2x2 blocks (1 byte per pixel)
+            let bx = (x & !1) as usize;
+            let by = (y & !1) as usize;
+            let stride = frame.stride as usize;
+            let i00 = by * stride + bx;
+            let i10 = i00 + 1;
+            let i01 = i00 + stride;
+            let i11 = i01 + 1;
+            if i11 >= data.len() {
+                return (0, 0, 0);
+            }
+            let (r, g, b) = match frame.format {
+                // RGGB: [0,0]=R [1,0]=G [0,1]=G [1,1]=B
+                PixelFormat::BayerRGGB => (
+                    data[i00],
+                    ((data[i10] as u16 + data[i01] as u16) / 2) as u8,
+                    data[i11],
+                ),
+                // BGGR: [0,0]=B [1,0]=G [0,1]=G [1,1]=R
+                PixelFormat::BayerBGGR => (
+                    data[i11],
+                    ((data[i10] as u16 + data[i01] as u16) / 2) as u8,
+                    data[i00],
+                ),
+                // GRBG: [0,0]=G [1,0]=R [0,1]=B [1,1]=G
+                PixelFormat::BayerGRBG => (
+                    data[i10],
+                    ((data[i00] as u16 + data[i11] as u16) / 2) as u8,
+                    data[i01],
+                ),
+                // GBRG: [0,0]=G [1,0]=B [0,1]=R [1,1]=G
+                PixelFormat::BayerGBRG => (
+                    data[i01],
+                    ((data[i00] as u16 + data[i11] as u16) / 2) as u8,
+                    data[i10],
+                ),
+                _ => unreachable!(),
+            };
+            (r, g, b)
         }
     }
 }

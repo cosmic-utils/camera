@@ -70,7 +70,15 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm \
+            meson \
+            ninja-build \
+            python3-jinja2 \
+            python3-yaml \
+            python3-ply \
+            libyaml-dev
 
       - name: Install just
         uses: extractions/setup-just@v3
@@ -153,7 +161,15 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm \
+            meson \
+            ninja-build \
+            python3-jinja2 \
+            python3-yaml \
+            python3-ply \
+            libyaml-dev
 
       - name: Install cross
         if: ${{ matrix.use_cross }}

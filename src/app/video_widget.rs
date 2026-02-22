@@ -110,7 +110,7 @@ impl VideoWidget {
             } else {
                 // Fallback based on format
                 match frame.format {
-                    PixelFormat::RGBA => frame.width * 4,
+                    PixelFormat::RGBA | PixelFormat::ABGR | PixelFormat::BGRA => frame.width * 4,
                     PixelFormat::RGB24 => frame.width * 3, // 3 bytes per pixel
                     PixelFormat::YUYV
                     | PixelFormat::UYVY
@@ -119,7 +119,11 @@ impl VideoWidget {
                         frame.width * 2 // 2 bytes per pixel
                     }
                     PixelFormat::NV12 | PixelFormat::NV21 | PixelFormat::I420 => frame.width, // Y plane stride
-                    PixelFormat::Gray8 => frame.width, // 1 byte per pixel
+                    PixelFormat::Gray8
+                    | PixelFormat::BayerRGGB
+                    | PixelFormat::BayerBGGR
+                    | PixelFormat::BayerGRBG
+                    | PixelFormat::BayerGBRG => frame.width, // 1 byte per pixel
                 }
             };
 

@@ -20,3 +20,4 @@ build-dir
 repo
 flatpak-cargo-generator.py
 *.flatpak
+test-recordings/

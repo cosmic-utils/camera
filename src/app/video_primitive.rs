@@ -30,6 +30,17 @@ pub fn get_gpu_frame_size() -> u64 {
     GPU_FRAME_SIZE.load(Ordering::Relaxed)
 }
 
+/// Default UV texture dimensions when yuv_planes is not available
+fn default_uv_size(format: PixelFormat, width: u32, height: u32) -> (u32, u32) {
+    match format {
+        PixelFormat::NV12 | PixelFormat::NV21 | PixelFormat::I420 => (width / 2, height / 2),
+        PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
+            (width / 2, height)
+        }
+        _ => (1, 1),
+    }
+}
+
 /// Video frame data for GPU upload
 ///
 /// Supports both RGBA and YUV formats. For YUV formats, the data is converted
@@ -67,10 +78,10 @@ impl VideoFrame {
         &self.data
     }
 
-    /// Check if this frame is in a YUV format requiring GPU conversion
+    /// Check if this frame needs GPU conversion (YUV, ABGR, BGRA, etc.)
     #[inline]
-    pub fn is_yuv(&self) -> bool {
-        self.format.is_yuv()
+    pub fn needs_gpu_conversion(&self) -> bool {
+        self.format.needs_gpu_conversion()
     }
 }
 
@@ -178,6 +189,8 @@ struct YuvTextures {
     tex_v_view: wgpu::TextureView,
     width: u32,
     height: u32,
+    uv_width: u32,
+    uv_height: u32,
     format: PixelFormat,
 }
 
@@ -885,11 +898,11 @@ impl VideoPipeline {
             }
         }
 
-        // Handle YUV or RGBA upload
+        // Handle non-RGBA (YUV, ABGR, BGRA, etc.) or direct RGBA upload
         let gpu_copy_start = Instant::now();
 
-        if frame.is_yuv() {
-            // YUV path: Update last frame pointer, then do YUV conversion
+        if frame.needs_gpu_conversion() {
+            // GPU conversion path: Update last frame pointer, then run compute shader
             {
                 let tex = self
                     .textures
@@ -1010,8 +1023,20 @@ impl VideoPipeline {
         use std::time::Instant;
         let convert_start = Instant::now();
 
-        // Ensure YUV textures exist
-        self.ensure_yuv_textures(device, frame.id, frame.width, frame.height, frame.format);
+        // Ensure YUV textures exist (UV dimensions from yuv_planes if available)
+        let (uv_w, uv_h) = frame
+            .yuv_planes
+            .as_ref()
+            .map(|p| (p.uv_width, p.uv_height))
+            .unwrap_or_else(|| default_uv_size(frame.format, frame.width, frame.height));
+        self.ensure_yuv_textures(
+            device,
+            frame.id,
+            frame.width,
+            frame.height,
+            (uv_w, uv_h),
+            frame.format,
+        );
 
         // Get output texture for compute shader
         let output_texture = match self.textures.get(&frame.id) {
@@ -1112,10 +1137,11 @@ impl VideoPipeline {
                 }
             }
             PixelFormat::I420 => {
-                // I420: Use offsets to slice Y, U, V planes from buffer
+                // Planar YUV: Use offsets to slice Y, U, V planes from buffer
+                // UV dimensions come from yuv_planes (supports 4:2:0, 4:2:2, 4:4:4)
                 if let Some(ref yuv_planes) = frame.yuv_planes {
-                    let uv_width = frame.width / 2;
-                    let uv_height = frame.height / 2;
+                    let uv_width = yuv_planes.uv_width;
+                    let uv_height = yuv_planes.uv_height;
 
                     // Y plane: full resolution, R8 format
                     let y_end = yuv_planes.y_offset + yuv_planes.y_size;
@@ -1216,9 +1242,42 @@ impl VideoPipeline {
                 );
                 return;
             }
+            // ABGR/BGRA: Upload as RGBA8, shader will swizzle channels
+            PixelFormat::ABGR | PixelFormat::BGRA => {
+                queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &yuv_textures.tex_y,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    buffer_data,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(frame.stride),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: frame.width,
+                        height: frame.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
             PixelFormat::RGBA => {
                 // Should not reach here - RGBA is handled by direct upload path
                 tracing::warn!("upload_yuv_and_convert called for RGBA frame");
+                return;
+            }
+            // Bayer formats: Raw sensor data that requires debayering
+            // This YUV convert path is not suitable - use dedicated debayer pipeline
+            PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => {
+                tracing::warn!(
+                    "Bayer format received in YUV pipeline - requires debayering, not supported here"
+                );
                 return;
             }
         }
@@ -1333,29 +1392,21 @@ impl VideoPipeline {
         video_id: u64,
         width: u32,
         height: u32,
+        (uv_width, uv_height): (u32, u32),
         format: PixelFormat,
     ) {
         // Check if textures exist and match dimensions/format
         if let Some(yuv) = self.yuv_textures.get(&video_id)
             && yuv.width == width
             && yuv.height == height
+            && yuv.uv_width == uv_width
+            && yuv.uv_height == uv_height
             && yuv.format == format
         {
             return;
         }
 
-        // Calculate texture dimensions based on format
         let (y_width, y_height) = (width, height);
-        let (uv_width, uv_height) = match format {
-            // Semi-planar 4:2:0 formats: UV plane at half resolution
-            PixelFormat::NV12 | PixelFormat::NV21 | PixelFormat::I420 => (width / 2, height / 2),
-            // Packed 4:2:2 formats: 2 pixels per texel, no separate UV plane
-            PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
-                (width / 2, height)
-            }
-            // Gray8, RGB24, RGBA: no UV plane (dummy 1x1)
-            PixelFormat::Gray8 | PixelFormat::RGB24 | PixelFormat::RGBA => (1, 1),
-        };
 
         // Y plane texture format
         let y_format = match format {
@@ -1363,8 +1414,10 @@ impl VideoPipeline {
             PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
                 wgpu::TextureFormat::Rgba8Unorm
             }
-            // RGBA, RGB24: full RGBA texture
-            PixelFormat::RGBA | PixelFormat::RGB24 => wgpu::TextureFormat::Rgba8Unorm,
+            // RGBA, RGB24, ABGR, BGRA: full RGBA texture
+            PixelFormat::RGBA | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
+                wgpu::TextureFormat::Rgba8Unorm
+            }
             // Y plane or grayscale: single channel
             _ => wgpu::TextureFormat::R8Unorm,
         };
@@ -1447,6 +1500,8 @@ impl VideoPipeline {
                 tex_v_view,
                 width,
                 height,
+                uv_width,
+                uv_height,
                 format,
             },
         );

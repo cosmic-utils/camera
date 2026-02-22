@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// GPU compute shader for I420 to RGBA conversion
+// GPU compute shader for planar YUV to RGBA conversion
 //
-// I420: Planar 4:2:0 (Y + U + V separate planes)
+// Supports any chroma subsampling (4:2:0, 4:2:2, 4:4:4, etc.) by
+// deriving UV coordinates from the actual texture dimensions.
 // Uses BT.601 color matrix (standard for webcams and JPEG)
 
 struct ConvertParams {
@@ -41,8 +42,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Sample Y at full resolution
     let luma = textureLoad(tex_y, pos, 0).r;
 
-    // Sample U and V at half resolution
-    let uv_pos = pos / 2u;
+    // Scale UV coordinates based on actual texture dimensions.
+    // This handles all subsampling types automatically:
+    //   4:2:0  UV is half-width, half-height  → pos * uv_dim / y_dim
+    //   4:2:2  UV is half-width, full-height  → scales x only
+    //   4:4:4  UV is full-width, full-height  → no scaling
+    let y_dim = textureDimensions(tex_y);
+    let uv_dim = textureDimensions(tex_u);
+    let uv_pos = vec2(x * uv_dim.x / y_dim.x, y * uv_dim.y / y_dim.y);
     let u = textureLoad(tex_u, uv_pos, 0).r;
     let v = textureLoad(tex_v, uv_pos, 0).r;
 

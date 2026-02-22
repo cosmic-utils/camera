@@ -90,15 +90,6 @@ const PYRAMID_LEVELS: usize = 4;
 const SHARPNESS_TILE_SIZE: u32 = 16;
 /// Final tile size for warp operation
 const WARP_TILE_SIZE: u32 = 32;
-/// Workgroup size for compute shaders
-const WORKGROUP_SIZE: u32 = 16;
-
-/// Calculate number of workgroups needed to cover a dimension
-#[inline]
-const fn div_ceil(dimension: u32, divisor: u32) -> u32 {
-    dimension.div_ceil(divisor)
-}
-
 /// Convert u8 pixel data to normalized f32 (0.0-1.0)
 /// Used for GPU buffer upload - converts 8-bit [0,255] to float [0.0,1.0]
 #[inline]
@@ -136,6 +127,9 @@ async fn convert_frame_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
                 uv_stride: planes.uv_stride,
                 v_data: None,
                 v_stride: 0,
+                colour_gains: None,
+                colour_correction_matrix: None,
+                black_level: None,
             }
         }
         PixelFormat::I420 => {
@@ -158,6 +152,9 @@ async fn convert_frame_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
                     None
                 },
                 v_stride: planes.v_stride,
+                colour_gains: None,
+                colour_correction_matrix: None,
+                black_level: None,
             }
         }
         // Packed 4:2:2 formats - all have same structure, just different byte order
@@ -172,20 +169,38 @@ async fn convert_frame_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
                 uv_stride: 0,
                 v_data: None,
                 v_stride: 0,
+                colour_gains: None,
+                colour_correction_matrix: None,
+                black_level: None,
             }
         }
-        // Single-plane formats: Gray8, RGB24
-        PixelFormat::Gray8 | PixelFormat::RGB24 => GpuFrameInput {
-            format: frame.format,
-            width: frame.width,
-            height: frame.height,
-            y_data: buffer_data,
-            y_stride: frame.stride,
-            uv_data: None,
-            uv_stride: 0,
-            v_data: None,
-            v_stride: 0,
-        },
+        // Single-plane formats: Gray8, RGB24, ABGR, BGRA
+        PixelFormat::Gray8 | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
+            GpuFrameInput {
+                format: frame.format,
+                width: frame.width,
+                height: frame.height,
+                y_data: buffer_data,
+                y_stride: frame.stride,
+                uv_data: None,
+                uv_stride: 0,
+                v_data: None,
+                v_stride: 0,
+                colour_gains: None,
+                colour_correction_matrix: None,
+                black_level: None,
+            }
+        }
+        // Bayer patterns require debayering - not yet supported in burst mode
+        PixelFormat::BayerRGGB
+        | PixelFormat::BayerBGGR
+        | PixelFormat::BayerGRBG
+        | PixelFormat::BayerGBRG => {
+            return Err(
+                "Bayer raw format not yet supported in burst mode - use single-frame raw capture"
+                    .to_string(),
+            );
+        }
         PixelFormat::RGBA => {
             // Should not reach here - handled at function start
             return Ok(buffer_data.to_vec());
@@ -429,8 +444,10 @@ pub struct BurstModeGpuPipeline {
     fft_pipeline: fft_gpu::FftMergePipeline,
 
     // Pyramid pipelines
+    #[allow(dead_code)] // TODO: used by upcoming guided filter
     pyramid_downsample_rgba: wgpu::ComputePipeline,
     pyramid_downsample_gray: wgpu::ComputePipeline,
+    #[allow(dead_code)] // TODO: used by upcoming guided filter
     pyramid_to_gray: wgpu::ComputePipeline,
 
     // Sharpness pipelines
@@ -472,6 +489,7 @@ pub struct BurstModeGpuPipeline {
     ca_layout: wgpu::BindGroupLayout,
 
     // GPU limits
+    #[allow(dead_code)] // TODO: used by upcoming guided filter
     max_buffer_size: u64,
 
     /// Pooled staging buffers for GPU readback (reduces allocations)
@@ -589,6 +607,7 @@ impl BurstModeGpuPipeline {
     ///
     /// This is more efficient than CPU round-trips when data needs to move
     /// between pipeline stages that use different buffer layouts.
+    #[allow(dead_code)] // TODO: used by upcoming guided filter
     fn copy_buffer(&self, label: &str, src: &wgpu::Buffer, dst: &wgpu::Buffer, size: u64) {
         let mut encoder = self
             .device
@@ -1740,8 +1759,7 @@ impl BurstModeGpuPipeline {
                     width,
                     height,
                     &buffers,
-                    ca_r_coeff,
-                    ca_b_coeff,
+                    (ca_r_coeff, ca_b_coeff),
                 )
                 .await?;
 
@@ -1905,7 +1923,6 @@ impl BurstModeGpuPipeline {
     /// This is the optimized version that reuses buffers across multiple frame alignments.
     /// Only the output buffer is unique per frame (returned in GpuAlignedFrame).
     /// Uses luminance-based alignment with optional CA correction.
-    #[allow(clippy::too_many_arguments)]
     async fn align_single_frame_pooled(
         &self,
         ref_pyramids: &ReferencePyramids,
@@ -1913,9 +1930,9 @@ impl BurstModeGpuPipeline {
         width: u32,
         height: u32,
         buffers: &AlignmentBuffers,
-        ca_r_coeff: f32,
-        ca_b_coeff: f32,
+        ca_coefficients: (f32, f32),
     ) -> Result<GpuAlignedFrame, String> {
+        let (ca_r_coeff, ca_b_coeff) = ca_coefficients;
         let pixel_count = (width * height) as usize;
 
         // Upload comparison frame to pooled buffer (overwrites previous)
@@ -2580,32 +2597,36 @@ pub async fn process_burst_mode(
     Ok(tonemapped)
 }
 
+/// Parameters for saving burst mode output
+pub struct SaveOutputParams<'a> {
+    pub output_dir: std::path::PathBuf,
+    pub crop_rect: Option<(u32, u32, u32, u32)>,
+    pub encoding_format: super::EncodingFormat,
+    pub camera_metadata: super::CameraMetadata,
+    pub filter: Option<crate::app::FilterType>,
+    pub rotation: SensorRotation,
+    pub filename_suffix: Option<&'a str>,
+}
+
 /// Save output image to disk with optional filter, rotation, and aspect ratio cropping
-///
-/// # Arguments
-/// * `frame` - The merged frame to save
-/// * `output_dir` - Directory to save the image
-/// * `crop_rect` - Optional crop rectangle (x, y, width, height) for aspect ratio
-/// * `encoding_format` - Output format (JPEG, PNG, or DNG)
-/// * `camera_metadata` - Optional camera metadata for DNG encoding
-/// * `filter` - Optional filter to apply to the image (None or Standard = no filter)
-/// * `rotation` - Sensor rotation to correct the image orientation
-/// * `filename_suffix` - Optional suffix for filename (e.g., "_HDR+"), None for no suffix
-#[allow(clippy::too_many_arguments)]
 pub async fn save_output(
     frame: &MergedFrame,
-    output_dir: std::path::PathBuf,
-    crop_rect: Option<(u32, u32, u32, u32)>,
-    encoding_format: super::EncodingFormat,
-    camera_metadata: super::CameraMetadata,
-    filter: Option<crate::app::FilterType>,
-    rotation: SensorRotation,
-    filename_suffix: Option<&str>,
+    params: SaveOutputParams<'_>,
 ) -> Result<std::path::PathBuf, String> {
     use super::{EncodingQuality, PhotoEncoder};
     use crate::shaders::apply_filter_gpu_rgba;
     use image::{ImageBuffer, Rgba};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    let SaveOutputParams {
+        output_dir,
+        crop_rect,
+        encoding_format,
+        camera_metadata,
+        filter,
+        rotation,
+        filename_suffix,
+    } = params;
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

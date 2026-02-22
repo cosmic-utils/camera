@@ -9,6 +9,13 @@ use crate::backends::camera::types::CameraFormat;
 use crate::constants;
 use std::collections::HashMap;
 
+/// (label, width) pairs sorted by resolution category
+type LabelList = Vec<(&'static str, u32)>;
+/// Map from width to list of (index, format) pairs at that resolution
+type FormatsByWidth<'a> = HashMap<u32, Vec<(usize, &'a CameraFormat)>>;
+/// (best_width, best_score, formats) for label grouping
+type BestFormatEntry<'a> = (u32, u32, Vec<(usize, &'a CameraFormat)>);
+
 impl AppModel {
     /// Group formats by resolution label and return sorted list with best resolution for each label
     ///
@@ -18,19 +25,9 @@ impl AppModel {
     /// Returns:
     /// - A sorted list of (label, width) pairs representing unique resolution categories
     /// - A map from width to list of (index, format) pairs for that resolution
-    #[allow(clippy::type_complexity)]
-    pub(crate) fn group_formats_by_label(
-        &self,
-    ) -> (
-        Vec<(&'static str, u32)>,
-        HashMap<u32, Vec<(usize, &CameraFormat)>>,
-    ) {
+    pub(crate) fn group_formats_by_label(&self) -> (LabelList, FormatsByWidth<'_>) {
         // Group formats by their label (SD, HD, 4K, etc.) and pick the highest resolution for each
-        #[allow(clippy::type_complexity)]
-        let mut label_to_best_format: HashMap<
-            &'static str,
-            (u32, u32, Vec<(usize, &CameraFormat)>),
-        > = HashMap::new();
+        let mut label_to_best_format: HashMap<&'static str, BestFormatEntry<'_>> = HashMap::new();
 
         for (idx, fmt) in self.available_formats.iter().enumerate() {
             if let Some(label) = constants::get_resolution_label(fmt.width) {

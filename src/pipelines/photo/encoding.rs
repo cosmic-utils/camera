@@ -9,6 +9,7 @@
 //! All encoding operations run asynchronously to avoid blocking.
 
 use super::processing::ProcessedImage;
+use crate::backends::camera::types::PixelFormat;
 use image::RgbImage;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
@@ -78,6 +79,18 @@ pub struct EncodedImage {
     pub height: u32,
 }
 
+/// Raw Bayer data for DNG encoding (bypasses post-processing)
+pub struct RawBayerData {
+    /// Raw packed sensor data (e.g., CSI2P 10-bit)
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// Row stride in bytes (may include alignment padding)
+    pub stride: u32,
+    /// Bayer pixel format
+    pub format: PixelFormat,
+}
+
 /// Camera metadata for DNG encoding
 #[derive(Debug, Clone, Default)]
 pub struct CameraMetadata {
@@ -110,6 +123,11 @@ impl PhotoEncoder {
         }
     }
 
+    /// Get the current encoding format
+    pub fn format(&self) -> EncodingFormat {
+        self.format
+    }
+
     /// Set encoding format
     pub fn set_format(&mut self, format: EncodingFormat) {
         self.format = format;
@@ -123,6 +141,37 @@ impl PhotoEncoder {
     /// Set camera metadata for DNG encoding
     pub fn set_camera_metadata(&mut self, metadata: CameraMetadata) {
         self.camera_metadata = metadata;
+    }
+
+    /// Encode raw Bayer data directly as DNG (bypasses post-processing)
+    ///
+    /// This writes the raw sensor data into a CFA-pattern DNG file with proper
+    /// metadata tags. The data is unpacked from CSI2P 10-bit to 16-bit values.
+    pub async fn encode_raw(&self, raw: RawBayerData) -> Result<EncodedImage, String> {
+        info!(
+            width = raw.width,
+            height = raw.height,
+            stride = raw.stride,
+            format = ?raw.format,
+            "Encoding raw Bayer DNG"
+        );
+
+        let camera_metadata = self.camera_metadata.clone();
+        let width = raw.width;
+        let height = raw.height;
+
+        tokio::task::spawn_blocking(move || {
+            let data = Self::encode_dng_raw(&raw, &camera_metadata)?;
+            debug!(size = data.len(), "Raw DNG encoding complete");
+            Ok(EncodedImage {
+                data,
+                format: EncodingFormat::Dng,
+                width,
+                height,
+            })
+        })
+        .await
+        .map_err(|e| format!("Raw DNG encoding task error: {}", e))?
     }
 
     /// Encode a processed image asynchronously
@@ -297,21 +346,19 @@ impl PhotoEncoder {
         height: u32,
         camera_metadata: &CameraMetadata,
     ) -> Result<Vec<u8>, String> {
-        use dng::ifd::{Ifd, IfdValue, Offsets};
+        use dng::ifd::{IfdValue, Offsets};
         use dng::tags::ifd as tiff_tags;
         use dng::{DngWriter, FileType};
-        use std::io::{Cursor, Write};
+        use std::io::Cursor;
         use std::sync::Arc;
 
         let raw_data = image.as_raw().clone();
         let raw_data_len = raw_data.len() as u32;
 
-        // Create main IFD for the image
-        let mut ifd = Ifd::default();
+        let version = env!("CARGO_PKG_VERSION");
+        let mut ifd = set_common_dng_tags(width, height, camera_metadata, version);
 
-        // Required TIFF tags
-        ifd.insert(tiff_tags::ImageWidth, IfdValue::Long(width));
-        ifd.insert(tiff_tags::ImageLength, IfdValue::Long(height));
+        // RGB-specific tags
         ifd.insert(
             tiff_tags::BitsPerSample,
             IfdValue::List(vec![
@@ -320,81 +367,11 @@ impl PhotoEncoder {
                 IfdValue::Short(8),
             ]),
         );
-        ifd.insert(tiff_tags::Compression, IfdValue::Short(1)); // No compression
         ifd.insert(tiff_tags::PhotometricInterpretation, IfdValue::Short(2)); // RGB
         ifd.insert(tiff_tags::SamplesPerPixel, IfdValue::Short(3)); // RGB = 3 samples
-        ifd.insert(tiff_tags::RowsPerStrip, IfdValue::Long(height)); // One strip
-        ifd.insert(tiff_tags::PlanarConfiguration, IfdValue::Short(1)); // Chunky (RGBRGBRGB...)
 
-        // Software tag with version
-        let version = env!("CARGO_PKG_VERSION");
-        ifd.insert(
-            tiff_tags::Software,
-            IfdValue::Ascii(format!("Camera v{}", version)),
-        );
-
-        // Camera make/model tags if available
-        if let Some(camera_name) = &camera_metadata.camera_name {
-            // Use Make tag for camera name
-            ifd.insert(tiff_tags::Make, IfdValue::Ascii(camera_name.clone()));
-            // Use Model tag for driver info if available, otherwise use camera name
-            if let Some(driver) = &camera_metadata.camera_driver {
-                ifd.insert(
-                    tiff_tags::Model,
-                    IfdValue::Ascii(format!("{} ({})", camera_name, driver)),
-                );
-            } else {
-                ifd.insert(tiff_tags::Model, IfdValue::Ascii(camera_name.clone()));
-            }
-        }
-
-        // Exposure metadata (EXIF tags)
-        if let Some(exposure_time) = camera_metadata.exposure_time {
-            // Convert to rational: e.g., 0.033333 -> 1/30
-            // Use microsecond precision for the rational representation
-            let numerator = (exposure_time * 1_000_000.0).round() as u32;
-            let denominator = 1_000_000u32;
-            // Simplify the fraction by finding GCD
-            let gcd = gcd(numerator, denominator);
-            ifd.insert(
-                tiff_tags::ExposureTime,
-                IfdValue::Rational(numerator / gcd, denominator / gcd),
-            );
-        }
-
-        if let Some(iso) = camera_metadata.iso {
-            ifd.insert(
-                tiff_tags::ISOSpeedRatings,
-                IfdValue::Short(iso.min(65535) as u16),
-            );
-        }
-
-        // Store gain as a custom tag comment if available
-        // (no standard EXIF tag for raw gain value)
-        if let Some(gain) = camera_metadata.gain {
-            // Include gain in the software/processing info
-            let software_with_gain = format!("Camera v{} (Gain: {})", version, gain);
-            ifd.insert(tiff_tags::Software, IfdValue::Ascii(software_with_gain));
-        }
-
-        // Create an Offsets implementation for the raw data
-        struct RgbOffsets {
-            data: Vec<u8>,
-        }
-
-        impl Offsets for RgbOffsets {
-            fn size(&self) -> u32 {
-                self.data.len() as u32
-            }
-
-            fn write(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-                writer.write_all(&self.data)
-            }
-        }
-
-        let offsets: Arc<dyn Offsets + Send + Sync> = Arc::new(RgbOffsets { data: raw_data });
-
-        // Add strip data using Offsets
+        // Strip data
+        let offsets: Arc<dyn Offsets + Send + Sync> = Arc::new(DngOffsets { data: raw_data });
         ifd.insert(tiff_tags::StripOffsets, IfdValue::Offsets(offsets));
         ifd.insert(tiff_tags::StripByteCounts, IfdValue::Long(raw_data_len));
 
@@ -407,12 +384,285 @@ impl PhotoEncoder {
 
         Ok(buffer)
     }
+
+    /// Encode raw Bayer sensor data as a CFA-pattern DNG
+    ///
+    /// Unpacks CSI2P 10-bit packed data to 16-bit values and writes a proper
+    /// DNG file with CFA metadata. This preserves the original sensor data
+    /// for later raw processing in tools like RawTherapee or darktable.
+    fn encode_dng_raw(
+        raw: &RawBayerData,
+        camera_metadata: &CameraMetadata,
+    ) -> Result<Vec<u8>, String> {
+        use dng::ifd::{IfdValue, Offsets};
+        use dng::tags::ifd as tiff_tags;
+        use dng::{DngWriter, FileType};
+        use std::io::Cursor;
+        use std::sync::Arc;
+
+        let width = raw.width;
+        let height = raw.height;
+        let stride = raw.stride;
+
+        // Determine bit depth from stride vs width ratio
+        let min_stride_10 = (width * 5).div_ceil(4);
+        let min_stride_12 = (width * 3).div_ceil(2);
+        let is_packed = stride > width;
+        let bit_depth: u32 = if is_packed {
+            if stride >= min_stride_10 && stride < min_stride_12 {
+                10
+            } else if stride >= min_stride_12 {
+                12
+            } else {
+                8
+            }
+        } else {
+            8
+        };
+
+        info!(
+            width,
+            height, stride, bit_depth, is_packed, "Unpacking raw Bayer for DNG"
+        );
+
+        // Unpack to 16-bit values
+        let pixel_data_16 = if bit_depth == 10 && is_packed {
+            unpack_csi2p_10bit_to_16bit(&raw.data, width, height, stride)
+        } else {
+            // 8-bit: promote each byte to 16-bit (shift left by 8 for full range)
+            let mut out = Vec::with_capacity((width * height * 2) as usize);
+            for row in 0..height {
+                let row_start = (row * stride) as usize;
+                for col in 0..width {
+                    let val = raw.data[row_start + col as usize] as u16;
+                    out.extend_from_slice(&val.to_le_bytes());
+                }
+            }
+            out
+        };
+
+        let raw_data_len = pixel_data_16.len() as u32;
+        let white_level: u32 = if bit_depth == 10 {
+            1023
+        } else if bit_depth == 12 {
+            4095
+        } else {
+            255
+        };
+
+        // Get CFA pattern bytes: 0=R, 1=G, 2=B
+        let cfa_pattern: Vec<u8> = match raw.format {
+            PixelFormat::BayerRGGB => vec![0, 1, 1, 2], // R G / G B
+            PixelFormat::BayerBGGR => vec![2, 1, 1, 0], // B G / G R
+            PixelFormat::BayerGRBG => vec![1, 0, 2, 1], // G R / B G
+            PixelFormat::BayerGBRG => vec![1, 2, 0, 1], // G B / R G
+            _ => return Err(format!("Not a Bayer format: {:?}", raw.format)),
+        };
+
+        let version = env!("CARGO_PKG_VERSION");
+        let mut ifd = set_common_dng_tags(width, height, camera_metadata, version);
+
+        // DNG version 1.4.0.0
+        ifd.insert(
+            tiff_tags::DNGVersion,
+            IfdValue::List(vec![
+                IfdValue::Byte(1),
+                IfdValue::Byte(4),
+                IfdValue::Byte(0),
+                IfdValue::Byte(0),
+            ]),
+        );
+        ifd.insert(
+            tiff_tags::DNGBackwardVersion,
+            IfdValue::List(vec![
+                IfdValue::Byte(1),
+                IfdValue::Byte(1),
+                IfdValue::Byte(0),
+                IfdValue::Byte(0),
+            ]),
+        );
+
+        // CFA-specific tags
+        ifd.insert(tiff_tags::BitsPerSample, IfdValue::Short(16));
+        ifd.insert(tiff_tags::PhotometricInterpretation, IfdValue::Short(32803)); // CFA
+        ifd.insert(tiff_tags::SamplesPerPixel, IfdValue::Short(1));
+
+        // CFA pattern
+        ifd.insert(
+            tiff_tags::CFARepeatPatternDim,
+            IfdValue::List(vec![IfdValue::Short(2), IfdValue::Short(2)]),
+        );
+        ifd.insert(
+            tiff_tags::CFAPattern,
+            IfdValue::List(cfa_pattern.iter().map(|&b| IfdValue::Byte(b)).collect()),
+        );
+        ifd.insert(
+            tiff_tags::CFAPlaneColor,
+            IfdValue::List(vec![
+                IfdValue::Byte(0),
+                IfdValue::Byte(1),
+                IfdValue::Byte(2),
+            ]),
+        );
+        ifd.insert(tiff_tags::CFALayout, IfdValue::Short(1)); // Rectangular
+
+        // Black/White levels
+        ifd.insert(tiff_tags::BlackLevel, IfdValue::Long(0));
+        ifd.insert(tiff_tags::WhiteLevel, IfdValue::Long(white_level));
+
+        // Strip data
+        let offsets: Arc<dyn Offsets + Send + Sync> = Arc::new(DngOffsets {
+            data: pixel_data_16,
+        });
+        ifd.insert(tiff_tags::StripOffsets, IfdValue::Offsets(offsets));
+        ifd.insert(tiff_tags::StripByteCounts, IfdValue::Long(raw_data_len));
+
+        let mut buffer = Vec::new();
+        let cursor = Cursor::new(&mut buffer);
+        DngWriter::write_dng(cursor, true, FileType::Dng, vec![ifd])
+            .map_err(|e| format!("Raw DNG encoding failed: {:?}", e))?;
+
+        info!(size = buffer.len(), "Raw CFA DNG written");
+        Ok(buffer)
+    }
 }
 
 impl Default for PhotoEncoder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Strip data offsets for DNG encoding (used for both RGB and raw CFA data)
+struct DngOffsets {
+    data: Vec<u8>,
+}
+
+impl dng::ifd::Offsets for DngOffsets {
+    fn size(&self) -> u32 {
+        self.data.len() as u32
+    }
+
+    fn write(&self, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
+        writer.write_all(&self.data)
+    }
+}
+
+/// Set TIFF/EXIF tags common to both RGB and raw CFA DNG files
+///
+/// Sets: ImageWidth, ImageLength, Compression, RowsPerStrip, PlanarConfiguration,
+/// Software (with optional gain info), Make/Model, ExposureTime, and ISOSpeedRatings.
+fn set_common_dng_tags(
+    width: u32,
+    height: u32,
+    camera_metadata: &CameraMetadata,
+    version: &str,
+) -> dng::ifd::Ifd {
+    use dng::ifd::{Ifd, IfdValue};
+    use dng::tags::ifd as tiff_tags;
+
+    let mut ifd = Ifd::default();
+
+    // Required TIFF tags
+    ifd.insert(tiff_tags::ImageWidth, IfdValue::Long(width));
+    ifd.insert(tiff_tags::ImageLength, IfdValue::Long(height));
+    ifd.insert(tiff_tags::Compression, IfdValue::Short(1)); // No compression
+    ifd.insert(tiff_tags::RowsPerStrip, IfdValue::Long(height)); // One strip
+    ifd.insert(tiff_tags::PlanarConfiguration, IfdValue::Short(1)); // Chunky
+
+    // Software tag: include gain if available
+    let software = match camera_metadata.gain {
+        Some(gain) => format!("Camera v{} (Gain: {})", version, gain),
+        None => format!("Camera v{}", version),
+    };
+    ifd.insert(tiff_tags::Software, IfdValue::Ascii(software));
+
+    // Camera make/model tags
+    if let Some(camera_name) = &camera_metadata.camera_name {
+        ifd.insert(tiff_tags::Make, IfdValue::Ascii(camera_name.clone()));
+        if let Some(driver) = &camera_metadata.camera_driver {
+            ifd.insert(
+                tiff_tags::Model,
+                IfdValue::Ascii(format!("{} ({})", camera_name, driver)),
+            );
+        } else {
+            ifd.insert(tiff_tags::Model, IfdValue::Ascii(camera_name.clone()));
+        }
+    }
+
+    // Exposure metadata (EXIF tags)
+    if let Some(exposure_time) = camera_metadata.exposure_time {
+        // Convert to rational: e.g., 0.033333 -> 1/30
+        // Use microsecond precision for the rational representation
+        let numerator = (exposure_time * 1_000_000.0).round() as u32;
+        let denominator = 1_000_000u32;
+        // Simplify the fraction by finding GCD
+        let g = gcd(numerator, denominator);
+        ifd.insert(
+            tiff_tags::ExposureTime,
+            IfdValue::Rational(numerator / g, denominator / g),
+        );
+    }
+
+    if let Some(iso) = camera_metadata.iso {
+        ifd.insert(
+            tiff_tags::ISOSpeedRatings,
+            IfdValue::Short(iso.min(65535) as u16),
+        );
+    }
+
+    ifd
+}
+
+/// Unpack CSI-2 10-bit packed Bayer data to 16-bit little-endian values
+///
+/// CSI2P packing: every 5 bytes contain 4 pixels.
+/// Bytes 0-3 are high 8 bits of pixels 0-3.
+/// Byte 4 contains low 2 bits: [p0_lo:2 | p1_lo:2 | p2_lo:2 | p3_lo:2]
+fn unpack_csi2p_10bit_to_16bit(packed: &[u8], width: u32, height: u32, stride: u32) -> Vec<u8> {
+    let mut out = Vec::with_capacity((width * height * 2) as usize);
+    let groups_per_row = width / 4;
+
+    for row in 0..height {
+        let row_start = (row * stride) as usize;
+        for group in 0..groups_per_row {
+            let base = row_start + (group * 5) as usize;
+            if base + 4 >= packed.len() {
+                // Pad remaining pixels with zeros
+                for _ in 0..(width - group * 4) {
+                    out.extend_from_slice(&0u16.to_le_bytes());
+                }
+                break;
+            }
+            let lo = packed[base + 4];
+            for i in 0..4u8 {
+                let hi8 = packed[base + i as usize] as u16;
+                let lo2 = ((lo >> (i * 2)) & 0x03) as u16;
+                let val = (hi8 << 2) | lo2;
+                out.extend_from_slice(&val.to_le_bytes());
+            }
+        }
+        // Handle remaining pixels if width is not divisible by 4
+        let remaining = width % 4;
+        if remaining > 0 {
+            let base = row_start + (groups_per_row * 5) as usize;
+            if base + remaining as usize <= packed.len() {
+                let lo = if base + 4 < packed.len() {
+                    packed[base + 4]
+                } else {
+                    0
+                };
+                for i in 0..remaining {
+                    let hi8 = packed[base + i as usize] as u16;
+                    let lo2 = ((lo >> (i as u8 * 2)) & 0x03) as u16;
+                    let val = (hi8 << 2) | lo2;
+                    out.extend_from_slice(&val.to_le_bytes());
+                }
+            }
+        }
+    }
+
+    out
 }
 
 /// Calculate greatest common divisor using Euclidean algorithm

@@ -46,15 +46,9 @@ impl AppModel {
         let camera = &self.available_cameras[camera_index];
         let camera_path = &camera.path;
 
-        // Get formats for the new mode
-        let backend = crate::backends::camera::get_backend();
-        let device = crate::backends::camera::types::CameraDevice {
-            name: camera.name.clone(),
-            path: camera_path.clone(),
-            metadata_path: camera.metadata_path.clone(),
-            device_info: camera.device_info.clone(),
-            rotation: camera.rotation,
-        };
+        // Get formats for the new mode using configured backend
+        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
+        let device = camera.clone();
         let formats_for_new_mode = backend.get_formats(&device, new_mode == CameraMode::Video);
 
         // Helper to check saved settings for a mode
@@ -175,32 +169,16 @@ impl AppModel {
         }
     }
 
-    /// Restore video format from saved settings for a camera
-    /// Returns the saved format if available, None otherwise
-    fn restore_video_format_from_settings(&self, camera_path: &str) -> Option<CameraFormat> {
-        if let Some(settings) = self.config.video_settings.get(camera_path) {
-            info!(camera_path = %camera_path, "Video mode: attempting to restore saved settings");
-
-            // Try to find exact match for saved settings
-            self.available_formats
-                .iter()
-                .find(|f| {
-                    f.width == settings.width
-                        && f.height == settings.height
-                        && framerate_matches_config(f.framerate.as_ref(), settings.framerate)
-                        && f.pixel_format == settings.pixel_format
-                })
-                .cloned()
-        } else {
-            None
-        }
-    }
-
-    /// Restore photo format from saved settings for a camera
-    /// Returns the saved format if available, None otherwise
-    fn restore_photo_format_from_settings(&self, camera_path: &str) -> Option<CameraFormat> {
-        if let Some(settings) = self.config.photo_settings.get(camera_path) {
-            info!(camera_path = %camera_path, "Photo mode: attempting to restore saved settings");
+    /// Restore format from saved settings for a camera, given a settings map.
+    /// Returns the saved format if available, None otherwise.
+    fn restore_format_from_settings(
+        &self,
+        camera_path: &str,
+        mode_label: &str,
+        settings_map: &std::collections::HashMap<String, crate::config::FormatSettings>,
+    ) -> Option<CameraFormat> {
+        if let Some(settings) = settings_map.get(camera_path) {
+            info!(camera_path = %camera_path, "{} mode: attempting to restore saved settings", mode_label);
 
             // Try to find exact match for saved settings
             self.available_formats
@@ -222,7 +200,7 @@ impl AppModel {
         // Priority: saved settings > optimal video defaults
         // Note: We don't use find_current_format_if_valid() here to avoid
         // cross-contamination between photo and video mode settings
-        self.restore_video_format_from_settings(camera_path)
+        self.restore_format_from_settings(camera_path, "Video", &self.config.video_settings)
             .or_else(|| {
                 info!("First-time video mode: selecting highest resolution with >= 25 fps, prefer up to 60 fps");
                 format_selection::select_first_time_video_format(&self.available_formats)
@@ -234,7 +212,7 @@ impl AppModel {
         // Priority: saved settings > optimal photo defaults (max resolution)
         // Note: We don't use find_current_format_if_valid() here to avoid
         // cross-contamination between photo and video mode settings
-        self.restore_photo_format_from_settings(camera_path)
+        self.restore_format_from_settings(camera_path, "Photo", &self.config.photo_settings)
             .or_else(|| {
                 info!("First-time photo mode: selecting maximum resolution");
                 format_selection::select_max_resolution_format(&self.available_formats)
@@ -249,27 +227,11 @@ impl AppModel {
         }
 
         let camera = &self.available_cameras[camera_index];
-        let _device_path = if !camera.path.is_empty() {
-            &camera.path
-        } else {
-            "/dev/video0"
-        };
-        let _metadata_path = if !camera.path.is_empty() {
-            camera.metadata_path.as_deref()
-        } else {
-            None
-        };
         let camera_path = camera.path.clone();
 
-        // Get formats for this camera using PipeWire backend
-        let backend = crate::backends::camera::get_backend();
-        let device = crate::backends::camera::types::CameraDevice {
-            name: camera.name.clone(),
-            path: camera_path.clone(),
-            metadata_path: camera.metadata_path.clone(),
-            device_info: camera.device_info.clone(),
-            rotation: camera.rotation,
-        };
+        // Get formats for this camera using configured backend
+        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
+        let device = camera.clone();
         self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
 
         // Format selection logic: both modes use saved settings, current format, or defaults

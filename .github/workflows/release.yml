@@ -65,6 +65,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            libcamera-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             libgstreamer-plugins-bad1.0-dev \
@@ -72,7 +73,9 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm
 
       - name: Install cross
         if: ${{ matrix.use_cross }}

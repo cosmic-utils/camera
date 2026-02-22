@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Shared types for camera backend abstraction
-#![allow(dead_code)]
 
 //! Shared types for camera backends
 
@@ -23,11 +22,6 @@ pub enum FrameData {
 }
 
 impl FrameData {
-    /// Create FrameData from pre-copied bytes
-    pub fn from_bytes(data: Arc<[u8]>) -> Self {
-        FrameData::Copied(data)
-    }
-
     /// Create FrameData from a mapped GStreamer buffer (zero-copy)
     pub fn from_mapped_buffer(buffer: MappedBuffer<Readable>) -> Self {
         FrameData::Mapped(Arc::new(buffer))
@@ -44,14 +38,6 @@ impl FrameData {
     /// Check if the frame data is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    /// Get a raw pointer to the data for deduplication checks
-    pub fn as_ptr(&self) -> *const u8 {
-        match self {
-            FrameData::Copied(data) => data.as_ptr(),
-            FrameData::Mapped(buf) => buf.as_ptr(),
-        }
     }
 }
 
@@ -81,17 +67,22 @@ impl std::ops::Deref for FrameData {
     }
 }
 
-/// Camera backend type (PipeWire only)
+/// Camera backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum CameraBackendType {
     /// PipeWire backend (modern Linux standard)
     #[default]
     PipeWire,
+    /// libcamera backend via native libcamera-rs bindings (multi-stream capture)
+    Libcamera,
 }
 
 impl std::fmt::Display for CameraBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PipeWire")
+        match self {
+            CameraBackendType::PipeWire => write!(f, "PipeWire"),
+            CameraBackendType::Libcamera => write!(f, "libcamera"),
+        }
     }
 }
 
@@ -131,6 +122,16 @@ pub enum SensorRotation {
 }
 
 impl SensorRotation {
+    /// Create rotation from an integer degree value (normalised to 0-360).
+    pub fn from_degrees_int(degrees: i32) -> Self {
+        match degrees.rem_euclid(360) {
+            90 => SensorRotation::Rotate90,
+            180 => SensorRotation::Rotate180,
+            270 => SensorRotation::Rotate270,
+            _ => SensorRotation::None,
+        }
+    }
+
     /// Parse rotation from a string value (degrees)
     pub fn from_degrees(degrees: &str) -> Self {
         match degrees.trim() {
@@ -139,14 +140,8 @@ impl SensorRotation {
             "270" => SensorRotation::Rotate270,
             "0" | "" => SensorRotation::None,
             other => {
-                // Try to parse as integer and normalize
                 if let Ok(deg) = other.parse::<i32>() {
-                    match deg.rem_euclid(360) {
-                        90 => SensorRotation::Rotate90,
-                        180 => SensorRotation::Rotate180,
-                        270 => SensorRotation::Rotate270,
-                        _ => SensorRotation::None,
-                    }
+                    Self::from_degrees_int(deg)
                 } else {
                     SensorRotation::None
                 }
@@ -194,6 +189,12 @@ pub struct CameraDevice {
     pub metadata_path: Option<String>,   // Path to metadata/control device or node ID
     pub device_info: Option<DeviceInfo>, // V4L2 device information (card, driver, path, real_path)
     pub rotation: SensorRotation,        // Sensor rotation from libcamera/device tree
+    pub pipeline_handler: Option<String>, // libcamera pipeline handler (e.g., "simple", "vc4", "ipu3")
+    pub supports_multistream: bool, // True if camera supports simultaneous preview + raw capture
+    pub sensor_model: Option<String>, // Sensor model from device tree compatible (e.g., "sony,imx371")
+    pub camera_location: Option<String>, // Camera location: "front", "back", or "external"
+    pub libcamera_version: Option<String>, // libcamera version from GStreamer plugin
+    pub lens_actuator_path: Option<String>, // V4L2 subdevice for lens focus control
 }
 
 /// Framerate as a fraction (numerator/denominator)
@@ -226,11 +227,6 @@ impl Framerate {
     /// Get the rounded integer framerate (for backwards compatibility)
     pub fn as_int(&self) -> u32 {
         self.num / self.denom
-    }
-
-    /// Check if this is an NTSC framerate (has non-1 denominator)
-    pub fn is_ntsc(&self) -> bool {
-        self.denom != 1
     }
 
     /// Format as GStreamer fraction string (e.g., "60000/1001")
@@ -320,6 +316,24 @@ pub enum PixelFormat {
     /// VYUY - Packed 4:2:2 (V Y0 U Y1 interleaved)
     /// Variant with V first
     VYUY,
+    /// ABGR8888 - 32-bit with alpha (A B G R byte order)
+    /// Native format from libcamera, converted to RGBA by shader
+    ABGR,
+    /// BGRA - 32-bit with alpha (B G R A byte order)
+    /// Common format from some cameras, converted to RGBA by shader
+    BGRA,
+    /// RGGB Bayer pattern - Raw sensor data requiring debayering
+    /// Row 0: R G R G..., Row 1: G B G B...
+    BayerRGGB,
+    /// BGGR Bayer pattern - Raw sensor data requiring debayering
+    /// Row 0: B G B G..., Row 1: G R G R...
+    BayerBGGR,
+    /// GRBG Bayer pattern - Raw sensor data requiring debayering
+    /// Row 0: G R G R..., Row 1: B G B G...
+    BayerGRBG,
+    /// GBRG Bayer pattern - Raw sensor data requiring debayering
+    /// Row 0: G B G B..., Row 1: R G R G...
+    BayerGBRG,
 }
 
 impl PixelFormat {
@@ -337,6 +351,31 @@ impl PixelFormat {
         )
     }
 
+    /// Check if this format is a raw Bayer pattern requiring debayering
+    pub fn is_bayer(&self) -> bool {
+        matches!(
+            self,
+            Self::BayerRGGB | Self::BayerBGGR | Self::BayerGRBG | Self::BayerGBRG
+        )
+    }
+
+    /// Get Bayer pattern code for debayer shader (0=RGGB, 1=BGGR, 2=GRBG, 3=GBRG)
+    pub fn bayer_pattern_code(&self) -> Option<u32> {
+        match self {
+            Self::BayerRGGB => Some(0),
+            Self::BayerBGGR => Some(1),
+            Self::BayerGRBG => Some(2),
+            Self::BayerGBRG => Some(3),
+            _ => None,
+        }
+    }
+
+    /// Check if this format requires GPU conversion (YUV, ABGR, BGRA, Gray8, RGB24, Bayer)
+    /// These formats go through the compute shader for conversion to RGBA
+    pub fn needs_gpu_conversion(&self) -> bool {
+        !matches!(self, Self::RGBA)
+    }
+
     /// Get the format code for the GPU compute shader
     pub fn gpu_format_code(&self) -> u32 {
         match self {
@@ -350,26 +389,61 @@ impl PixelFormat {
             Self::NV21 => 7,
             Self::YVYU => 8,
             Self::VYUY => 9,
+            Self::ABGR => 10,
+            Self::BGRA => 11,
+            Self::BayerRGGB => 12,
+            Self::BayerBGGR => 13,
+            Self::BayerGRBG => 14,
+            Self::BayerGBRG => 15,
         }
     }
 
     /// Average bytes per pixel (accounting for chroma subsampling)
     pub fn bytes_per_pixel(&self) -> f32 {
         match self {
-            Self::RGBA => 4.0,
+            Self::RGBA | Self::ABGR | Self::BGRA => 4.0, // 4 bytes per pixel
             Self::NV12 | Self::NV21 | Self::I420 => 1.5, // 4:2:0 subsampling
             Self::YUYV | Self::UYVY | Self::YVYU | Self::VYUY => 2.0, // 4:2:2 subsampling
             Self::Gray8 => 1.0,                          // Single channel
             Self::RGB24 => 3.0,                          // 3 bytes per pixel
+            // Bayer patterns: 1 byte per pixel (8-bit) or 2 bytes (10/12/16-bit)
+            Self::BayerRGGB | Self::BayerBGGR | Self::BayerGRBG | Self::BayerGBRG => 1.0,
+        }
+    }
+
+    /// Convert to a GStreamer video/x-raw format string.
+    ///
+    /// Used when setting caps on an appsrc element to feed native frames
+    /// into a GStreamer encoding pipeline.
+    pub fn to_gst_format_string(&self) -> &'static str {
+        match self {
+            Self::RGBA => "RGBA",
+            Self::ABGR => "ABGR",
+            Self::BGRA => "BGRA",
+            Self::NV12 => "NV12",
+            Self::NV21 => "NV21",
+            Self::I420 => "I420",
+            Self::YUYV => "YUY2",
+            Self::UYVY => "UYVY",
+            Self::YVYU => "YVYU",
+            Self::VYUY => "VYUY",
+            Self::Gray8 => "GRAY8",
+            Self::RGB24 => "RGB",
+            // Bayer formats — GStreamer uses video/x-bayer, not video/x-raw,
+            // so these cannot appear in raw caps; return a placeholder.
+            Self::BayerRGGB => "RGGB",
+            Self::BayerBGGR => "BGGR",
+            Self::BayerGRBG => "GRBG",
+            Self::BayerGBRG => "GBRG",
         }
     }
 
     /// Parse format from GStreamer format string
     pub fn from_gst_format(format: &str) -> Option<Self> {
         match format {
-            "RGBA" | "RGBx" | "BGRx" | "BGRA" | "ARGB" | "ABGR" | "xRGB" | "xBGR" => {
-                Some(Self::RGBA)
-            }
+            "RGBA" | "RGBx" | "xRGB" | "ARGB" => Some(Self::RGBA),
+            "ABGR" | "xBGR" => Some(Self::ABGR),
+            "BGRA" | "BGRx" => Some(Self::BGRA),
             "NV12" => Some(Self::NV12),
             "NV21" => Some(Self::NV21),
             "I420" | "YV12" => Some(Self::I420),
@@ -379,9 +453,82 @@ impl PixelFormat {
             "VYUY" => Some(Self::VYUY),
             "GRAY8" | "GREY" | "Y8" => Some(Self::Gray8),
             "RGB" | "BGR" => Some(Self::RGB24),
+            // Bayer formats from GStreamer video/x-bayer
+            "rggb" | "RGGB" => Some(Self::BayerRGGB),
+            "bggr" | "BGGR" => Some(Self::BayerBGGR),
+            "grbg" | "GRBG" => Some(Self::BayerGRBG),
+            "gbrg" | "GBRG" => Some(Self::BayerGBRG),
             _ => None,
         }
     }
+}
+
+/// Autofocus state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AfState {
+    #[default]
+    Idle,
+    Scanning,
+    Focused,
+    Failed,
+}
+
+/// Auto exposure state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AeState {
+    #[default]
+    Inactive,
+    Searching,
+    Converged,
+    Locked,
+}
+
+/// Auto white balance state reported in frame metadata
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AwbState {
+    #[default]
+    Inactive,
+    Searching,
+    Converged,
+    Locked,
+}
+
+/// Frame metadata extracted from libcamera completed requests
+///
+/// This struct contains the actual values applied by the ISP for a given frame,
+/// as reported by libcamera. Only populated when using the libcamera backend.
+#[derive(Debug, Clone, Default)]
+pub struct FrameMetadata {
+    /// Actual exposure time applied (microseconds)
+    pub exposure_time: Option<u64>,
+    /// Actual analogue gain applied
+    pub analogue_gain: Option<f32>,
+    /// Actual digital gain applied
+    pub digital_gain: Option<f32>,
+    /// Color temperature (Kelvin)
+    pub colour_temperature: Option<u32>,
+    /// Lens position (for AF cameras)
+    pub lens_position: Option<f32>,
+    /// Sensor timestamp (nanoseconds since boot)
+    pub sensor_timestamp: Option<u64>,
+    /// Frame sequence number
+    pub sequence: Option<u32>,
+    /// Focus status (scanning, focused, failed)
+    pub af_state: Option<AfState>,
+    /// Auto exposure state
+    pub ae_state: Option<AeState>,
+    /// Auto white balance state
+    pub awb_state: Option<AwbState>,
+    /// ISP white balance gains [R, B] applied by the AWB algorithm
+    pub colour_gains: Option<[f32; 2]>,
+    /// 3x3 colour correction matrix (row-major) from sensor RGB to sRGB
+    pub colour_correction_matrix: Option<[[f32; 3]; 3]>,
+    /// Sensor black level (normalized 0..1, from 16-bit SensorBlackLevels)
+    pub black_level: Option<f32>,
+    /// Scene illuminance (lux)
+    pub lux: Option<f32>,
+    /// Focus figure of merit (AF quality score)
+    pub focus_fom: Option<i32>,
 }
 
 /// YUV plane offsets for multi-plane formats (NV12, I420)
@@ -410,6 +557,10 @@ pub struct YuvPlanes {
     pub v_size: usize,
     /// V plane stride in bytes (I420 only)
     pub v_stride: u32,
+    /// UV plane width in pixels (derived from subsampling)
+    pub uv_width: u32,
+    /// UV plane height in pixels (derived from subsampling)
+    pub uv_height: u32,
 }
 
 impl std::fmt::Debug for YuvPlanes {
@@ -423,6 +574,8 @@ impl std::fmt::Debug for YuvPlanes {
             .field("v_offset", &self.v_offset)
             .field("v_size", &self.v_size)
             .field("v_stride", &self.v_stride)
+            .field("uv_width", &self.uv_width)
+            .field("uv_height", &self.uv_height)
             .finish()
     }
 }
@@ -446,19 +599,36 @@ pub struct CameraFrame {
     pub yuv_planes: Option<YuvPlanes>,
     /// Timestamp when frame was captured (for latency diagnostics)
     pub captured_at: Instant,
+    /// Kernel/sensor timestamp in nanoseconds (CLOCK_BOOTTIME).
+    /// Used for video recording PTS to maintain A/V sync.
+    pub sensor_timestamp_ns: Option<u64>,
+    /// libcamera metadata (actual exposure, gain, focus state, etc.)
+    /// Only populated when using libcamera control integration
+    pub libcamera_metadata: Option<FrameMetadata>,
 }
 
 impl CameraFrame {
-    /// Get the frame data as a byte slice
-    #[inline]
-    pub fn data_slice(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Get a raw pointer to the data for deduplication checks
-    #[inline]
-    pub fn data_ptr(&self) -> usize {
-        self.data.as_ptr() as usize
+    /// Determine the GStreamer format string for this frame.
+    ///
+    /// For most pixel formats this delegates to `PixelFormat::to_gst_format_string()`.
+    /// However, MJPEG-decoded frames are always reported as `I420` but the actual
+    /// chroma subsampling varies (4:2:0, 4:2:2, 4:4:4) depending on the JPEG.
+    /// We inspect `yuv_planes` to distinguish:
+    /// - `uv_width == width && uv_height == height` → Y444 (4:4:4)
+    /// - `uv_width < width  && uv_height == height` → Y42B (4:2:2)
+    /// - Otherwise → I420 (4:2:0, the common case)
+    pub fn gst_format_string(&self) -> &'static str {
+        if self.format == PixelFormat::I420
+            && let Some(ref planes) = self.yuv_planes
+        {
+            if planes.uv_width == self.width && planes.uv_height == self.height {
+                return "Y444";
+            }
+            if planes.uv_width < self.width && planes.uv_height == self.height {
+                return "Y42B";
+            }
+        }
+        self.format.to_gst_format_string()
     }
 
     /// Convert to a frame with copied data (safe for background processing)
@@ -485,6 +655,8 @@ impl CameraFrame {
             stride: self.stride,
             yuv_planes: self.yuv_planes,
             captured_at: self.captured_at,
+            sensor_timestamp_ns: self.sensor_timestamp_ns,
+            libcamera_metadata: self.libcamera_metadata.clone(),
         }
     }
 }

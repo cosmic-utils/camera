@@ -3,13 +3,21 @@ FROM alpine:edge
 
 # Install host build tools and clang/lld for cross-compilation
 # clang is a native cross-compiler — no separate toolchain download needed
+# meson/ninja/python3 modules are needed for the vendored libcamera build
 RUN apk add --no-cache \
     alpine-keys \
     build-base \
     clang \
+    cmake \
     curl \
     lld \
-    pkgconf
+    meson \
+    nasm \
+    ninja \
+    pkgconf \
+    py3-jinja2 \
+    py3-yaml \
+    py3-ply
 
 # Install Rust natively (musl-linked) so cargo runs without glibc.
 # RUST_VERSION is passed as a build arg to keep the image in sync with the host
@@ -24,6 +32,7 @@ RUN mkdir -p /aarch64-sysroot/etc/apk && \
     cp /etc/apk/repositories /aarch64-sysroot/etc/apk/repositories && \
     apk --arch aarch64 --root /aarch64-sysroot --initdb --no-cache --allow-untrusted --no-scripts add \
         gcc \
+        g++ \
         musl-dev \
         glib-dev \
         gstreamer-dev \
@@ -33,22 +42,43 @@ RUN mkdir -p /aarch64-sysroot/etc/apk && \
         libxkbcommon-dev \
         libinput-dev \
         eudev-dev \
-        libseat-dev
+        libseat-dev \
+        yaml-dev
+
+# Create symlinks so both aarch64-unknown-linux-musl (Rust's triple) and
+# aarch64-alpine-linux-musl (Alpine's GCC triple) resolve to the same directories.
+# This is needed because cc-rs passes --target=aarch64-unknown-linux-musl to clang,
+# which overrides our wrapper's --target and changes the C++ header search paths.
+RUN GCC_VER=$(ls /aarch64-sysroot/usr/include/c++/ 2>/dev/null | head -1) && \
+    if [ -n "$GCC_VER" ]; then \
+        ln -sf aarch64-alpine-linux-musl "/aarch64-sysroot/usr/include/c++/$GCC_VER/aarch64-unknown-linux-musl"; \
+    fi && \
+    if [ -d /aarch64-sysroot/usr/lib/gcc/aarch64-alpine-linux-musl ]; then \
+        ln -sf aarch64-alpine-linux-musl /aarch64-sysroot/usr/lib/gcc/aarch64-unknown-linux-musl; \
+    fi
 
 # Create cross-compilation wrapper scripts using clang
-RUN printf '#!/bin/sh\nexec clang --target=aarch64-linux-musl --sysroot=/aarch64-sysroot -fuse-ld=lld "$@"\n' \
+# Use --target=aarch64-alpine-linux-musl (Alpine's GCC triple) so clang finds
+# C++ standard library headers in the sysroot's arch-specific include directory.
+# --gcc-toolchain points clang at the GCC installation for runtime libraries.
+# -fuse-ld=lld is only added during link steps (when -c/-E/-S/-M are absent)
+# because meson's compile checks add -Werror=unused-command-line-argument which
+# errors on linker flags during compile-only invocations.
+RUN printf '#!/bin/sh\nUSE_LLD="-fuse-ld=lld"\nfor arg in "$@"; do case "$arg" in -c|-E|-S|-M|-MM) USE_LLD=""; break;; esac; done\nexec clang --target=aarch64-alpine-linux-musl --sysroot=/aarch64-sysroot --gcc-toolchain=/aarch64-sysroot/usr $USE_LLD "$@"\n' \
         > /usr/local/bin/aarch64-linux-musl-clang && \
     chmod +x /usr/local/bin/aarch64-linux-musl-clang && \
-    printf '#!/bin/sh\nexec clang++ --target=aarch64-linux-musl --sysroot=/aarch64-sysroot -fuse-ld=lld "$@"\n' \
+    printf '#!/bin/sh\nUSE_LLD="-fuse-ld=lld"\nfor arg in "$@"; do case "$arg" in -c|-E|-S|-M|-MM) USE_LLD=""; break;; esac; done\nexec clang++ --target=aarch64-alpine-linux-musl --sysroot=/aarch64-sysroot --gcc-toolchain=/aarch64-sysroot/usr $USE_LLD "$@"\n' \
         > /usr/local/bin/aarch64-linux-musl-clang++ && \
     chmod +x /usr/local/bin/aarch64-linux-musl-clang++
 
 # Set up environment for cross-compilation
 # Put native cargo first in PATH so it's found before cross-mounted /rust/bin
+# Disable crt-static so the target binary can dynamically link system libraries
 ENV PATH="/root/.cargo/bin:${PATH}" \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-clang \
     CC_aarch64_unknown_linux_musl=aarch64-linux-musl-clang \
     CXX_aarch64_unknown_linux_musl=aarch64-linux-musl-clang++ \
     PKG_CONFIG_ALLOW_CROSS=1 \
     PKG_CONFIG_PATH=/aarch64-sysroot/usr/lib/pkgconfig:/aarch64-sysroot/usr/share/pkgconfig \
-    PKG_CONFIG_SYSROOT_DIR=/aarch64-sysroot
+    PKG_CONFIG_SYSROOT_DIR=/aarch64-sysroot \
+    RUSTFLAGS="-C target-feature=-crt-static"

@@ -11,6 +11,7 @@ use crate::backends::camera::CameraBackendManager;
 use crate::backends::camera::types::{CameraDevice, CameraFormat, CameraFrame};
 use crate::config::Config;
 use crate::media::encoders::video::EncoderInfo;
+use crate::pipelines::video::SharedAudioLevels;
 use cosmic::cosmic_config;
 use cosmic::widget::about::About;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use std::time::Instant;
 /// Recording state machine
 ///
 /// Simple two-state design: either recording or not.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub enum RecordingState {
     /// Not recording
     #[default]
@@ -32,21 +33,32 @@ pub enum RecordingState {
         file_path: String,
         /// Channel to signal stop
         stop_sender: Option<tokio::sync::oneshot::Sender<()>>,
+        /// Shared live audio levels from the GStreamer recording pipeline
+        audio_levels: Option<SharedAudioLevels>,
     },
+}
+
+impl std::fmt::Debug for RecordingState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordingState::Idle => write!(f, "Idle"),
+            RecordingState::Recording {
+                start_time,
+                file_path,
+                ..
+            } => f
+                .debug_struct("Recording")
+                .field("elapsed", &start_time.elapsed())
+                .field("file_path", file_path)
+                .finish(),
+        }
+    }
 }
 
 impl RecordingState {
     /// Check if currently recording
     pub fn is_recording(&self) -> bool {
         matches!(self, RecordingState::Recording { .. })
-    }
-
-    /// Get the recording file path if recording
-    pub fn file_path(&self) -> Option<&str> {
-        match self {
-            RecordingState::Idle => None,
-            RecordingState::Recording { file_path, .. } => Some(file_path),
-        }
     }
 
     /// Get the elapsed recording duration
@@ -66,17 +78,25 @@ impl RecordingState {
     }
 
     /// Start recording
-    pub fn start(file_path: String, stop_sender: tokio::sync::oneshot::Sender<()>) -> Self {
+    pub fn start(
+        file_path: String,
+        stop_sender: tokio::sync::oneshot::Sender<()>,
+        audio_levels: Option<SharedAudioLevels>,
+    ) -> Self {
         RecordingState::Recording {
             start_time: Instant::now(),
             file_path,
             stop_sender: Some(stop_sender),
+            audio_levels,
         }
     }
 
-    /// Stop recording (returns Idle)
-    pub fn stop(&mut self) -> Self {
-        std::mem::replace(self, RecordingState::Idle)
+    /// Get the shared audio levels handle (if recording with audio)
+    pub fn audio_levels(&self) -> Option<&SharedAudioLevels> {
+        match self {
+            RecordingState::Recording { audio_levels, .. } => audio_levels.as_ref(),
+            _ => None,
+        }
     }
 }
 
@@ -142,33 +162,22 @@ impl VirtualCameraState {
         }
     }
 
-    /// Start streaming from camera
+    /// Start streaming
+    ///
+    /// When `is_file_source` is true, the stream originates from a file (image/video)
+    /// rather than a live camera.
     pub fn start(
         stop_sender: tokio::sync::oneshot::Sender<()>,
         frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
         filter_sender: tokio::sync::watch::Sender<FilterType>,
+        is_file_source: bool,
     ) -> Self {
         VirtualCameraState::Streaming {
             start_time: Instant::now(),
             stop_sender: Some(stop_sender),
             frame_sender,
             filter_sender,
-            is_file_source: false,
-        }
-    }
-
-    /// Start streaming from file source
-    pub fn start_file_source(
-        stop_sender: tokio::sync::oneshot::Sender<()>,
-        frame_sender: tokio::sync::mpsc::UnboundedSender<Arc<CameraFrame>>,
-        filter_sender: tokio::sync::watch::Sender<FilterType>,
-    ) -> Self {
-        VirtualCameraState::Streaming {
-            start_time: Instant::now(),
-            stop_sender: Some(stop_sender),
-            frame_sender,
-            filter_sender,
-            is_file_source: true,
+            is_file_source,
         }
     }
 
@@ -188,11 +197,6 @@ impl VirtualCameraState {
                 filter_sender.send(filter).is_ok()
             }
         }
-    }
-
-    /// Stop streaming (returns Idle)
-    pub fn stop(&mut self) -> Self {
-        std::mem::replace(self, VirtualCameraState::Idle)
     }
 }
 
@@ -285,8 +289,6 @@ impl TheatreState {
 /// communication primitives.
 #[derive(Debug)]
 pub struct BurstModeState {
-    /// Whether night mode is enabled
-    pub enabled: bool,
     /// Current processing stage
     pub stage: BurstModeStage,
     /// Progress during Processing stage (0.0 - 1.0)
@@ -321,12 +323,6 @@ pub enum BurstModeStage {
 }
 
 impl BurstModeState {
-    /// Toggle night mode enabled state, returns new state
-    pub fn toggle_enabled(&mut self) -> bool {
-        self.enabled = !self.enabled;
-        self.enabled
-    }
-
     /// Add a frame to the capture buffer
     ///
     /// Returns `true` if the target frame count has been reached.
@@ -484,7 +480,6 @@ impl BurstModeState {
 impl Default for BurstModeState {
     fn default() -> Self {
         Self {
-            enabled: false,
             stage: BurstModeStage::default(),
             processing_progress: 0.0,
             frame_buffer: Vec::new(),
@@ -606,6 +601,10 @@ pub struct AppModel {
     pub camera_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Counter to force camera stream restart (incremented to change subscription ID)
     pub camera_stream_restart_counter: u32,
+    /// Shared flag to request a still capture from the raw stream (multistream mode)
+    pub still_capture_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Shared storage for the latest still frame from the raw stream (multistream mode)
+    pub latest_still_frame: std::sync::Arc<std::sync::Mutex<Option<CameraFrame>>>,
     /// Current camera frame
     pub current_frame: Option<Arc<CameraFrame>>,
     /// Available camera devices
@@ -647,6 +646,8 @@ pub struct AppModel {
     pub photo_output_format_dropdown_options: Vec<String>,
     /// Audio encoder dropdown options (Opus, AAC)
     pub audio_encoder_dropdown_options: Vec<String>,
+    /// Backend dropdown options (e.g., "libcamera", "PipeWire")
+    pub backend_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -956,6 +957,20 @@ impl PhotoAspectRatio {
             self.crop_rect(frame_width, frame_height)
         }
     }
+
+    /// Returns the crop rect for this aspect ratio, or None for Native (no crop)
+    pub fn optional_crop_rect_with_rotation(
+        &self,
+        frame_width: u32,
+        frame_height: u32,
+        rotation: crate::backends::camera::types::SensorRotation,
+    ) -> Option<(u32, u32, u32, u32)> {
+        if *self == PhotoAspectRatio::Native {
+            None
+        } else {
+            Some(self.crop_rect_with_rotation(frame_width, frame_height, rotation))
+        }
+    }
 }
 
 /// Filter types for camera preview
@@ -1105,6 +1120,10 @@ pub enum Message {
     ExposureBaseTimeCaptured(i32),
     /// Set backlight compensation value
     SetBacklightCompensation(i32),
+    /// Set manual focus position (absolute)
+    SetFocusAbsolute(i32),
+    /// Toggle auto focus on/off
+    ToggleFocusAuto,
     /// Reset all exposure settings to defaults
     ResetExposureSettings,
     /// Exposure mode selected via segmented button
@@ -1143,6 +1162,8 @@ pub enum Message {
         usize,
         Vec<crate::backends::camera::types::CameraFormat>,
     ),
+    /// Broken video encoders detected by background probe
+    BrokenEncodersDetected(Vec<String>),
     /// Camera list changed (hotplug event)
     CameraListChanged(Vec<crate::backends::camera::types::CameraDevice>),
     /// Start camera transition (capture last frame and show blur)
@@ -1151,6 +1172,8 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
+    /// Select camera backend (0 = libcamera, 1 = PipeWire)
+    SelectBackend(usize),
 
     // ===== Motor/PTZ Controls =====
     /// Toggle motor controls picker visibility
@@ -1303,6 +1326,8 @@ pub enum Message {
     SelectAudioEncoder(usize),
     /// Toggle saving raw burst frames as DNG (debugging feature)
     ToggleSaveBurstRaw,
+    /// Reset all settings to defaults
+    ResetAllSettings,
     /// Toggle virtual camera feature enabled
     ToggleVirtualCameraEnabled,
 
@@ -1355,10 +1380,6 @@ pub enum Message {
 
     /// No-op message for async tasks that don't need a response
     Noop,
-
-    // ===== Menu Surface =====
-    /// Surface action from menu bar
-    Surface(cosmic::surface::Action),
 }
 
 impl TransitionState {

@@ -83,13 +83,30 @@ impl AppModel {
             camera_section = camera_section.add(self.build_device_info_panel());
         }
 
-        camera_section = camera_section.add(
-            widget::settings::item::builder(fl!("settings-format")).control(widget::dropdown(
-                &self.mode_dropdown_options,
-                current_mode_index,
-                Message::SelectMode,
-            )),
-        );
+        // Backend dropdown (only show if libcamera is available)
+        if self.backend_dropdown_options.len() > 1 {
+            let current_backend_index = match self.config.backend {
+                crate::backends::camera::CameraBackendType::Libcamera => 0,
+                crate::backends::camera::CameraBackendType::PipeWire => 1,
+            };
+            camera_section = camera_section.add(
+                widget::settings::item::builder(fl!("settings-backend")).control(widget::dropdown(
+                    &self.backend_dropdown_options,
+                    Some(current_backend_index),
+                    Message::SelectBackend,
+                )),
+            );
+        }
+
+        if self.config.backend != crate::backends::camera::CameraBackendType::Libcamera {
+            camera_section = camera_section.add(
+                widget::settings::item::builder(fl!("settings-format")).control(widget::dropdown(
+                    &self.mode_dropdown_options,
+                    current_mode_index,
+                    Message::SelectMode,
+                )),
+            );
+        }
 
         // Audio encoder index
         let current_audio_encoder_index = AudioEncoder::ALL
@@ -160,7 +177,7 @@ impl AppModel {
             .position(|f| *f == self.config.photo_output_format)
             .unwrap_or(0); // Default to JPEG (index 0)
 
-        let photo_section = widget::settings::section()
+        let mut photo_section = widget::settings::section()
             .title(fl!("settings-photo"))
             .add(
                 widget::settings::item::builder(fl!("settings-photo-format"))
@@ -179,12 +196,15 @@ impl AppModel {
                         Some(current_hdr_index),
                         Message::SetBurstModeFrameCount,
                     )),
-            )
-            .add(
+            );
+
+        if self.config.burst_mode_setting != BurstModeSetting::Off {
+            photo_section = photo_section.add(
                 widget::settings::item::builder(fl!("settings-save-burst-raw"))
                     .description(fl!("settings-save-burst-raw-description"))
                     .toggler(self.config.save_burst_raw, |_| Message::ToggleSaveBurstRaw),
             );
+        }
 
         // Mirror preview section
         let mirror_section = widget::settings::section().add(
@@ -223,6 +243,24 @@ impl AppModel {
             .title(fl!("settings-bug-reports"))
             .add(widget::settings::item_row(vec![bug_report_control]));
 
+        // Reset section
+        let reset_section = widget::settings::section().add(widget::settings::item_row(vec![
+            widget::button::standard(fl!("settings-reset-all"))
+                .on_press(Message::ResetAllSettings)
+                .into(),
+        ]));
+
+        // Insights section
+        let insights_section = widget::settings::section()
+            .title(fl!("settings-stats-for-nerds"))
+            .add(widget::settings::item_row(vec![
+                widget::button::standard(fl!("insights-title"))
+                    .on_press(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::Insights,
+                    ))
+                    .into(),
+            ]));
+
         // Combine all sections
         let sections = vec![
             appearance_section.into(),
@@ -232,6 +270,8 @@ impl AppModel {
             mirror_section.into(),
             virtual_camera_section.into(),
             bug_reports_section.into(),
+            reset_section.into(),
+            insights_section.into(),
         ];
 
         let settings_content: Element<'_, Message> = widget::settings::view_column(sections).into();
@@ -254,14 +294,13 @@ impl AppModel {
                 .into()
         }
 
-        let device_info = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .and_then(|c| c.device_info.as_ref());
+        let camera = self.available_cameras.get(self.current_camera_index);
+        let device_info = camera.and_then(|c| c.device_info.as_ref());
 
         let mut info_column = widget::column().spacing(4);
 
         if let Some(info) = device_info {
+            // V4L2/PipeWire device info
             if !info.card.is_empty() {
                 info_column = info_column.push(info_row(fl!("device-info-card"), &info.card));
             }
@@ -275,9 +314,39 @@ impl AppModel {
                 info_column =
                     info_column.push(info_row(fl!("device-info-real-path"), &info.real_path));
             }
-        } else {
+        } else if let Some(cam) = camera
+            && (cam.sensor_model.is_some()
+                || cam.camera_location.is_some()
+                || cam.libcamera_version.is_some()
+                || cam.pipeline_handler.is_some())
+        {
+            // libcamera device info (no V4L2 DeviceInfo, but has libcamera-specific fields)
+            info_column = info_column.push(info_row(fl!("device-info-device-path"), &cam.path));
+            if let Some(ref model) = cam.sensor_model {
+                info_column = info_column.push(info_row(fl!("device-info-sensor"), model));
+            }
+            if let Some(ref handler) = cam.pipeline_handler {
+                info_column = info_column.push(info_row(fl!("device-info-pipeline"), handler));
+            }
+            if let Some(ref version) = cam.libcamera_version {
+                info_column =
+                    info_column.push(info_row(fl!("device-info-libcamera-version"), version));
+            }
+            let multistream_str = if cam.supports_multistream {
+                fl!("device-info-multistream-yes")
+            } else {
+                fl!("device-info-multistream-no")
+            };
             info_column =
-                info_column.push(widget::text("No device information available").size(12));
+                info_column.push(info_row(fl!("device-info-multistream"), &multistream_str));
+            if cam.rotation.degrees() != 0 {
+                info_column = info_column.push(info_row(
+                    fl!("device-info-rotation"),
+                    &format!("{}°", cam.rotation.degrees()),
+                ));
+            }
+        } else {
+            info_column = info_column.push(widget::text(fl!("device-info-none")).size(12));
         }
 
         widget::container(info_column)

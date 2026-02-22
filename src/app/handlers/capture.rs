@@ -15,6 +15,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+/// Configuration for appsrc recording pipeline (libcamera backend)
+struct AppsrcRecordingConfig {
+    width: u32,
+    height: u32,
+    framerate: u32,
+    format: crate::backends::camera::types::CameraFormat,
+    output_path: PathBuf,
+    sensor_rotation: crate::backends::camera::types::SensorRotation,
+    audio_device: Option<String>,
+    selected_encoder: Option<crate::media::encoders::video::EncoderInfo>,
+    bitrate_kbps: u32,
+}
+
 /// Delay in ms before resetting burst mode state after successful capture
 const BURST_MODE_SUCCESS_DISPLAY_MS: u64 = 2000;
 /// Delay in ms before resetting burst mode state after an error
@@ -61,12 +74,45 @@ impl AppModel {
         }
     }
 
+    /// Build camera metadata (name, driver, exposure info) for photo encoding.
+    fn build_camera_metadata(&self) -> crate::pipelines::photo::CameraMetadata {
+        self.available_cameras
+            .get(self.current_camera_index)
+            .map(|cam| {
+                let mut metadata = crate::pipelines::photo::CameraMetadata {
+                    camera_name: Some(cam.name.clone()),
+                    camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
+                    ..Default::default()
+                };
+                if let Some(device_info) = &cam.device_info {
+                    let exposure = read_exposure_metadata(&device_info.path);
+                    metadata.exposure_time = exposure.exposure_time;
+                    metadata.iso = exposure.iso;
+                    metadata.gain = exposure.gain;
+                }
+                metadata
+            })
+            .unwrap_or_default()
+    }
+
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
         // Use HDR+ burst mode only if it would actually be used (frame_count > 1)
         // This respects auto-detected brightness and user override
         if self.would_use_burst_mode() {
             return self.capture_burst_mode_photo();
+        }
+
+        // In multistream mode, capture from the raw stream (full sensor resolution)
+        // instead of the preview stream (1080p)
+        let is_multistream = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|cam| cam.supports_multistream)
+            .unwrap_or(false);
+
+        if is_multistream {
+            return self.capture_photo_from_raw_stream();
         }
 
         let Some(frame) = &self.current_frame else {
@@ -82,49 +128,20 @@ impl AppModel {
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
 
-        // Get camera rotation for photo processing
-        let rotation = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .map(|cam| cam.rotation)
-            .unwrap_or_default();
+        let rotation = self.current_camera_rotation();
 
         // Calculate crop rectangle based on aspect ratio setting (accounting for rotation)
-        let crop_rect =
-            self.photo_aspect_ratio
-                .crop_rect_with_rotation(frame.width, frame.height, rotation);
-        let crop_rect = if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-            None
-        } else {
-            Some(crop_rect)
-        };
+        let crop_rect = self.photo_aspect_ratio.optional_crop_rect_with_rotation(
+            frame.width,
+            frame.height,
+            rotation,
+        );
 
         // Get the encoding format from config
         let encoding_format: crate::pipelines::photo::EncodingFormat =
             self.config.photo_output_format.into();
 
-        // Get camera metadata for DNG encoding (including exposure info)
-        let camera_metadata = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .map(|cam| {
-                let mut metadata = crate::pipelines::photo::CameraMetadata {
-                    camera_name: Some(cam.name.clone()),
-                    camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
-                    ..Default::default()
-                };
-                // Read exposure metadata from V4L2 device if available
-                if let Some(device_info) = &cam.device_info {
-                    let exposure = crate::backends::camera::v4l2_controls::read_exposure_metadata(
-                        &device_info.path,
-                    );
-                    metadata.exposure_time = exposure.exposure_time;
-                    metadata.iso = exposure.iso;
-                    metadata.gain = exposure.gain;
-                }
-                metadata
-            })
-            .unwrap_or_default();
+        let camera_metadata = self.build_camera_metadata();
 
         let save_task = Task::perform(
             async move {
@@ -143,6 +160,90 @@ impl AppModel {
                 pipeline.set_camera_metadata(camera_metadata);
                 pipeline
                     .capture_and_save(frame_arc, save_dir)
+                    .await
+                    .map(|p| p.display().to_string())
+            },
+            |result| cosmic::Action::App(Message::PhotoSaved(result)),
+        );
+
+        let animation_task = Self::delay_task(150, Message::ClearCaptureAnimation);
+        Task::batch([save_task, animation_task])
+    }
+
+    /// Capture a photo from the raw stream (multistream mode)
+    ///
+    /// Requests a full-resolution raw frame from the dedicated raw stream,
+    /// which bypasses the ISP and captures at the sensor's native resolution.
+    fn capture_photo_from_raw_stream(&mut self) -> Task<cosmic::Action<Message>> {
+        info!("Capturing photo from raw stream (multistream mode)...");
+        self.is_capturing = true;
+
+        // Request a still capture from the raw stream
+        self.still_capture_requested
+            .store(true, std::sync::atomic::Ordering::Release);
+
+        let still_frame = Arc::clone(&self.latest_still_frame);
+        let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
+        let filter_type = self.selected_filter;
+        let zoom_level = self.zoom_level;
+
+        let rotation = self.current_camera_rotation();
+
+        // For raw stream capture, use native aspect ratio (no crop from preview)
+        // The raw frame may have a different aspect ratio than the preview
+        let photo_aspect_ratio = self.photo_aspect_ratio;
+
+        let encoding_format: crate::pipelines::photo::EncodingFormat =
+            self.config.photo_output_format.into();
+
+        let camera_metadata = self.build_camera_metadata();
+
+        let save_task = Task::perform(
+            async move {
+                use crate::pipelines::photo::{
+                    EncodingQuality, PhotoPipeline, PostProcessingConfig,
+                };
+
+                // Wait for the raw frame with a timeout
+                let timeout = std::time::Duration::from_secs(2);
+                let start = std::time::Instant::now();
+                let frame = loop {
+                    if let Ok(mut guard) = still_frame.lock()
+                        && let Some(frame) = guard.take()
+                    {
+                        break frame;
+                    }
+                    if start.elapsed() > timeout {
+                        return Err("Timeout waiting for raw frame from still stream".to_string());
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                };
+
+                info!(
+                    width = frame.width,
+                    height = frame.height,
+                    format = ?frame.format,
+                    "Raw frame captured from still stream"
+                );
+
+                let crop_rect = photo_aspect_ratio.optional_crop_rect_with_rotation(
+                    frame.width,
+                    frame.height,
+                    rotation,
+                );
+
+                let config = PostProcessingConfig {
+                    filter_type,
+                    crop_rect,
+                    zoom_level,
+                    rotation,
+                    ..Default::default()
+                };
+                let mut pipeline =
+                    PhotoPipeline::with_config(config, encoding_format, EncodingQuality::High);
+                pipeline.set_camera_metadata(camera_metadata);
+                pipeline
+                    .capture_and_save(Arc::new(frame), save_dir)
                     .await
                     .map(|p| p.display().to_string())
             },
@@ -239,51 +340,17 @@ impl AppModel {
         let encoding_format: crate::pipelines::photo::EncodingFormat =
             self.config.photo_output_format.into();
 
-        // Read V4L2 exposure metadata for both camera metadata and brightness analysis
-        let exposure_metadata = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .and_then(|cam| cam.device_info.as_ref())
-            .map(|info| read_exposure_metadata(&info.path));
+        let camera_metadata = self.build_camera_metadata();
 
-        let camera_metadata = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .map(|cam| {
-                let mut metadata = crate::pipelines::photo::CameraMetadata {
-                    camera_name: Some(cam.name.clone()),
-                    camera_driver: cam.device_info.as_ref().map(|info| info.driver.clone()),
-                    ..Default::default()
-                };
-                // Copy exposure metadata if available
-                if let Some(ref exposure) = exposure_metadata {
-                    metadata.exposure_time = exposure.exposure_time;
-                    metadata.iso = exposure.iso;
-                    metadata.gain = exposure.gain;
-                }
-                metadata
-            })
-            .unwrap_or_default();
-
-        // Get camera rotation for photo processing
-        let rotation = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .map(|cam| cam.rotation)
-            .unwrap_or_default();
+        let rotation = self.current_camera_rotation();
 
         // Calculate crop rectangle based on aspect ratio setting (accounting for rotation)
         let crop_rect = if let Some(frame) = frames.first() {
-            let rect = self.photo_aspect_ratio.crop_rect_with_rotation(
+            self.photo_aspect_ratio.optional_crop_rect_with_rotation(
                 frame.width,
                 frame.height,
                 rotation,
-            );
-            if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-                None
-            } else {
-                Some(rect)
-            }
+            )
         } else {
             None
         };
@@ -747,19 +814,16 @@ impl AppModel {
             "Starting video recording"
         );
 
-        let device_path = camera.path.clone();
-        let metadata_path = camera.metadata_path.clone();
         let sensor_rotation = camera.rotation;
         let width = format.width;
         let height = format.height;
         let framerate = format.framerate.map(|f| f.as_int()).unwrap_or(30);
-        let pixel_format = format.pixel_format.clone();
 
         // Only get audio device if audio recording is enabled in settings
         let audio_device = if self.config.record_audio {
             self.available_audio_devices
                 .get(self.current_audio_device_index)
-                .map(|dev| format!("pipewire-serial-{}", dev.serial))
+                .map(|dev| dev.node_name.clone())
         } else {
             None
         };
@@ -771,49 +835,239 @@ impl AppModel {
 
         let bitrate_kbps = self.config.bitrate_preset.bitrate_kbps(width, height);
 
+        // Check if we're using the libcamera backend — if so, use appsrc pipeline
+        let use_appsrc =
+            self.config.backend == crate::backends::camera::types::CameraBackendType::Libcamera;
+
+        if use_appsrc {
+            // For the appsrc pipeline, use the actual viewfinder frame dimensions
+            // (not active_format, which may be the raw/Bayer stream resolution).
+            let (appsrc_width, appsrc_height) = self
+                .current_frame
+                .as_ref()
+                .map(|f| (f.width, f.height))
+                .unwrap_or((width, height));
+            let appsrc_bitrate = self
+                .config
+                .bitrate_preset
+                .bitrate_kbps(appsrc_width, appsrc_height);
+            return self.start_appsrc_recording(AppsrcRecordingConfig {
+                width: appsrc_width,
+                height: appsrc_height,
+                framerate,
+                format: format.clone(),
+                output_path,
+                sensor_rotation,
+                audio_device,
+                selected_encoder,
+                bitrate_kbps: appsrc_bitrate,
+            });
+        }
+
+        // --- PipeWire path (existing code) ---
+        let device_path = camera.path.clone();
+        let metadata_path = camera.metadata_path.clone();
+        let pixel_format = format.pixel_format.clone();
+
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         let path_for_message = output_path.display().to_string();
-        self.recording = RecordingState::start(path_for_message.clone(), stop_tx);
+
+        // Create audio levels handle upfront so the UI can read it immediately.
+        // The recorder is created in the async task to avoid blocking the UI thread.
+        let audio_levels: crate::pipelines::video::SharedAudioLevels = Default::default();
+        self.recording = RecordingState::start(
+            path_for_message.clone(),
+            stop_tx,
+            Some(audio_levels.clone()),
+        );
 
         let recording_task = Task::perform(
             async move {
-                use crate::pipelines::video::{
-                    AudioChannels, AudioQuality, EncoderConfig, VideoQuality, VideoRecorder,
-                    VideoRecorderConfig,
-                };
+                let recorder = tokio::task::spawn_blocking(move || {
+                    use crate::pipelines::video::{
+                        AudioChannels, AudioQuality, EncoderConfig, PipeWireRecorderConfig,
+                        RecorderConfig, VideoQuality, VideoRecorder,
+                    };
 
-                let config = EncoderConfig {
-                    video_quality: VideoQuality::High,
-                    audio_quality: AudioQuality::High,
-                    audio_channels: AudioChannels::Stereo,
-                    width,
-                    height,
-                    bitrate_override_kbps: Some(bitrate_kbps),
-                };
+                    let config = EncoderConfig {
+                        video_quality: VideoQuality::High,
+                        audio_quality: AudioQuality::High,
+                        audio_channels: AudioChannels::Mono,
+                        width,
+                        height,
+                        bitrate_override_kbps: Some(bitrate_kbps),
+                    };
 
-                let recorder = match VideoRecorder::new(VideoRecorderConfig {
-                    device_path: &device_path,
-                    metadata_path: metadata_path.as_deref(),
-                    width,
-                    height,
-                    framerate,
-                    pixel_format: &pixel_format,
-                    output_path: output_path.clone(),
-                    encoder_config: config,
-                    enable_audio: audio_device.is_some(),
-                    audio_device: audio_device.as_deref(),
-                    preview_sender: None,
-                    encoder_info: selected_encoder.as_ref(),
-                    rotation: sensor_rotation,
-                }) {
-                    Ok(r) => r,
-                    Err(e) => return Err(e),
-                };
+                    let recorder = VideoRecorder::new(PipeWireRecorderConfig {
+                        base: RecorderConfig {
+                            width,
+                            height,
+                            framerate,
+                            output_path: output_path.clone(),
+                            encoder_config: config,
+                            enable_audio: audio_device.is_some(),
+                            audio_device: audio_device.as_deref(),
+                            encoder_info: selected_encoder.as_ref(),
+                            rotation: sensor_rotation,
+                            audio_levels,
+                        },
+                        device_path: &device_path,
+                        metadata_path: metadata_path.as_deref(),
+                        pixel_format: &pixel_format,
+                        preview_sender: None,
+                    })?;
 
-                recorder.start()?;
+                    recorder.start()?;
+                    let path = output_path.display().to_string();
+                    Ok::<_, String>((recorder, path))
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))?;
 
-                let path = output_path.display().to_string();
+                let (recorder, path) = recorder;
                 let _ = stop_rx.await;
+
+                tokio::task::spawn_blocking(move || {
+                    recorder.stop().map(|_| path).map_err(|e| e.to_string())
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))
+            },
+            |result| cosmic::Action::App(Message::RecordingStopped(result)),
+        );
+
+        let start_signal = Task::done(cosmic::Action::App(Message::RecordingStarted(
+            path_for_message,
+        )));
+
+        Task::batch([start_signal, recording_task])
+    }
+
+    /// Start recording using the appsrc pipeline (libcamera backend).
+    ///
+    /// Frames from the native capture thread are forwarded via an mpsc channel
+    /// into a GStreamer appsrc encoding pipeline. The preview continues
+    /// uninterrupted since we reuse the same frames.
+    fn start_appsrc_recording(
+        &mut self,
+        config: AppsrcRecordingConfig,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::backends::camera::types::PixelFormat;
+
+        let AppsrcRecordingConfig {
+            width,
+            height,
+            framerate,
+            format,
+            output_path,
+            sensor_rotation,
+            audio_device,
+            selected_encoder,
+            bitrate_kbps,
+        } = config;
+
+        // Determine pixel format for the appsrc pipeline
+        let pixel_format = self
+            .current_frame
+            .as_ref()
+            .map(|f| f.format)
+            .unwrap_or_else(|| {
+                // Fallback: parse from format string
+                PixelFormat::from_gst_format(&format.pixel_format).unwrap_or(PixelFormat::I420)
+            });
+
+        info!(
+            pixel_format = ?pixel_format,
+            "Using appsrc recording pipeline (libcamera backend)"
+        );
+
+        let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(15);
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+
+        let path_for_message = output_path.display().to_string();
+
+        // Direct path: capture thread → appsrc (bypasses UI thread entirely)
+        if let Some(ref manager) = self.backend_manager {
+            manager.set_recording_sender(Some(frame_tx));
+        }
+
+        // Create audio levels handle upfront so the UI can read it immediately.
+        // The recorder is created in the async task to avoid blocking the UI thread.
+        let audio_levels: crate::pipelines::video::SharedAudioLevels = Default::default();
+        self.recording = RecordingState::start(
+            path_for_message.clone(),
+            stop_tx,
+            Some(audio_levels.clone()),
+        );
+
+        let backend_manager = self.backend_manager.clone();
+
+        let recording_task = Task::perform(
+            async move {
+                // Capture runtime handle — spawn_blocking doesn't propagate the
+                // tokio context, but the appsrc pusher needs it for tokio::spawn.
+                let rt_handle = tokio::runtime::Handle::current();
+
+                let recorder = tokio::task::spawn_blocking(move || {
+                    // Enter the runtime context so tokio::spawn works inside
+                    // new_from_appsrc (used by the appsrc pusher task).
+                    let _guard = rt_handle.enter();
+
+                    use crate::pipelines::video::{
+                        AppsrcRecorderConfig, AudioChannels, AudioQuality, EncoderConfig,
+                        RecorderConfig, VideoQuality, VideoRecorder,
+                    };
+
+                    // Use Low quality for appsrc path (x264 veryfast preset) —
+                    // ARM devices can't encode 1080p in real-time with slower presets.
+                    let config = EncoderConfig {
+                        video_quality: VideoQuality::Low,
+                        audio_quality: AudioQuality::High,
+                        audio_channels: AudioChannels::Mono,
+                        width,
+                        height,
+                        bitrate_override_kbps: Some(bitrate_kbps),
+                    };
+
+                    let recorder = VideoRecorder::new_from_appsrc(
+                        AppsrcRecorderConfig {
+                            base: RecorderConfig {
+                                width,
+                                height,
+                                framerate,
+                                output_path: output_path.clone(),
+                                encoder_config: config,
+                                enable_audio: audio_device.is_some(),
+                                audio_device: audio_device.as_deref(),
+                                encoder_info: selected_encoder.as_ref(),
+                                rotation: sensor_rotation,
+                                audio_levels,
+                            },
+                            pixel_format,
+                        },
+                        frame_rx,
+                    )?;
+
+                    recorder.start()?;
+                    let path = output_path.display().to_string();
+                    Ok::<_, String>((recorder, path))
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))?;
+
+                let (recorder, path) = recorder;
+
+                // Wait for stop signal
+                let _ = stop_rx.await;
+
+                // Clear the direct recording sender — drops the Sender, closing
+                // the channel so the appsrc pusher sees None and sends EOS.
+                if let Some(ref manager) = backend_manager {
+                    manager.set_recording_sender(None);
+                }
+
+                // Give a brief moment for EOS to propagate before stopping the pipeline.
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
                 tokio::task::spawn_blocking(move || {
                     recorder.stop().map(|_| path).map_err(|e| e.to_string())
@@ -912,7 +1166,8 @@ async fn process_burst_mode_frames_with_atomic(
     filter: crate::app::FilterType,
 ) -> Result<String, String> {
     use crate::pipelines::photo::burst_mode::{
-        ProgressCallback, export_burst_frames_dng, process_burst_mode, save_output,
+        ProgressCallback, SaveOutputParams, export_burst_frames_dng, process_burst_mode,
+        save_output,
     };
 
     info!(
@@ -973,13 +1228,15 @@ async fn process_burst_mode_frames_with_atomic(
     // Save output with optional crop, filter, rotation, and selected encoding format
     let output_path = save_output(
         &merged,
-        save_dir,
-        crop_rect,
-        encoding_format,
-        camera_metadata,
-        Some(filter),
-        rotation,
-        Some("_HDR+"),
+        SaveOutputParams {
+            output_dir: save_dir,
+            crop_rect,
+            encoding_format,
+            camera_metadata,
+            filter: Some(filter),
+            rotation,
+            filename_suffix: Some("_HDR+"),
+        },
     )
     .await?;
 
@@ -997,7 +1254,7 @@ async fn save_first_burst_frame(
     filter: crate::app::FilterType,
     rotation: crate::backends::camera::types::SensorRotation,
 ) -> Result<PathBuf, String> {
-    use crate::pipelines::photo::burst_mode::{MergedFrame, save_output};
+    use crate::pipelines::photo::burst_mode::{MergedFrame, SaveOutputParams, save_output};
 
     // Convert CameraFrame to MergedFrame for save_output
     let merged = MergedFrame {
@@ -1009,13 +1266,15 @@ async fn save_first_burst_frame(
     // Reuse save_output with no filename suffix (plain IMG_{timestamp})
     let path = save_output(
         &merged,
-        save_dir.to_path_buf(),
-        crop_rect,
-        encoding_format,
-        camera_metadata.clone(),
-        Some(filter),
-        rotation,
-        None, // No suffix for first frame
+        SaveOutputParams {
+            output_dir: save_dir.to_path_buf(),
+            crop_rect,
+            encoding_format,
+            camera_metadata: camera_metadata.clone(),
+            filter: Some(filter),
+            rotation,
+            filename_suffix: None, // No suffix for first frame
+        },
     )
     .await?;
 

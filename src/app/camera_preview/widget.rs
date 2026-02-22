@@ -11,6 +11,16 @@ use cosmic::widget;
 use tracing::{debug, info};
 
 impl AppModel {
+    /// Whether the preview should be mirrored (front cameras only, not file sources)
+    pub(crate) fn should_mirror_preview(&self) -> bool {
+        let is_back = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .and_then(|c| c.camera_location.as_deref())
+            == Some("back");
+        self.config.mirror_preview && !self.current_frame_is_file_source && !is_back
+    }
+
     /// Build the camera preview widget
     ///
     /// Uses custom video widget with handle caching for optimized rendering.
@@ -82,9 +92,7 @@ impl AppModel {
                 }
                 crate::app::state::CameraMode::Video => crate::app::state::FilterType::Standard,
             };
-            // File sources should never be mirrored - they display content as-is
-            // Use the flag that tracks if the current frame is actually from a file source
-            let should_mirror = self.config.mirror_preview && !self.current_frame_is_file_source;
+            let should_mirror = self.should_mirror_preview();
 
             // Use the rotation stored with the current frame
             // This ensures correct rotation during camera switch blur transitions

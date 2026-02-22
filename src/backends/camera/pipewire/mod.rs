@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// PipeWire backend implementation with some features for future use
-#![allow(dead_code)]
 
 //! PipeWire camera backend
 //!
@@ -140,24 +138,6 @@ impl CameraBackend for PipeWireBackend {
 
     fn is_initialized(&self) -> bool {
         self.pipeline.is_some() && self.current_device.is_some()
-    }
-
-    fn recover(&mut self) -> BackendResult<()> {
-        info!("Attempting to recover PipeWire backend");
-
-        // Get current config
-        let device = self
-            .current_device
-            .clone()
-            .ok_or_else(|| BackendError::Other("No device to recover".to_string()))?;
-        let format = self
-            .current_format
-            .clone()
-            .ok_or_else(|| BackendError::Other("No format to recover".to_string()))?;
-
-        // Shutdown and reinitialize
-        let _ = self.shutdown(); // Ignore errors during recovery shutdown
-        self.initialize(&device, &format)
     }
 
     fn switch_camera(&mut self, device: &CameraDevice) -> BackendResult<()> {

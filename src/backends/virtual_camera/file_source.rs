@@ -131,7 +131,7 @@ pub fn get_video_duration(path: &Path) -> BackendResult<f64> {
     let path_str = path.to_string_lossy();
 
     // Create a simple discoverer pipeline to get duration
-    let pipeline_str = format!("filesrc location=\"{}\" ! decodebin ! fakesink", path_str);
+    let pipeline_str = format!("filesrc location=\"{}\" ! decodebin3 ! fakesink", path_str);
 
     let pipeline = gstreamer::parse::launch(&pipeline_str)
         .map_err(|e| BackendError::Other(format!("Failed to create pipeline: {}", e)))?
@@ -210,6 +210,8 @@ fn extract_frame_from_sample(sample: &gstreamer::Sample) -> BackendResult<Camera
         format: PixelFormat::RGBA,
         yuv_planes: None,
         captured_at: Instant::now(),
+        sensor_timestamp_ns: None,
+        libcamera_metadata: None,
     })
 }
 
@@ -223,7 +225,7 @@ fn create_frame_extraction_pipeline(
 
     let path_str = path.to_string_lossy();
     let pipeline_str = format!(
-        "filesrc location=\"{}\" ! decodebin ! \
+        "filesrc location=\"{}\" ! decodebin3 ! \
          videoconvert ! video/x-raw,format=RGBA ! \
          appsink name=sink max-buffers=1 drop=true sync=false",
         path_str
@@ -299,6 +301,8 @@ pub fn load_image_as_frame(path: &Path) -> BackendResult<CameraFrame> {
         format: PixelFormat::RGBA,
         yuv_planes: None,
         captured_at: Instant::now(),
+        sensor_timestamp_ns: None,
+        libcamera_metadata: None,
     })
 }
 
@@ -336,10 +340,10 @@ impl VideoDecoder {
 
         let path_str = path.to_string_lossy();
 
-        // Create video pipeline: filesrc → decodebin → videoconvert → appsink
+        // Create video pipeline: filesrc → decodebin3 → videoconvert → appsink
         // Note: sync=true is important to play video at correct speed (matches video's native framerate)
         let video_pipeline_str = format!(
-            "filesrc location=\"{}\" ! decodebin name=decode ! \
+            "filesrc location=\"{}\" ! decodebin3 name=decode ! \
              queue ! videoconvert ! video/x-raw,format=RGBA ! appsink name=videosink emit-signals=true sync=true",
             path_str
         );
@@ -440,10 +444,10 @@ impl VideoDecoder {
 
         let path_str = path.to_string_lossy();
 
-        // Create audio pipeline: filesrc → decodebin → audioconvert → audioresample → pipewiresink
+        // Create audio pipeline: filesrc → decodebin3 → audioconvert → audioresample → pipewiresink
         // The pipewiresink creates a virtual microphone that other apps can use
         let audio_pipeline_str = format!(
-            "filesrc location=\"{}\" ! decodebin name=decode ! \
+            "filesrc location=\"{}\" ! decodebin3 name=decode ! \
              queue ! audioconvert ! audioresample ! \
              audio/x-raw,format=F32LE,channels=2,rate=48000 ! \
              pipewiresink name=audiosink stream-properties=\"p,media.class=Audio/Source,node.name=Camera Virtual Mic,media.role=Communication\" sync=true",
@@ -515,6 +519,8 @@ impl VideoDecoder {
             format: PixelFormat::RGBA,
             yuv_planes: None,
             captured_at: Instant::now(),
+            sensor_timestamp_ns: None,
+            libcamera_metadata: None,
         })
     }
 

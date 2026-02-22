@@ -199,6 +199,24 @@ fn convert_rgb24(pos: vec2<u32>) -> vec3<f32> {
     return rgba.rgb;
 }
 
+// Convert ABGR pixel at given position
+// ABGR8888: Memory layout [A][B][G][R], GPU loads as RGBA giving R=A,G=B,B=G,A=R
+// Need to swizzle to get actual RGBA
+fn convert_abgr(pos: vec2<u32>) -> vec4<f32> {
+    let loaded = textureLoad(tex_y, pos, 0);
+    // Swizzle: actual R is in A, actual G is in B, actual B is in G, actual A is in R
+    return vec4(loaded.a, loaded.b, loaded.g, loaded.r);
+}
+
+// Convert BGRA pixel at given position
+// BGRA8888: Memory layout [B][G][R][A], GPU loads as RGBA giving R=B,G=G,B=R,A=A
+// Need to swizzle to get actual RGBA
+fn convert_bgra(pos: vec2<u32>) -> vec4<f32> {
+    let loaded = textureLoad(tex_y, pos, 0);
+    // Swizzle: actual R is in B, actual G is in G, actual B is in R, actual A is in A
+    return vec4(loaded.b, loaded.g, loaded.r, loaded.a);
+}
+
 // Passthrough for RGBA (or already converted) data
 fn passthrough_rgba(pos: vec2<u32>) -> vec4<f32> {
     return textureLoad(tex_y, pos, 0);
@@ -218,7 +236,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var color: vec4<f32>;
 
     // Select conversion based on format
-    // Format codes: 0=RGBA, 1=NV12, 2=I420, 3=YUYV, 4=UYVY, 5=Gray8, 6=RGB24, 7=NV21, 8=YVYU, 9=VYUY
+    // Format codes: 0=RGBA, 1=NV12, 2=I420, 3=YUYV, 4=UYVY, 5=Gray8, 6=RGB24, 7=NV21, 8=YVYU, 9=VYUY, 10=ABGR, 11=BGRA
     switch params.format {
         case 1u: {
             // NV12
@@ -255,6 +273,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         case 9u: {
             // VYUY
             color = vec4(convert_vyuy(pos), 1.0);
+        }
+        case 10u: {
+            // ABGR (libcamera native format)
+            color = convert_abgr(pos);
+        }
+        case 11u: {
+            // BGRA
+            color = convert_bgra(pos);
         }
         default: {
             // RGBA passthrough (format 0 or unknown)
