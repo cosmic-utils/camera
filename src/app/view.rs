@@ -13,7 +13,7 @@ use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
-use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
+use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA, POPUP_BACKGROUND_ALPHA};
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -76,6 +76,63 @@ pub fn overlay_container_style(theme: &cosmic::Theme) -> widget::container::Styl
         // Don't set text_color - let buttons use their native COSMIC theme colors
         ..Default::default()
     }
+}
+
+/// Build a centered overlay popup dialog with icon, title, body text, and optional button
+///
+/// Used for modal-style popups (privacy warning, flash error) with a near-opaque background.
+fn build_overlay_popup<'a>(
+    icon: Element<'a, Message>,
+    title: &str,
+    body: &str,
+    button: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    let spacing = cosmic::theme::spacing();
+
+    let mut content = widget::column()
+        .push(icon)
+        .push(
+            widget::text(title.to_string())
+                .size(20)
+                .font(cosmic::font::bold()),
+        )
+        .push(widget::text(body.to_string()).size(14))
+        .spacing(spacing.space_s)
+        .align_x(Alignment::Center);
+
+    if let Some(btn) = button {
+        content = content.push(btn);
+    }
+
+    let popup_box =
+        widget::container(content)
+            .padding(spacing.space_l)
+            .style(|theme: &cosmic::Theme| {
+                let cosmic = theme.cosmic();
+                let bg = cosmic.bg_color();
+                let on_bg = cosmic.on_bg_color();
+                widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        bg.red,
+                        bg.green,
+                        bg.blue,
+                        POPUP_BACKGROUND_ALPHA,
+                    ))),
+                    border: cosmic::iced::Border {
+                        radius: cosmic.corner_radii.radius_m.into(),
+                        ..Default::default()
+                    },
+                    text_color: Some(Color::from(on_bg)),
+                    ..Default::default()
+                }
+            });
+
+    widget::container(popup_box)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(cosmic::iced::alignment::Horizontal::Center)
+        .align_y(cosmic::iced::alignment::Vertical::Center)
+        .into()
 }
 
 /// Create an icon button with a themed background for use on camera preview overlays
@@ -1137,55 +1194,12 @@ impl AppModel {
             return widget::Space::new(Length::Fill, Length::Fill).into();
         }
 
-        let spacing = cosmic::theme::spacing();
-
-        // Warning icon and text
-        let warning_content = widget::column()
-            .push(
-                widget::icon(
-                    icon::from_name("dialog-warning-symbolic")
-                        .symbolic(true)
-                        .into(),
-                )
-                .size(48),
-            )
-            .push(
-                widget::text(fl!("privacy-cover-closed"))
-                    .size(20)
-                    .font(cosmic::font::bold()),
-            )
-            .push(widget::text(fl!("privacy-cover-hint")).size(14))
-            .spacing(spacing.space_s)
-            .align_x(Alignment::Center);
-
-        // Container with semi-transparent background
-        let warning_box = widget::container(warning_content)
-            .padding(spacing.space_m)
-            .style(|theme: &cosmic::Theme| {
-                let cosmic = theme.cosmic();
-                let bg = cosmic.bg_color();
-                widget::container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        bg.red,
-                        bg.green,
-                        bg.blue,
-                        OVERLAY_BACKGROUND_ALPHA,
-                    ))),
-                    border: cosmic::iced::Border {
-                        radius: cosmic.corner_radii.radius_m.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            });
-
-        // Center the warning in the preview area
-        widget::container(warning_box)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(cosmic::iced::alignment::Horizontal::Center)
-            .align_y(cosmic::iced::alignment::Vertical::Center)
-            .into()
+        build_overlay_popup(
+            widget::text("\u{26A0}").size(48).into(),
+            &fl!("privacy-cover-closed"),
+            &fl!("privacy-cover-hint"),
+            None,
+        )
     }
 
     /// Build the burst mode progress overlay
@@ -1298,50 +1312,21 @@ impl AppModel {
     /// Shows a centered modal with warning icon, error message, and OK button
     /// when flash hardware was detected but cannot be controlled.
     fn build_flash_error_popup(&self) -> Element<'_, Message> {
-        let spacing = cosmic::theme::spacing();
-
         let error_msg = self
             .flash_error_popup
             .as_deref()
             .unwrap_or("Flash permission error");
 
-        let popup_content = widget::column()
-            .push(widget::text("\u{26A0}").size(48))
-            .push(
-                widget::text("Flash Permission Error")
-                    .size(20)
-                    .font(cosmic::font::bold()),
-            )
-            .push(widget::text(error_msg).size(14))
-            .push(widget::button::suggested("OK").on_press(Message::DismissFlashError))
-            .spacing(spacing.space_s)
-            .align_x(Alignment::Center);
-
-        let popup_box = widget::container(popup_content)
-            .padding(spacing.space_l)
-            .style(|theme: &cosmic::Theme| {
-                let cosmic = theme.cosmic();
-                let bg = cosmic.bg_color();
-                let on_bg = cosmic.on_bg_color();
-                widget::container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        bg.red, bg.green, bg.blue, 0.95,
-                    ))),
-                    border: cosmic::iced::Border {
-                        radius: cosmic.corner_radii.radius_m.into(),
-                        ..Default::default()
-                    },
-                    text_color: Some(Color::from(on_bg)),
-                    ..Default::default()
-                }
-            });
-
-        widget::container(popup_box)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(cosmic::iced::alignment::Horizontal::Center)
-            .align_y(cosmic::iced::alignment::Vertical::Center)
-            .into()
+        build_overlay_popup(
+            widget::text("\u{26A0}").size(48).into(),
+            "Flash Permission Error",
+            error_msg,
+            Some(
+                widget::button::suggested("OK")
+                    .on_press(Message::DismissFlashError)
+                    .into(),
+            ),
+        )
     }
 
     /// Build the timer countdown overlay
