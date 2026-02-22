@@ -5,7 +5,9 @@
 //! Handles camera selection, switching, frame processing, initialization,
 //! hotplug events, and mirror/virtual camera settings.
 
-use crate::app::state::{AppModel, CameraMode, Message, PhotoAspectRatio, VirtualCameraState};
+use crate::app::state::{
+    AppModel, CameraMode, Message, PhotoAspectRatio, RecordingState, VirtualCameraState,
+};
 use crate::backends::camera::v4l2_controls;
 use cosmic::Task;
 use std::sync::Arc;
@@ -35,6 +37,10 @@ impl AppModel {
 
         self.switch_camera_or_mode(new_index, self.mode);
         let _ = self.transition_state.start();
+
+        // Force subscription restart in case the index didn't change
+        // (e.g., hotplug removed current camera and we fall back to index 0 again)
+        self.camera_stream_restart_counter = self.camera_stream_restart_counter.wrapping_add(1);
 
         // Re-query exposure controls for the new camera
         self.query_exposure_controls_task()
@@ -323,6 +329,15 @@ impl AppModel {
         self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
 
         if !current_camera_still_available {
+            // Stop recording if the camera used for recording is disconnected
+            if self.recording.is_recording() {
+                info!("Camera disconnected during recording, stopping recording gracefully");
+                if let Some(sender) = self.recording.take_stop_sender() {
+                    let _ = sender.send(());
+                }
+                self.recording = RecordingState::Idle;
+            }
+
             // Stop virtual camera streaming if the camera used for streaming is disconnected
             if self.virtual_camera.is_streaming() {
                 info!("Camera disconnected during virtual camera streaming, stopping stream");

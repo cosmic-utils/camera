@@ -1166,6 +1166,8 @@ pub enum Message {
     BrokenEncodersDetected(Vec<String>),
     /// Camera list changed (hotplug event)
     CameraListChanged(Vec<crate::backends::camera::types::CameraDevice>),
+    /// Audio device list changed (hotplug event)
+    AudioListChanged(Vec<crate::backends::audio::AudioDevice>),
     /// Start camera transition (capture last frame and show blur)
     StartCameraTransition,
     /// Clear blur transition after delay

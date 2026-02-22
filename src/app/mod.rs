@@ -1095,6 +1095,51 @@ impl cosmic::Application for AppModel {
             }),
         );
 
+        // Audio device hotplug monitoring subscription
+        let current_audio_devices = self.available_audio_devices.clone();
+        let audio_hotplug_sub = Subscription::run_with_id(
+            "audio_hotplug",
+            cosmic::iced::stream::channel(10, move |mut output| async move {
+                info!("Audio device hotplug monitoring started");
+
+                let mut last_devices = current_audio_devices;
+
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+                    let new_devices = crate::backends::audio::enumerate_audio_devices();
+
+                    let devices_changed = last_devices.len() != new_devices.len()
+                        || !last_devices.iter().all(|d| {
+                            new_devices
+                                .iter()
+                                .any(|nd| nd.serial == d.serial && nd.name == d.name)
+                        });
+
+                    if devices_changed {
+                        info!(
+                            old_count = last_devices.len(),
+                            new_count = new_devices.len(),
+                            "Audio device list changed - hotplug event detected"
+                        );
+
+                        last_devices = new_devices.clone();
+
+                        if output
+                            .send(Message::AudioListChanged(new_devices))
+                            .await
+                            .is_err()
+                        {
+                            warn!("Failed to send audio list changed message - channel closed");
+                            break;
+                        }
+                    }
+                }
+
+                info!("Audio device hotplug monitoring stopped");
+            }),
+        );
+
         // QR detection subscription (samples frames at 1 FPS)
         let should_detect_qr = self.qr_detection_enabled
             && self
@@ -1240,6 +1285,7 @@ impl cosmic::Application for AppModel {
             config_sub,
             camera_sub,
             hotplug_sub,
+            audio_hotplug_sub,
             qr_detection_sub,
             file_source_preview_sub,
             timer_animation_sub,

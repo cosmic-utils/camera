@@ -140,6 +140,7 @@ impl AppModel {
             }
             Message::BrokenEncodersDetected(broken) => self.handle_broken_encoders_detected(broken),
             Message::CameraListChanged(cameras) => self.handle_camera_list_changed(cameras),
+            Message::AudioListChanged(devices) => self.handle_audio_list_changed(devices),
             Message::StartCameraTransition => self.handle_start_camera_transition(),
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
