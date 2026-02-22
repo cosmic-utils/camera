@@ -183,6 +183,7 @@ impl AppModel {
             Message::ZoomIn => self.handle_zoom_in(),
             Message::ZoomOut => self.handle_zoom_out(),
             Message::ResetZoom => self.handle_reset_zoom(),
+            Message::PinchZoom(level) => self.handle_pinch_zoom(level),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),

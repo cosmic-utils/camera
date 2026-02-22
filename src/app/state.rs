@@ -1249,6 +1249,8 @@ pub enum Message {
     ZoomOut,
     /// Reset zoom to 1.0
     ResetZoom,
+    /// Pinch-to-zoom: set absolute zoom level from touch gesture
+    PinchZoom(f32),
     /// Photo was saved successfully with the given file path
     PhotoSaved(Result<String, String>),
     /// Clear capture animation after brief delay
