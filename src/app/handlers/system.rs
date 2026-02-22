@@ -17,6 +17,15 @@ impl AppModel {
     // =========================================================================
 
     pub(crate) fn handle_open_gallery(&self) -> Task<cosmic::Action<Message>> {
+        // If we have a last media path, open the file manager with that file pre-selected
+        if let Some(ref path) = self.last_media_path {
+            info!(path = %path, "Opening gallery with file pre-selected");
+            if Self::show_in_file_manager(path).is_ok() {
+                return Task::none();
+            }
+            info!("show_in_file_manager failed, falling back to directory open");
+        }
+
         let photo_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         info!(path = %photo_dir.display(), "Opening gallery directory");
 
@@ -39,11 +48,18 @@ impl AppModel {
 
     pub(crate) fn handle_gallery_thumbnail_loaded(
         &mut self,
-        data: Option<(cosmic::widget::image::Handle, Arc<Vec<u8>>, u32, u32)>,
+        data: Option<(
+            cosmic::widget::image::Handle,
+            Arc<Vec<u8>>,
+            u32,
+            u32,
+            std::path::PathBuf,
+        )>,
     ) -> Task<cosmic::Action<Message>> {
-        if let Some((handle, rgba, width, height)) = data {
+        if let Some((handle, rgba, width, height, path)) = data {
             self.gallery_thumbnail = Some(handle);
             self.gallery_thumbnail_rgba = Some((rgba, width, height));
+            self.last_media_path = Some(path.display().to_string());
         } else {
             self.gallery_thumbnail = None;
             self.gallery_thumbnail_rgba = None;
@@ -333,7 +349,7 @@ impl AppModel {
     // =========================================================================
 
     /// Show a file in the file manager with pre-selection
-    fn show_in_file_manager(file_path: &str) -> Result<(), String> {
+    pub(crate) fn show_in_file_manager(file_path: &str) -> Result<(), String> {
         use std::process::Command;
 
         let path = std::path::Path::new(file_path);
