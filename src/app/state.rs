@@ -577,6 +577,10 @@ pub struct AppModel {
     pub flash_enabled: bool,
     /// Flash is currently active (showing white overlay)
     pub flash_active: bool,
+    /// Detected flash hardware (LEDs + permission status)
+    pub flash_hardware: crate::flash::FlashHardware,
+    /// Flash permission error popup (shown when hardware found but not writable)
+    pub flash_error_popup: Option<String>,
     /// Photo timer setting (off, 3s, 5s, 10s)
     pub photo_timer_setting: PhotoTimerSetting,
     /// Photo timer countdown (remaining seconds, None when not counting)
@@ -1214,6 +1218,8 @@ pub enum Message {
     Capture,
     /// Toggle flash for photo capture
     ToggleFlash,
+    /// Dismiss flash permission error popup
+    DismissFlashError,
     /// Toggle burst mode for photo capture (multi-frame HDR+ burst)
     ToggleBurstMode,
     /// Set burst mode frame count (0 = Auto, 1 = 4 frames, 2 = 6 frames, 3 = 8 frames)

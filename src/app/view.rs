@@ -116,7 +116,8 @@ impl AppModel {
         let camera_preview = self.build_camera_preview();
 
         // Flash mode - show only preview with white overlay, no UI
-        if self.flash_active {
+        // Only show screen flash overlay for front cameras (back cameras use hardware LED)
+        if self.flash_active && !self.use_hardware_flash() {
             let flash_overlay = widget::container(widget::Space::new(Length::Fill, Length::Fill))
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -317,7 +318,15 @@ impl AppModel {
 
                 bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
 
-                let theatre_stack = cosmic::iced::widget::stack![
+                // Flash error popup for theatre mode (centered in preview area)
+                let flash_error_popup: Option<Element<'_, Message>> =
+                    if self.flash_error_popup.is_some() {
+                        Some(self.build_flash_error_popup())
+                    } else {
+                        None
+                    };
+
+                let mut theatre_stack = cosmic::iced::widget::stack![
                     camera_preview,
                     // QR overlay (custom widget calculates positions at render time)
                     self.build_qr_overlay(),
@@ -334,20 +343,27 @@ impl AppModel {
                         .align_y(cosmic::iced::alignment::Vertical::Bottom)
                 ];
 
+                if let Some(popup) = flash_error_popup {
+                    theatre_stack = theatre_stack.push(popup);
+                }
+
                 theatre_stack
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
             } else {
                 // Theatre mode with UI hidden - show only full-screen preview with QR overlay and privacy warning
-                cosmic::iced::widget::stack![
+                let mut hidden_stack = cosmic::iced::widget::stack![
                     camera_preview,
                     self.build_qr_overlay(),
                     self.build_privacy_warning()
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                ];
+
+                if self.flash_error_popup.is_some() {
+                    hidden_stack = hidden_stack.push(self.build_flash_error_popup());
+                }
+
+                hidden_stack.width(Length::Fill).height(Length::Fill).into()
             }
         } else {
             // Normal mode - traditional layout
@@ -362,6 +378,11 @@ impl AppModel {
                     .width(Length::Fill)
                     .align_y(cosmic::iced::alignment::Vertical::Top)
             ];
+
+            // Flash permission error popup (centered in preview area)
+            if self.flash_error_popup.is_some() {
+                preview_stack = preview_stack.push(self.build_flash_error_popup());
+            }
 
             // Add zoom label overlapping bottom of preview (centered above capture button)
             if show_zoom_label {
@@ -1265,6 +1286,57 @@ impl AppModel {
                 });
 
         widget::container(overlay_panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(cosmic::iced::alignment::Horizontal::Center)
+            .align_y(cosmic::iced::alignment::Vertical::Center)
+            .into()
+    }
+
+    /// Build the flash permission error popup dialog
+    ///
+    /// Shows a centered modal with warning icon, error message, and OK button
+    /// when flash hardware was detected but cannot be controlled.
+    fn build_flash_error_popup(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+
+        let error_msg = self
+            .flash_error_popup
+            .as_deref()
+            .unwrap_or("Flash permission error");
+
+        let popup_content = widget::column()
+            .push(widget::text("\u{26A0}").size(48))
+            .push(
+                widget::text("Flash Permission Error")
+                    .size(20)
+                    .font(cosmic::font::bold()),
+            )
+            .push(widget::text(error_msg).size(14))
+            .push(widget::button::suggested("OK").on_press(Message::DismissFlashError))
+            .spacing(spacing.space_s)
+            .align_x(Alignment::Center);
+
+        let popup_box = widget::container(popup_content)
+            .padding(spacing.space_l)
+            .style(|theme: &cosmic::Theme| {
+                let cosmic = theme.cosmic();
+                let bg = cosmic.bg_color();
+                let on_bg = cosmic.on_bg_color();
+                widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        bg.red, bg.green, bg.blue, 0.95,
+                    ))),
+                    border: cosmic::iced::Border {
+                        radius: cosmic.corner_radii.radius_m.into(),
+                        ..Default::default()
+                    },
+                    text_color: Some(Color::from(on_bg)),
+                    ..Default::default()
+                }
+            });
+
+        widget::container(popup_box)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(cosmic::iced::alignment::Horizontal::Center)
