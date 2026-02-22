@@ -33,6 +33,22 @@ impl AppModel {
         self.zoom_level = 1.0;
         self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
 
+        // If switching to a back camera with flash enabled and permission errors,
+        // reset flash and show the permission popup
+        let switching_to_back = self
+            .available_cameras
+            .get(new_index)
+            .and_then(|c| c.camera_location.as_deref())
+            == Some("back");
+        if self.flash_enabled && switching_to_back && self.flash_hardware.has_error() {
+            info!("Switching to back camera with flash permission error — disabling flash");
+            self.flash_enabled = false;
+            self.flash_error_popup = self.flash_hardware.permission_error.clone();
+        }
+
+        // Turn off hardware flash when switching cameras (safety measure)
+        self.turn_off_flash_hardware();
+
         self.switch_camera_or_mode(new_index, self.mode);
         let _ = self.transition_state.start();
 

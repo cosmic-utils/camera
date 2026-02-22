@@ -160,6 +160,7 @@ impl AppModel {
             // ===== Capture Operations =====
             Message::Capture => self.handle_capture(),
             Message::ToggleFlash => self.handle_toggle_flash(),
+            Message::DismissFlashError => self.handle_dismiss_flash_error(),
             Message::ToggleBurstMode => self.handle_toggle_burst_mode(),
             Message::SetBurstModeFrameCount(index) => self.handle_set_burst_mode_frame_count(index),
             Message::BurstModeProgress(progress) => self.handle_burst_mode_progress(progress),
@@ -169,6 +170,7 @@ impl AppModel {
             Message::ResetBurstModeState => {
                 self.burst_mode.reset();
                 // Ensure flash is turned off when burst mode resets (safety measure)
+                self.turn_off_flash_hardware();
                 self.flash_active = false;
                 debug!("Burst mode state reset");
                 Task::none()

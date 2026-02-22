@@ -35,6 +35,44 @@ const BURST_MODE_ERROR_DISPLAY_MS: u64 = 3000;
 
 impl AppModel {
     // =========================================================================
+    // Flash Hardware Helpers
+    // =========================================================================
+
+    /// Check if the current camera is a back-facing camera (based on libcamera location property)
+    pub(crate) fn is_back_camera(&self) -> bool {
+        self.available_cameras
+            .get(self.current_camera_index)
+            .and_then(|c| c.camera_location.as_deref())
+            == Some("back")
+    }
+
+    /// Check if hardware flash should be used (back camera with writable flash LEDs)
+    pub(crate) fn use_hardware_flash(&self) -> bool {
+        self.is_back_camera() && self.flash_hardware.has_devices()
+    }
+
+    /// Turn on hardware flash LEDs (only for back cameras with writable hardware)
+    pub(crate) fn turn_on_flash_hardware(&self) {
+        if self.use_hardware_flash() {
+            info!("Turning on hardware flash LEDs");
+            crate::flash::all_on(&self.flash_hardware.devices);
+        }
+    }
+
+    /// Turn off hardware flash LEDs (safe to call even if no hardware)
+    pub(crate) fn turn_off_flash_hardware(&self) {
+        if !self.flash_hardware.devices.is_empty() {
+            crate::flash::all_off(&self.flash_hardware.devices);
+        }
+    }
+
+    /// Handle dismissing the flash permission error popup
+    pub(crate) fn handle_dismiss_flash_error(&mut self) -> Task<cosmic::Action<Message>> {
+        self.flash_error_popup = None;
+        Task::none()
+    }
+
+    // =========================================================================
     // Capture Operations Handlers
     // =========================================================================
 
@@ -291,8 +329,13 @@ impl AppModel {
 
         // If flash is enabled, turn it on for the entire burst capture duration
         if self.flash_enabled {
-            info!("Flash enabled - keeping flash on during burst capture");
-            self.flash_active = true;
+            if self.use_hardware_flash() {
+                info!("Flash enabled - turning on hardware flash during burst capture");
+                self.turn_on_flash_hardware();
+            } else {
+                info!("Flash enabled - keeping screen flash on during burst capture");
+                self.flash_active = true;
+            }
         }
 
         // Frames will be collected in handle_camera_frame
@@ -308,8 +351,9 @@ impl AppModel {
         );
 
         // Turn off flash now that capture is complete (before processing)
+        self.turn_off_flash_hardware();
         if self.flash_active {
-            info!("Turning off flash - burst capture complete");
+            info!("Turning off screen flash - burst capture complete");
             self.flash_active = false;
         }
 
@@ -489,16 +533,33 @@ impl AppModel {
 
         // Normal capture flow (with flash check)
         if self.mode == CameraMode::Photo && self.flash_enabled && !self.flash_active {
-            info!("Flash enabled - showing flash before capture");
-            self.flash_active = true;
+            if self.use_hardware_flash() {
+                info!("Flash enabled - turning on hardware flash before capture");
+                self.turn_on_flash_hardware();
+            } else {
+                info!("Flash enabled - showing screen flash before capture");
+                self.flash_active = true;
+            }
             return Self::delay_task(1000, Message::FlashComplete);
         }
         self.capture_photo()
     }
 
     pub(crate) fn handle_toggle_flash(&mut self) -> Task<cosmic::Action<Message>> {
+        // If trying to enable flash on a back camera with permission errors, show popup
+        if !self.flash_enabled && self.is_back_camera() && self.flash_hardware.has_error() {
+            warn!("Flash hardware detected but not writable — showing permission error");
+            self.flash_error_popup = self.flash_hardware.permission_error.clone();
+            return Task::none();
+        }
+
         self.flash_enabled = !self.flash_enabled;
-        info!(flash_enabled = self.flash_enabled, "Flash toggled");
+        info!(
+            flash_enabled = self.flash_enabled,
+            is_back = self.is_back_camera(),
+            has_hardware = self.flash_hardware.has_devices(),
+            "Flash toggled"
+        );
         Task::none()
     }
 
@@ -615,6 +676,7 @@ impl AppModel {
 
     pub(crate) fn handle_flash_complete(&mut self) -> Task<cosmic::Action<Message>> {
         info!("Flash complete - capturing photo");
+        self.turn_off_flash_hardware();
         self.flash_active = false;
         self.capture_photo()
     }
@@ -637,8 +699,13 @@ impl AppModel {
                 self.photo_timer_tick_start = None;
                 // Check if flash is enabled
                 if self.flash_enabled && !self.flash_active {
-                    info!("Flash enabled - showing flash before capture");
-                    self.flash_active = true;
+                    if self.use_hardware_flash() {
+                        info!("Flash enabled - turning on hardware flash before capture");
+                        self.turn_on_flash_hardware();
+                    } else {
+                        info!("Flash enabled - showing screen flash before capture");
+                        self.flash_active = true;
+                    }
                     return Self::delay_task(1000, Message::FlashComplete);
                 }
                 return self.capture_photo();

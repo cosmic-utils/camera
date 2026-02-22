@@ -326,6 +326,21 @@ impl cosmic::Application for AppModel {
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
+            flash_hardware: {
+                let hw = crate::flash::FlashHardware::detect();
+                if hw.has_devices() {
+                    info!(
+                        count = hw.devices.len(),
+                        "Flash hardware detected and writable"
+                    );
+                } else if hw.has_error() {
+                    warn!("Flash hardware detected but not writable — permission error");
+                } else {
+                    info!("No flash hardware detected");
+                }
+                hw
+            },
+            flash_error_popup: None,
             photo_timer_setting: PhotoTimerSetting::default(),
             photo_timer_countdown: None,
             photo_timer_tick_start: None,
