@@ -347,6 +347,7 @@ impl cosmic::Application for AppModel {
             photo_aspect_ratio: PhotoAspectRatio::default(),
             zoom_level: 1.0,
             last_bug_report_path: None,
+            last_media_path: None,
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,
             picker_selected_resolution: None,

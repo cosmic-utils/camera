@@ -772,6 +772,7 @@ impl AppModel {
         match result {
             Ok(path) => {
                 info!(path = %path, "Photo saved successfully");
+                self.last_media_path = Some(path.clone());
                 return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
             }
             Err(err) => {
@@ -837,6 +838,7 @@ impl AppModel {
         match result {
             Ok(path) => {
                 info!(path = %path, "Recording saved successfully");
+                self.last_media_path = Some(path.clone());
                 return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
             }
             Err(err) => {

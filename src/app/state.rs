@@ -593,6 +593,8 @@ pub struct AppModel {
     pub zoom_level: f32,
     /// Path to last generated bug report
     pub last_bug_report_path: Option<String>,
+    /// Path to the most recently saved photo or video (for gallery pre-selection)
+    pub last_media_path: Option<String>,
     /// Latest gallery thumbnail (cached)
     pub gallery_thumbnail: Option<cosmic::widget::image::Handle>,
     /// Gallery thumbnail RGBA data for custom rendering (Arc for cheap cloning)
@@ -1310,8 +1312,8 @@ pub enum Message {
     OpenGallery,
     /// Refresh the gallery thumbnail
     RefreshGalleryThumbnail,
-    /// Gallery thumbnail loaded (Handle, RGBA data wrapped in Arc, width, height)
-    GalleryThumbnailLoaded(Option<(cosmic::widget::image::Handle, Arc<Vec<u8>>, u32, u32)>),
+    /// Gallery thumbnail loaded
+    GalleryThumbnailLoaded(Option<crate::storage::GalleryThumbnailData>),
 
     // ===== Filters =====
     /// Select a filter
