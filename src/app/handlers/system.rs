@@ -8,7 +8,6 @@
 use crate::app::state::{AppModel, FilterType, Message};
 use cosmic::Task;
 use cosmic::cosmic_config::CosmicConfigEntry;
-use std::sync::Arc;
 use tracing::{error, info};
 
 impl AppModel {
@@ -48,13 +47,7 @@ impl AppModel {
 
     pub(crate) fn handle_gallery_thumbnail_loaded(
         &mut self,
-        data: Option<(
-            cosmic::widget::image::Handle,
-            Arc<Vec<u8>>,
-            u32,
-            u32,
-            std::path::PathBuf,
-        )>,
+        data: Option<crate::storage::GalleryThumbnailData>,
     ) -> Task<cosmic::Action<Message>> {
         if let Some((handle, rgba, width, height, path)) = data {
             self.gallery_thumbnail = Some(handle);

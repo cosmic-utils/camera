@@ -1304,16 +1304,8 @@ pub enum Message {
     OpenGallery,
     /// Refresh the gallery thumbnail
     RefreshGalleryThumbnail,
-    /// Gallery thumbnail loaded (Handle, RGBA data wrapped in Arc, width, height, file path)
-    GalleryThumbnailLoaded(
-        Option<(
-            cosmic::widget::image::Handle,
-            Arc<Vec<u8>>,
-            u32,
-            u32,
-            std::path::PathBuf,
-        )>,
-    ),
+    /// Gallery thumbnail loaded
+    GalleryThumbnailLoaded(Option<crate::storage::GalleryThumbnailData>),
 
     // ===== Filters =====
     /// Select a filter
