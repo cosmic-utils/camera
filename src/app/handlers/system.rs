@@ -212,6 +212,10 @@ impl AppModel {
     }
 
     pub(crate) fn handle_toggle_record_audio(&mut self) -> Task<cosmic::Action<Message>> {
+        if self.recording.is_recording() {
+            return Task::none();
+        }
+
         use cosmic::cosmic_config::CosmicConfigEntry;
 
         self.config.record_audio = !self.config.record_audio;
