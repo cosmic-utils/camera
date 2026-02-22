@@ -12,13 +12,27 @@ use crate::app::state::{FilterType, Message};
 use crate::app::video_primitive::{VideoFrame, VideoPrimitive};
 use crate::backends::camera::types::{CameraFrame, PixelFormat};
 use cosmic::iced::advanced::widget::Tree;
+use cosmic::iced::advanced::widget::tree;
 use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout};
 use cosmic::iced::event::Status;
 use cosmic::iced::mouse;
-use cosmic::iced::{Element, Event, Length, Rectangle, Size};
+use cosmic::iced::touch;
+use cosmic::iced::{Element, Event, Length, Point, Rectangle, Size};
 use cosmic::iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use cosmic::{Renderer, Theme};
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Internal state for tracking pinch-to-zoom gestures
+#[derive(Default)]
+struct PinchState {
+    /// Active finger positions (up to 2 tracked)
+    fingers: HashMap<touch::Finger, Point>,
+    /// Distance between two fingers when pinch started
+    initial_distance: Option<f32>,
+    /// Zoom level when pinch gesture started
+    zoom_at_pinch_start: f32,
+}
 
 /// Content fit mode for video scaling
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +75,8 @@ pub struct VideoWidget {
     content_fit: VideoContentFit,
     /// Enable scroll wheel zoom (only for main camera preview, not filter picker)
     scroll_zoom_enabled: bool,
+    /// Current zoom level (passed through for pinch gesture reference)
+    zoom_level: f32,
 }
 
 impl VideoWidget {
@@ -147,11 +163,20 @@ impl VideoWidget {
             aspect_ratio,
             content_fit: config.content_fit,
             scroll_zoom_enabled: config.scroll_zoom_enabled,
+            zoom_level: config.zoom_level,
         }
     }
 }
 
 impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<PinchState>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(PinchState::default())
+    }
+
     fn size(&self) -> Size<Length> {
         Size::new(self.width, self.height)
     }
@@ -193,7 +218,7 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
 
     fn on_event(
         &mut self,
-        _tree: &mut Tree,
+        tree: &mut Tree,
         event: Event,
         layout: layout::Layout<'_>,
         cursor: mouse::Cursor,
@@ -202,13 +227,64 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) -> Status {
-        // Only handle scroll zoom if enabled (photo mode main preview)
+        // Only handle zoom gestures if enabled (photo mode main preview)
         if !self.scroll_zoom_enabled {
             return Status::Ignored;
         }
 
-        // Check if cursor is over the widget bounds
         let bounds = layout.bounds();
+
+        // Handle touch events for pinch-to-zoom
+        if let Event::Touch(touch_event) = event {
+            let pinch = tree.state.downcast_mut::<PinchState>();
+
+            match touch_event {
+                touch::Event::FingerPressed { id, position } => {
+                    if bounds.contains(position) {
+                        pinch.fingers.insert(id, position);
+
+                        // When second finger lands, start tracking the pinch
+                        if pinch.fingers.len() == 2 {
+                            let pts: Vec<&Point> = pinch.fingers.values().collect();
+                            let dx = pts[0].x - pts[1].x;
+                            let dy = pts[0].y - pts[1].y;
+                            pinch.initial_distance = Some((dx * dx + dy * dy).sqrt());
+                            pinch.zoom_at_pinch_start = self.zoom_level;
+                        }
+                        return Status::Captured;
+                    }
+                }
+                touch::Event::FingerMoved { id, position } => {
+                    if let std::collections::hash_map::Entry::Occupied(mut e) =
+                        pinch.fingers.entry(id)
+                    {
+                        e.insert(position);
+
+                        if pinch.fingers.len() == 2
+                            && let Some(initial_dist) = pinch.initial_distance
+                            && initial_dist > 1.0
+                        {
+                            let pts: Vec<&Point> = pinch.fingers.values().collect();
+                            let dx = pts[0].x - pts[1].x;
+                            let dy = pts[0].y - pts[1].y;
+                            let current_dist = (dx * dx + dy * dy).sqrt();
+                            let scale = current_dist / initial_dist;
+                            let new_zoom = (pinch.zoom_at_pinch_start * scale).clamp(1.0, 10.0);
+                            shell.publish(Message::PinchZoom(new_zoom));
+                        }
+                        return Status::Captured;
+                    }
+                }
+                touch::Event::FingerLifted { id, .. } | touch::Event::FingerLost { id, .. } => {
+                    if pinch.fingers.remove(&id).is_some() {
+                        pinch.initial_distance = None;
+                        return Status::Captured;
+                    }
+                }
+            }
+        }
+
+        // Check if cursor is over the widget bounds (for mouse scroll zoom)
         if !cursor.is_over(bounds) {
             return Status::Ignored;
         }

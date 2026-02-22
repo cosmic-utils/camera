@@ -690,6 +690,14 @@ impl AppModel {
         Task::none()
     }
 
+    pub(crate) fn handle_pinch_zoom(&mut self, level: f32) -> Task<cosmic::Action<Message>> {
+        let new_zoom = level.clamp(1.0, 10.0);
+        if (new_zoom - self.zoom_level).abs() > 0.001 {
+            self.zoom_level = new_zoom;
+        }
+        Task::none()
+    }
+
     pub(crate) fn handle_photo_saved(
         &mut self,
         result: Result<String, String>,
