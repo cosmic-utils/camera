@@ -3,6 +3,7 @@
 //! Types for the Insights drawer diagnostic information.
 
 use crate::media::decoders::{DecoderDef, H264_DECODERS, H265_DECODERS, MJPEG_DECODERS};
+use crate::pipelines::video::AudioLevels;
 use std::sync::OnceLock;
 
 /// Cached decoder availability (checked once at startup, per codec)
@@ -36,8 +37,76 @@ pub struct InsightsState {
     pub gpu_conversion_time_us: u64,
     /// Copy time (source to GPU) in microseconds
     pub copy_time_us: u64,
+    /// CPU decode time in microseconds (e.g., turbojpeg MJPEG→I420)
+    pub cpu_decode_time_us: u64,
+    /// CPU processing description (e.g., "MJPEG → I420 (turbojpeg)")
+    pub cpu_processing: Option<String>,
     /// Copy bandwidth in MB/s
     pub copy_bandwidth_mbps: f64,
+
+    // Backend info
+    /// Active backend type (e.g., "libcamera", "PipeWire")
+    pub backend_type: String,
+    /// libcamera pipeline handler (e.g., "RPiCFE", "simple")
+    pub pipeline_handler: Option<String>,
+    /// libcamera version string
+    pub libcamera_version: Option<String>,
+    /// Sensor model (e.g., "sony,imx371")
+    pub sensor_model: Option<String>,
+    /// MJPEG decoder name when native libcamera decodes MJPEG (e.g., "turbojpeg (libjpeg-turbo)")
+    pub mjpeg_decoder: Option<String>,
+
+    // Per-frame libcamera metadata (updated every frame)
+    /// Actual exposure time applied (microseconds)
+    pub meta_exposure_us: Option<u64>,
+    /// Actual analogue gain applied
+    pub meta_analogue_gain: Option<f32>,
+    /// Actual digital gain applied
+    pub meta_digital_gain: Option<f32>,
+    /// Color temperature (Kelvin)
+    pub meta_colour_temperature: Option<u32>,
+    /// Frame sequence number
+    pub meta_sequence: Option<u32>,
+    /// ISP white balance gains [R, B]
+    pub meta_colour_gains: Option<[f32; 2]>,
+    /// Sensor black level (normalized 0..1)
+    pub meta_black_level: Option<f32>,
+    /// Lens position (dioptres)
+    pub meta_lens_position: Option<f32>,
+    /// Scene illuminance (lux)
+    pub meta_lux: Option<f32>,
+    /// Focus figure of merit
+    pub meta_focus_fom: Option<i32>,
+    /// Whether libcamera metadata is present at all
+    pub has_libcamera_metadata: bool,
+
+    // Audio levels (snapshot from SharedAudioLevels)
+    /// Last polled audio level data (updated by insights tick)
+    pub audio_levels: Option<AudioLevels>,
+
+    // Multi-stream info
+    /// Whether dual-stream mode is active via GStreamer
+    pub is_multistream: bool,
+    /// Whether libcamera itself supports dual-stream (ViewFinder + Raw)
+    /// even if GStreamer's Software ISP can't handle it
+    pub libcamera_multistream_capable: bool,
+    /// Preview stream details
+    pub preview_stream: Option<StreamInfo>,
+    /// Capture stream details
+    pub capture_stream: Option<StreamInfo>,
+}
+
+/// Information about an individual stream in a multi-stream pipeline
+#[derive(Debug, Clone, Default)]
+pub struct StreamInfo {
+    /// Stream role (e.g., "View-finder", "Raw", "Still-capture")
+    pub role: String,
+    /// Negotiated resolution (e.g., "1920x1080")
+    pub resolution: String,
+    /// Negotiated pixel format (e.g., "NV12", "BayerRGGB")
+    pub pixel_format: String,
+    /// Total frames received on this stream
+    pub frame_count: u64,
 }
 
 /// Status of a decoder in the fallback chain

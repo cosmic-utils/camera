@@ -20,7 +20,7 @@ impl AppModel {
     // =========================================================================
 
     /// Get the current camera's sensor rotation
-    fn current_camera_rotation(&self) -> crate::backends::camera::types::SensorRotation {
+    pub(crate) fn current_camera_rotation(&self) -> crate::backends::camera::types::SensorRotation {
         self.available_cameras
             .get(self.current_camera_index)
             .map(|c| c.rotation)
@@ -51,8 +51,25 @@ impl AppModel {
 
         let would_change_format = self.would_format_change_for_mode(mode);
 
-        if would_change_format {
-            info!("Mode switch will change format - triggering camera reload with blur");
+        // For libcamera with multistream cameras, always restart the pipeline on mode switch
+        // because different modes use different stream roles (Raw vs VideoRecording),
+        // even if the preview format stays the same.
+        let current_camera = self.available_cameras.get(self.current_camera_index);
+        let need_restart = would_change_format
+            || (self.config.backend
+                == crate::backends::camera::types::CameraBackendType::Libcamera
+                && current_camera
+                    .map(|c| c.supports_multistream)
+                    .unwrap_or(false));
+
+        if need_restart {
+            if would_change_format {
+                info!("Mode switch will change format - triggering camera reload with blur");
+            } else {
+                info!(
+                    "Mode switch changes stream roles (libcamera multistream) - triggering pipeline restart"
+                );
+            }
             self.start_blur_transition();
             self.camera_cancel_flag
                 .store(true, std::sync::atomic::Ordering::Release);
@@ -133,7 +150,7 @@ impl AppModel {
         }
 
         // Re-query exposure controls when format changes
-        if would_change_format {
+        if need_restart {
             return self.query_exposure_controls_task();
         }
 

@@ -36,6 +36,66 @@ finish-args:
   - --system-talk-name=org.freedesktop.NetworkManager
 
 modules:
+  # Python build dependencies required by libcamera's meson build.
+  # The Freedesktop SDK includes markupsafe but not jinja2/pyyaml, which
+  # libcamera needs for code generation during its meson configure step.
+  # flit_core is needed as the build backend for jinja2.
+  - name: python3-flit-core
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-build-isolation --prefix=${FLATPAK_DEST} .
+    sources:
+      - type: archive
+        url: https://files.pythonhosted.org/packages/69/59/b6fc2188dfc7ea4f936cd12b49d707f66a1cb7a1d2c16172963534db741b/flit_core-3.12.0.tar.gz
+        sha256: 18f63100d6f94385c6ed57a72073443e1a71a4acb4339491615d0f16d6ff01b2
+
+  - name: python3-jinja2
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-build-isolation --prefix=${FLATPAK_DEST} .
+    sources:
+      - type: archive
+        url: https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz
+        sha256: 0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d
+
+  - name: python3-pyyaml
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-build-isolation --prefix=${FLATPAK_DEST} .
+    sources:
+      - type: archive
+        url: https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
+        sha256: d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
+
+  - name: python3-ply
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-build-isolation --prefix=${FLATPAK_DEST} .
+    sources:
+      - type: archive
+        url: https://files.pythonhosted.org/packages/e5/69/882ee5c9d017149285cab114ebeab373308ef0f874fcdac9beb90e0ac4da/ply-3.11.tar.gz
+        sha256: 00c7c1aaa88358b9c765b6d3000c6eec0ba42abca5351b095321aef446081da3
+
+  # Build libcamera from source so the Rust crate can link against it.
+  # The camera module uses LIBCAMERA_SOURCE=pkg-config to find it via pkg-config
+  # instead of the vendored meson build (which would require the git submodule).
+  - name: libcamera
+    buildsystem: meson
+    config-opts:
+      - -Dcam=disabled
+      - -Dqcam=disabled
+      - -Dgstreamer=disabled
+      - -Dtracing=disabled
+      - -Dpycamera=disabled
+      - -Dlc-compliance=disabled
+      - -Ddocumentation=disabled
+      - -Dtest=false
+      - -Dv4l2=disabled
+    sources:
+      - type: git
+        url: https://git.libcamera.org/libcamera/libcamera.git
+        tag: v0.7.0
+
   - name: camera
     buildsystem: simple
     build-options:
@@ -43,6 +103,12 @@ modules:
       env:
         CARGO_HOME: /run/build/camera/cargo
         CARGO_TARGET_DIR: /run/build/camera/target
+        # Use the libcamera built by the module above instead of the vendored
+        # meson build (which needs the git submodule source tree).
+        LIBCAMERA_SOURCE: pkg-config
+        # libcamera installs to lib64 on x86_64, but flatpak's default
+        # PKG_CONFIG_PATH only includes lib/pkgconfig
+        PKG_CONFIG_PATH: /app/lib64/pkgconfig:/app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
     build-commands:
       # Build the application with cargo (version is passed via .flatpak-version file)
       - |

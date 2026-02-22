@@ -16,35 +16,58 @@ impl AppModel {
     // Camera Control Handlers
     // =========================================================================
 
+    /// Shared logic for switching to a different camera by index.
+    ///
+    /// Sets the cancellation flag, clears the current frame, resets zoom and
+    /// aspect ratio, triggers the camera/mode switch, starts the transition
+    /// animation, and re-queries exposure controls.
+    fn do_camera_switch(&mut self, new_index: usize) -> Task<cosmic::Action<Message>> {
+        self.camera_cancel_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.camera_cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Clear current frame to avoid accessing invalid mapped buffers
+        self.current_frame = None;
+
+        self.current_camera_index = new_index;
+        self.zoom_level = 1.0;
+        self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
+
+        self.switch_camera_or_mode(new_index, self.mode);
+        let _ = self.transition_state.start();
+
+        // Re-query exposure controls for the new camera
+        self.query_exposure_controls_task()
+    }
+
+    /// Build human-readable camera dropdown labels from a list of camera devices.
+    ///
+    /// Strips the " (V4L2)" suffix that the V4L2 backend appends to camera names.
+    fn build_camera_dropdown_labels(
+        cameras: &[crate::backends::camera::types::CameraDevice],
+    ) -> Vec<String> {
+        cameras
+            .iter()
+            .map(|cam| {
+                cam.name
+                    .strip_suffix(" (V4L2)")
+                    .unwrap_or(&cam.name)
+                    .to_string()
+            })
+            .collect()
+    }
+
     pub(crate) fn handle_switch_camera(&mut self) -> Task<cosmic::Action<Message>> {
         info!(
             current_index = self.current_camera_index,
             "Received SwitchCamera message"
         );
         if self.available_cameras.len() > 1 {
-            self.current_camera_index =
-                (self.current_camera_index + 1) % self.available_cameras.len();
-            let camera_name = &self.available_cameras[self.current_camera_index].name;
-            info!(new_index = self.current_camera_index, camera = %camera_name, "Switching to camera");
+            let new_index = (self.current_camera_index + 1) % self.available_cameras.len();
+            let camera_name = &self.available_cameras[new_index].name;
+            info!(new_index, camera = %camera_name, "Switching to camera");
 
-            info!("Setting cancellation flag for camera switch");
-            self.camera_cancel_flag
-                .store(true, std::sync::atomic::Ordering::Release);
-            self.camera_cancel_flag =
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-            // Clear current frame to avoid accessing invalid mapped buffers
-            self.current_frame = None;
-
-            // Reset zoom and aspect ratio when switching cameras
-            self.zoom_level = 1.0;
-            self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
-
-            self.switch_camera_or_mode(self.current_camera_index, self.mode);
-            let _ = self.transition_state.start();
-
-            // Re-query exposure controls for the new camera
-            return self.query_exposure_controls_task();
+            return self.do_camera_switch(new_index);
         } else {
             info!("Only one camera available, cannot switch");
         }
@@ -55,23 +78,7 @@ impl AppModel {
         if index < self.available_cameras.len() {
             info!(index, "Selected camera index");
 
-            let _ = self.transition_state.start();
-            self.camera_cancel_flag
-                .store(true, std::sync::atomic::Ordering::Release);
-            self.camera_cancel_flag =
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-            // Clear current frame to avoid accessing invalid mapped buffers
-            self.current_frame = None;
-
-            self.current_camera_index = index;
-            self.zoom_level = 1.0; // Reset zoom when switching cameras
-            // Reset aspect ratio to native when switching cameras
-            self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
-            self.switch_camera_or_mode(index, self.mode);
-
-            // Re-query exposure controls for the new camera
-            return self.query_exposure_controls_task();
+            return self.do_camera_switch(index);
         }
         Task::none()
     }
@@ -110,6 +117,9 @@ impl AppModel {
         {
             debug!("Failed to send frame to virtual camera (channel closed)");
         }
+
+        // Recording frames are sent directly from the capture thread via
+        // set_recording_sender (bypasses UI for lower latency / fewer drops).
 
         // Track whether this frame is from a file source (for mirror handling)
         let is_file_source = self.virtual_camera.is_file_source();
@@ -177,16 +187,7 @@ impl AppModel {
         self.current_camera_index = camera_index;
         self.available_formats = formats.clone();
 
-        self.camera_dropdown_options = self
-            .available_cameras
-            .iter()
-            .map(|cam| {
-                cam.name
-                    .strip_suffix(" (V4L2)")
-                    .unwrap_or(&cam.name)
-                    .to_string()
-            })
-            .collect();
+        self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
 
         self.active_format = {
             info!("Photo mode: selecting maximum resolution");
@@ -212,14 +213,23 @@ impl AppModel {
 
         info!("Camera initialization complete, preview will start");
 
+        let mut tasks: Vec<Task<cosmic::Action<Message>>> = Vec::new();
+
         // Query exposure controls for the current camera
         if let Some(device_path) = self.get_v4l2_device_path() {
             let path = device_path.clone();
-            return Task::perform(
+            let focus_path = self.get_focus_device_path();
+            tasks.push(Task::perform(
                 async move {
-                    let controls = crate::app::exposure_picker::query_exposure_controls(&path);
-                    let settings =
-                        crate::app::exposure_picker::get_exposure_settings(&path, &controls);
+                    let controls = crate::app::exposure_picker::query_exposure_controls(
+                        &path,
+                        focus_path.as_deref(),
+                    );
+                    let settings = crate::app::exposure_picker::get_exposure_settings(
+                        &path,
+                        &controls,
+                        focus_path.as_deref(),
+                    );
                     let color_settings =
                         crate::app::exposure_picker::get_color_settings(&path, &controls);
                     (controls, settings, color_settings)
@@ -231,7 +241,60 @@ impl AppModel {
                         color_settings,
                     ))
                 },
-            );
+            ));
+        }
+
+        // Probe video encoders in the background. Builds a short videotestsrc
+        // pipeline per encoder to detect broken ones (e.g. V4L2 encoders that
+        // register but don't actually work).
+        let encoder_names: Vec<String> = self
+            .available_video_encoders
+            .iter()
+            .map(|e| e.element_name.clone())
+            .collect();
+        tasks.push(Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    crate::media::encoders::detection::probe_broken_encoders(&encoder_names)
+                })
+                .await
+                .unwrap_or_default()
+            },
+            |broken| cosmic::Action::App(Message::BrokenEncodersDetected(broken)),
+        ));
+
+        Task::batch(tasks)
+    }
+
+    pub(crate) fn handle_broken_encoders_detected(
+        &mut self,
+        broken: Vec<String>,
+    ) -> Task<cosmic::Action<Message>> {
+        if broken.is_empty() {
+            info!("All video encoders passed probe");
+            return Task::none();
+        }
+
+        info!(broken = ?broken, "Removing broken video encoders");
+
+        // Remove broken encoders from the available list
+        self.available_video_encoders
+            .retain(|enc| !broken.contains(&enc.element_name));
+
+        // Rebuild the dropdown options
+        self.video_encoder_dropdown_options = self
+            .available_video_encoders
+            .iter()
+            .map(|enc| {
+                enc.display_name
+                    .replace(" (HW)", " (hardware accelerated)")
+                    .replace(" (SW)", " (software)")
+            })
+            .collect();
+
+        // Reset the selected index if it's now out of bounds
+        if self.current_video_encoder_index >= self.available_video_encoders.len() {
+            self.current_video_encoder_index = 0;
         }
 
         Task::none()
@@ -257,16 +320,7 @@ impl AppModel {
             };
 
         self.available_cameras = new_cameras.clone();
-        self.camera_dropdown_options = self
-            .available_cameras
-            .iter()
-            .map(|cam| {
-                cam.name
-                    .strip_suffix(" (V4L2)")
-                    .unwrap_or(&cam.name)
-                    .to_string()
-            })
-            .collect();
+        self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
 
         if !current_camera_still_available {
             // Stop virtual camera streaming if the camera used for streaming is disconnected
@@ -339,6 +393,93 @@ impl AppModel {
             error!(?err, "Failed to save mirror preview setting");
         }
         Task::none()
+    }
+
+    pub(crate) fn handle_select_backend(&mut self, index: usize) -> Task<cosmic::Action<Message>> {
+        use crate::backends::camera::types::CameraBackendType;
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        let new_backend = match index {
+            0 => CameraBackendType::Libcamera,
+            _ => CameraBackendType::PipeWire,
+        };
+
+        if new_backend == self.config.backend {
+            return Task::none();
+        }
+
+        info!(
+            old = %self.config.backend,
+            new = %new_backend,
+            "Switching camera backend"
+        );
+
+        // Stop current camera streams by setting cancel flag
+        self.camera_cancel_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+
+        // Clear current state
+        self.current_frame = None;
+        self.available_cameras.clear();
+        self.available_formats.clear();
+        self.active_format = None;
+        self.camera_dropdown_options.clear();
+
+        // Update backend in config
+        self.config.backend = new_backend;
+
+        // Recreate backend manager with new backend
+        self.backend_manager = Some(crate::backends::camera::CameraBackendManager::new(
+            new_backend,
+        ));
+
+        // Reset cancel flag for new streams
+        self.camera_cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Increment restart counter to force subscription restart
+        self.camera_stream_restart_counter += 1;
+
+        // Save config
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            error!(?err, "Failed to save backend setting");
+        }
+
+        // Re-enumerate cameras asynchronously with new backend
+        let backend_type = new_backend;
+        let last_camera_path = self.config.last_camera_path.clone();
+        Task::perform(
+            async move {
+                let backend = crate::backends::camera::get_backend_for_type(backend_type);
+                let cameras = backend.enumerate_cameras();
+                info!(count = cameras.len(), backend = %backend_type, "Re-enumerated cameras for new backend");
+
+                let camera_index = if let Some(ref last_path) = last_camera_path {
+                    cameras
+                        .iter()
+                        .position(|cam| &cam.path == last_path)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+
+                let formats = if let Some(camera) = cameras.get(camera_index) {
+                    if !camera.path.is_empty() {
+                        backend.get_formats(camera, false)
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                (cameras, camera_index, formats)
+            },
+            |(cameras, index, formats)| {
+                cosmic::Action::App(Message::CamerasInitialized(cameras, index, formats))
+            },
+        )
     }
 
     pub(crate) fn handle_toggle_virtual_camera_enabled(&mut self) -> Task<cosmic::Action<Message>> {

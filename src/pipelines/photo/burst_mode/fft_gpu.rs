@@ -24,6 +24,7 @@ const FFT_MERGE_SHADER: &str = include_str!("../../../shaders/burst_mode/fft_mer
 const SPATIAL_DENOISE_SHADER: &str =
     include_str!("../../../shaders/burst_mode/spatial_denoise.wgsl");
 const CHROMA_DENOISE_SHADER: &str = include_str!("../../../shaders/burst_mode/chroma_denoise.wgsl");
+#[cfg(test)]
 const GUIDED_FILTER_SHADER: &str = include_str!("../../../shaders/burst_mode/guided_filter.wgsl");
 
 // GPU parameter structs imported from params module
@@ -70,6 +71,13 @@ pub struct FftMergePipeline {
 
     // Maximum storage buffer size for this GPU
     max_storage_buffer_size: u64,
+}
+
+/// GPU resources for a WOLA (Weighted Overlap-Add) compute pass
+struct WolaPassResources<'a> {
+    pipeline: &'a wgpu::ComputePipeline,
+    bind_group: &'a wgpu::BindGroup,
+    params_buffer: &'a wgpu::Buffer,
 }
 
 impl FftMergePipeline {
@@ -377,13 +385,10 @@ impl FftMergePipeline {
     /// Offsets: [(-half, -half), (0, -half), (-half, 0), (0, 0)]
     ///
     /// Yields once at the end of all 4 passes to let compositor render.
-    #[allow(clippy::too_many_arguments)]
     async fn run_4pass_wola<P: bytemuck::Pod>(
         &self,
         label: &str,
-        pipeline: &wgpu::ComputePipeline,
-        bind_group: &wgpu::BindGroup,
-        params_buffer: &wgpu::Buffer,
+        resources: &WolaPassResources<'_>,
         base_params: P,
         tile_size: u32,
         workgroups: (u32, u32, u32),
@@ -400,12 +405,12 @@ impl FftMergePipeline {
         for (pass_idx, (offset_x, offset_y)) in offsets.iter().enumerate() {
             let params = update_params(&base_params, *offset_x, *offset_y);
             self.queue
-                .write_buffer(params_buffer, 0, bytemuck::cast_slice(&[params]));
+                .write_buffer(resources.params_buffer, 0, bytemuck::cast_slice(&[params]));
 
             self.run_compute_pass(
                 &format!("{}_{}", label, pass_idx),
-                pipeline,
-                bind_group,
+                resources.pipeline,
+                resources.bind_group,
                 workgroups,
             );
         }
@@ -420,13 +425,10 @@ impl FftMergePipeline {
     /// allowing the GPU to preempt between chunks for better compositor responsiveness.
     ///
     /// This version is specific to MergeParams which has tile_row_offset support.
-    #[allow(clippy::too_many_arguments)]
     async fn run_4pass_wola_chunked(
         &self,
         label: &str,
-        pipeline: &wgpu::ComputePipeline,
-        bind_group: &wgpu::BindGroup,
-        params_buffer: &wgpu::Buffer,
+        resources: &WolaPassResources<'_>,
         base_params: MergeParams,
         tile_size: u32,
         workgroups: (u32, u32, u32),
@@ -452,13 +454,16 @@ impl FftMergePipeline {
                 let mut params = update_params(&base_params, *offset_x, *offset_y);
                 params.tile_row_offset = row_offset;
 
-                self.queue
-                    .write_buffer(params_buffer, 0, bytemuck::cast_slice(&[params]));
+                self.queue.write_buffer(
+                    resources.params_buffer,
+                    0,
+                    bytemuck::cast_slice(&[params]),
+                );
 
                 self.run_compute_pass(
                     &format!("{}_{}_{}", label, pass_idx, row_offset),
-                    pipeline,
-                    bind_group,
+                    resources.pipeline,
+                    resources.bind_group,
                     (workgroups.0, rows_this_chunk, workgroups.2),
                 );
 
@@ -617,9 +622,11 @@ impl FftMergePipeline {
 
         self.run_4pass_wola(
             "spatial_denoise",
-            &self.spatial_denoise_pipeline,
-            &spatial_bind_group,
-            &spatial_params_buffer,
+            &WolaPassResources {
+                pipeline: &self.spatial_denoise_pipeline,
+                bind_group: &spatial_bind_group,
+                params_buffer: &spatial_params_buffer,
+            },
             base_spatial_params,
             TILE_SIZE,
             (denoise_tiles_x, denoise_tiles_y, 1),
@@ -976,9 +983,11 @@ impl FftMergePipeline {
         let ref_start = std::time::Instant::now();
         self.run_4pass_wola_chunked(
             "add_reference",
-            &pipelines.add_reference,
-            &bind_group,
-            &params_buffer,
+            &WolaPassResources {
+                pipeline: &pipelines.add_reference,
+                bind_group: &bind_group,
+                params_buffer: &params_buffer,
+            },
             base_params,
             tile_size,
             (n_tiles_x, n_tiles_y, 1),
@@ -1053,9 +1062,11 @@ impl FftMergePipeline {
             let merge_start = std::time::Instant::now();
             self.run_4pass_wola_chunked(
                 "merge",
-                &pipelines.merge,
-                &bind_group,
-                &params_buffer,
+                &WolaPassResources {
+                    pipeline: &pipelines.merge,
+                    bind_group: &bind_group,
+                    params_buffer: &params_buffer,
+                },
                 base_params,
                 tile_size,
                 (n_tiles_x, n_tiles_y, 1),

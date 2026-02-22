@@ -1,0 +1,61 @@
+# Cross-compilation image for x86_64-unknown-linux-gnu
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Configure apt sources: arm64 from ports.ubuntu.com, amd64 from archive.ubuntu.com
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe' > /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main universe' >> /etc/apt/sources.list
+
+# Install base tools (before adding amd64 architecture)
+# Note: libglib2.0-dev-bin must be installed here (arm64) to prevent
+# conflicts when installing libglib2.0-dev:amd64 later.
+# meson/ninja/python3 modules are needed for the vendored libcamera build.
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    cmake \
+    nasm \
+    libglib2.0-dev-bin \
+    meson \
+    ninja-build \
+    python3-jinja2 \
+    python3-yaml \
+    python3-ply \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add amd64 architecture and install cross-compilation toolchain and dependencies
+# Combined into single RUN to ensure apt-get update is always fresh
+# libyaml-dev:amd64 is needed by the vendored libcamera meson build
+RUN dpkg --add-architecture amd64 && \
+    apt-get update && apt-get install -y \
+    gcc-x86-64-linux-gnu \
+    g++-x86-64-linux-gnu \
+    libyaml-dev:amd64 \
+    libglib2.0-dev:amd64 \
+    libgstreamer1.0-dev:amd64 \
+    libgstreamer-plugins-base1.0-dev:amd64 \
+    libgstreamer-plugins-bad1.0-dev:amd64 \
+    libwayland-dev:amd64 \
+    libxkbcommon-dev:amd64 \
+    libinput-dev:amd64 \
+    libudev-dev:amd64 \
+    libseat-dev:amd64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up environment for cross-compilation
+# The vendored libcamera build generates a meson cross-file automatically
+# from the CC/CXX env vars below.
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+    PKG_CONFIG_SYSROOT_DIR=/

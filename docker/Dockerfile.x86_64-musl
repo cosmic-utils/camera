@@ -3,10 +3,12 @@ FROM alpine:edge
 
 # Install build tools and development libraries
 # Using Alpine (musl-native) ensures all libraries link against musl
+# meson/ninja/python3 modules are needed for the vendored libcamera build
 RUN apk add --no-cache \
     curl \
     gcc \
     g++ \
+    make \
     musl-dev \
     pkgconf \
     glib-dev \
@@ -17,7 +19,15 @@ RUN apk add --no-cache \
     libxkbcommon-dev \
     libinput-dev \
     eudev-dev \
-    libseat-dev
+    libseat-dev \
+    cmake \
+    nasm \
+    meson \
+    ninja \
+    py3-jinja2 \
+    py3-yaml \
+    py3-ply \
+    yaml-dev
 
 # Install Rust natively (musl-linked) so cargo runs without glibc.
 # RUST_VERSION is passed as a build arg to keep the image in sync with the host
@@ -28,7 +38,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 
 # Set up environment for musl compilation
 # Put native cargo first in PATH so it's found before cross-mounted /rust/bin
+# Disable crt-static so the target binary can dynamically link system libraries
 ENV PATH="/root/.cargo/bin:${PATH}" \
     CC_x86_64_unknown_linux_musl=gcc \
     CXX_x86_64_unknown_linux_musl=g++ \
-    PKG_CONFIG_ALLOW_CROSS=1
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    RUSTFLAGS="-C target-feature=-crt-static"

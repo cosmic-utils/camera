@@ -12,7 +12,9 @@ use camera::backends::camera::pipewire::{
 };
 use camera::backends::camera::types::{CameraFormat, CameraFrame};
 use camera::pipelines::photo::PhotoPipeline;
-use camera::pipelines::video::{EncoderConfig, VideoRecorder, VideoRecorderConfig};
+use camera::pipelines::video::{
+    EncoderConfig, PipeWireRecorderConfig, RecorderConfig, VideoRecorder,
+};
 use chrono::Local;
 use futures::channel::mpsc;
 use std::path::{Path, PathBuf};
@@ -243,20 +245,23 @@ pub fn record_video(
     let encoder_config = EncoderConfig::default();
 
     // Create video recorder
-    let recorder = VideoRecorder::new(VideoRecorderConfig {
+    let recorder = VideoRecorder::new(PipeWireRecorderConfig {
+        base: RecorderConfig {
+            width: format.width,
+            height: format.height,
+            framerate,
+            output_path: output_path.clone(),
+            encoder_config,
+            enable_audio,
+            audio_device: None,
+            encoder_info: None,
+            rotation: camera.rotation,
+            audio_levels: Default::default(),
+        },
         device_path: &camera.path,
         metadata_path: camera.metadata_path.as_deref(),
-        width: format.width,
-        height: format.height,
-        framerate,
         pixel_format: &format.pixel_format,
-        output_path: output_path.clone(),
-        encoder_config,
-        enable_audio,
-        audio_device: None,   // Use default audio device
-        preview_sender: None, // No preview sender needed for CLI
-        encoder_info: None,   // Auto-select encoder
-        rotation: camera.rotation,
+        preview_sender: None,
     })?;
 
     // Start recording
@@ -361,7 +366,7 @@ pub fn process_burst_mode(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use camera::backends::camera::types::SensorRotation;
     use camera::pipelines::photo::burst_mode::{
-        BurstModeConfig, process_burst_mode as run_burst_mode, save_output,
+        BurstModeConfig, SaveOutputParams, process_burst_mode as run_burst_mode, save_output,
     };
     use camera::pipelines::photo::{CameraMetadata, EncodingFormat};
 
@@ -436,13 +441,15 @@ pub fn process_burst_mode(
     let output_path = rt.block_on(async {
         save_output(
             &result,
-            output_dir,
-            None,                 // no crop
-            EncodingFormat::Jpeg, // Use JPEG for easier viewing
-            camera_metadata,
-            None,                 // no filter
-            SensorRotation::None, // no rotation (CLI doesn't have camera info)
-            Some("_HDR+"),        // filename suffix
+            SaveOutputParams {
+                output_dir,
+                crop_rect: None,
+                encoding_format: EncodingFormat::Jpeg,
+                camera_metadata,
+                filter: None,
+                rotation: SensorRotation::None,
+                filename_suffix: Some("_HDR+"),
+            },
         )
         .await
     })?;
@@ -514,6 +521,8 @@ fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Err
         stride: width * 4,
         yuv_planes: None,
         captured_at: Instant::now(),
+        sensor_timestamp_ns: None,
+        libcamera_metadata: None,
     })
 }
 
@@ -548,6 +557,8 @@ fn load_burst_mode_frames(
                 stride: width * 4,
                 yuv_planes: None,
                 captured_at: Instant::now(),
+                sensor_timestamp_ns: None,
+                libcamera_metadata: None,
             }
         };
 

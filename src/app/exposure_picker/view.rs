@@ -122,6 +122,9 @@ impl AppModel {
             column = column.push(self.build_backlight_row(settings_data));
         }
 
+        // Focus controls (available in both auto and manual modes)
+        column = self.add_focus_controls(column, settings_data);
+
         column
     }
 
@@ -174,6 +177,9 @@ impl AppModel {
         } else {
             column = column.push(Self::build_unsupported_row(fl!("exposure-auto-priority")));
         }
+
+        // Focus controls (available in both auto and manual modes)
+        column = self.add_focus_controls(column, settings_data);
 
         column
     }
@@ -408,6 +414,82 @@ impl AppModel {
             .align_y(Alignment::Center)
             .width(Length::Shrink)
             .into()
+    }
+
+    // =========================================================================
+    // Focus Controls
+    // =========================================================================
+
+    /// Add focus controls (auto toggle + manual slider)
+    fn add_focus_controls<'a>(
+        &'a self,
+        mut column: widget::Column<'a, Message>,
+        settings_data: Option<&'a super::ExposureSettings>,
+    ) -> widget::Column<'a, Message> {
+        let controls = &self.available_exposure_controls;
+
+        if controls.focus.available {
+            if controls.has_focus_auto {
+                column = column.push(self.build_focus_auto_row(settings_data));
+            }
+
+            // Show manual slider when auto focus is off (or unavailable)
+            let is_auto = settings_data.and_then(|s| s.focus_auto).unwrap_or(false);
+            if !is_auto || !controls.has_focus_auto {
+                column = column.push(self.build_focus_slider_row(settings_data));
+            }
+        }
+
+        column
+    }
+
+    /// Build auto focus toggle row
+    fn build_focus_auto_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let enabled = settings_data.and_then(|s| s.focus_auto).unwrap_or(false);
+
+        widget::row()
+            .push(
+                widget::text(fl!("focus-auto"))
+                    .size(13)
+                    .width(Length::Fixed(LABEL_WIDTH)),
+            )
+            .push(widget::toggler(enabled).on_toggle(|_| Message::ToggleFocusAuto))
+            .push(
+                widget::text(if enabled {
+                    fl!("color-auto")
+                } else {
+                    fl!("color-manual")
+                })
+                .size(12),
+            )
+            .spacing(CONTROL_SPACING)
+            .align_y(Alignment::Center)
+            .width(Length::Shrink)
+            .into()
+    }
+
+    /// Build manual focus slider row
+    fn build_focus_slider_row(
+        &self,
+        settings_data: Option<&super::ExposureSettings>,
+    ) -> Element<'_, Message> {
+        let range = &self.available_exposure_controls.focus;
+        let current = settings_data
+            .and_then(|s| s.focus_absolute)
+            .unwrap_or(range.default);
+
+        Self::build_slider_row(
+            fl!("focus-position"),
+            current,
+            range,
+            SLIDER_WIDTH_EXPOSURE,
+            VALUE_WIDTH_EXPOSURE,
+            |v| format!("{}", v),
+            Message::SetFocusAbsolute,
+        )
     }
 
     // =========================================================================

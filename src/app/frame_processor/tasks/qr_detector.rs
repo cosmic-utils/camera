@@ -332,6 +332,63 @@ fn convert_to_gray(frame: &CameraFrame) -> (Vec<u8>, u32, u32) {
             }
             (gray, frame.width, frame.height)
         }
+
+        // ABGR: Memory layout [A][B][G][R], so R=offset+3, G=offset+2, B=offset+1
+        PixelFormat::ABGR => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x * 4;
+                    if offset + 3 < frame.data.len() {
+                        let r = frame.data[offset + 3] as u32;
+                        let g = frame.data[offset + 2] as u32;
+                        let b = frame.data[offset + 1] as u32;
+                        let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+                        gray.push(gray_val);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // BGRA: Memory layout [B][G][R][A], so R=offset+2, G=offset+1, B=offset+0
+        PixelFormat::BGRA => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x * 4;
+                    if offset + 2 < frame.data.len() {
+                        let r = frame.data[offset + 2] as u32;
+                        let g = frame.data[offset + 1] as u32;
+                        let b = frame.data[offset] as u32;
+                        let gray_val = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+                        gray.push(gray_val);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
+
+        // Bayer patterns: Raw single-channel data, treat as grayscale (one sample per pixel)
+        // QR detection on raw Bayer is suboptimal but functional
+        PixelFormat::BayerRGGB
+        | PixelFormat::BayerBGGR
+        | PixelFormat::BayerGRBG
+        | PixelFormat::BayerGBRG => {
+            let mut gray = Vec::with_capacity(width * height);
+            for y in 0..height {
+                let row_start = y * stride;
+                for x in 0..width {
+                    let offset = row_start + x;
+                    if offset < frame.data.len() {
+                        gray.push(frame.data[offset]);
+                    }
+                }
+            }
+            (gray, frame.width, frame.height)
+        }
     }
 }
 
@@ -406,6 +463,8 @@ mod tests {
             stride: 8, // 2 pixels * 4 bytes = 8 bytes per row
             yuv_planes: None,
             captured_at: std::time::Instant::now(),
+            sensor_timestamp_ns: None,
+            libcamera_metadata: None,
         };
 
         let (gray, w, h) = convert_to_gray(&frame);

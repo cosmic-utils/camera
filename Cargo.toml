@@ -40,6 +40,10 @@ crossterm = "0.29"
 libc = "0.2.182"
 dng = "1.5"
 async-stream = "0.3"
+# Native libcamera bindings for direct camera access (bypasses GStreamer)
+libcamera = { git = "https://github.com/FreddyFunk/libcamera-rs.git", rev = "aaf51ee", features = ["vendored", "pkg-config", "pregenerated-bindings"] }
+drm-fourcc = "2.2"
+turbojpeg = { version = "1.3", default-features = false, features = ["cmake"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
@@ -67,20 +71,5 @@ features = [
     "xdg-portal",
 ]
 
-# Uncomment to test a locally-cloned libcosmic
-# [patch.'https://github.com/pop-os/libcosmic']
-# libcosmic = { path = "../libcosmic" }
-# cosmic-config = { path = "../libcosmic/cosmic-config" }
-# cosmic-theme = { path = "../libcosmic/cosmic-theme" }
-
 [dev-dependencies]
 naga = { version = "28.0.0", features = ["wgsl-in"] }
-
-# Patch wgpu with local version that fixes the queue family index bug in open_with_callback
-# This allows us to use compute-only queue families (Family 1 on AMD) for background compute
-#[patch.crates-io]
-#wgpu = { path = "../wgpu/wgpu" }
-#wgpu-hal = { path = "../wgpu/wgpu-hal" }
-#wgpu-core = { path = "../wgpu/wgpu-core" }
-#wgpu-types = { path = "../wgpu/wgpu-types" }
-#naga = { path = "../wgpu/naga" }

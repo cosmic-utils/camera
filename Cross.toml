@@ -13,6 +13,9 @@ dockerfile = "docker/Dockerfile.armhf"
 [target.riscv64gc-unknown-linux-gnu]
 dockerfile = "docker/Dockerfile.riscv64"
 
+[target.x86_64-unknown-linux-gnu]
+dockerfile = "docker/Dockerfile.x86_64"
+
 [target.x86_64-unknown-linux-musl]
 dockerfile = "docker/Dockerfile.x86_64-musl"
 

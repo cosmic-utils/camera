@@ -80,7 +80,7 @@ impl AppModel {
                         content_fit: VideoContentFit::Cover,
                         filter_type,
                         corner_radius,
-                        mirror_horizontal: self.config.mirror_preview,
+                        mirror_horizontal: self.should_mirror_preview(),
                         rotation,
                         crop_uv: None,   // No aspect ratio cropping in filter previews
                         zoom_level: 1.0, // No zoom for filter previews

@@ -70,7 +70,15 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm \
+            meson \
+            ninja-build \
+            python3-jinja2 \
+            python3-yaml \
+            python3-ply \
+            libyaml-dev
 
       - name: Install just
         uses: extractions/setup-just@v3
@@ -153,16 +161,30 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm \
+            meson \
+            ninja-build \
+            python3-jinja2 \
+            python3-yaml \
+            python3-ply \
+            libyaml-dev
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
         run: cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Install podman
+        if: ${{ matrix.use_cross }}
+        run: sudo apt-get update && sudo apt-get install -y podman
+
       - name: Install just
         uses: extractions/setup-just@v3
 
       - name: Build debug binary
+        env:
+          CROSS_CONTAINER_ENGINE: podman
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
             CROSS_BUILD_OPTS="--build-arg RUST_VERSION=$(rustc -V | cut -d' ' -f2)" \

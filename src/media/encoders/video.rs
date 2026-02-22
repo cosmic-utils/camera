@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Video encoder module - some functions for future encoder selection UI
-#![allow(dead_code)]
 
 //! Video encoder selection with hardware acceleration priority
 //!
@@ -119,7 +117,7 @@ impl VideoQuality {
     /// Get x264/x265 preset name
     pub fn x264_preset(&self) -> &'static str {
         match self {
-            VideoQuality::Low => "veryfast",
+            VideoQuality::Low => "ultrafast",
             VideoQuality::Medium => "fast",
             VideoQuality::High => "medium",
             VideoQuality::Maximum => "slow",
@@ -244,7 +242,7 @@ pub fn enumerate_video_encoders() -> Vec<EncoderInfo> {
             continue;
         }
 
-        if gst::ElementFactory::make(element_name).build().is_ok() {
+        if gst::ElementFactory::find(element_name).is_some() {
             available_encoders.push(EncoderInfo {
                 element_name: element_name.to_string(),
                 display_name: display_name.to_string(),
@@ -435,7 +433,7 @@ pub fn select_video_encoder_with_bitrate(
 }
 
 /// Configure encoder based on type and quality
-fn configure_video_encoder(
+pub fn configure_video_encoder(
     encoder: &gst::Element,
     encoder_name: &str,
     quality: VideoQuality,
