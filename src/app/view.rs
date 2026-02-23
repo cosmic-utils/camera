@@ -971,14 +971,16 @@ impl AppModel {
             ));
         }
 
-        // Filter button
-        let filter_active = self.selected_filter != FilterType::Standard;
-        buttons.push(self.build_tools_grid_button(
-            icon::from_name("image-filter-symbolic").symbolic(true),
-            fl!("tools-filter"),
-            Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
-            filter_active,
-        ));
+        // Filter button (only in photo mode)
+        if self.mode == CameraMode::Photo {
+            let filter_active = self.selected_filter != FilterType::Standard;
+            buttons.push(self.build_tools_grid_button(
+                icon::from_name("image-filter-symbolic").symbolic(true),
+                fl!("tools-filter"),
+                Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
+                filter_active,
+            ));
+        }
 
         // Theatre mode button
         let theatre_icon = if self.theatre.enabled {
