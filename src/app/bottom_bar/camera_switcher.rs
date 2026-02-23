@@ -18,10 +18,10 @@ impl AppModel {
     ///
     /// Shows a flip button if multiple cameras are available,
     /// otherwise shows an invisible placeholder to maintain consistent layout.
-    /// Disabled and grayed out during transitions.
+    /// Disabled and grayed out during transitions and recording.
     /// Hidden during virtual camera streaming (camera cannot be switched while streaming).
     pub fn build_camera_switcher(&self) -> Element<'_, Message> {
-        let is_disabled = self.transition_state.ui_disabled;
+        let is_disabled = self.transition_state.ui_disabled || self.recording.is_recording();
 
         // Hide camera switcher during virtual camera streaming
         if self.virtual_camera.is_streaming() {
@@ -30,13 +30,25 @@ impl AppModel {
         }
 
         if self.available_cameras.len() > 1 {
-            let switch_icon = widget::icon::from_svg_bytes(CAMERA_SWITCH_ICON).symbolic(true);
+            let switch_handle = widget::icon::from_svg_bytes(CAMERA_SWITCH_ICON).symbolic(true);
 
-            // Create icon widget that inherits theme colors
-            let icon_widget = widget::icon(switch_icon).size(32);
+            // Build the SVG directly so we can apply opacity when disabled
+            let svg_widget: Element<'_, Message> =
+                if let Some(svg_handle) = widget::icon(switch_handle).into_svg_handle() {
+                    let mut svg = widget::svg(svg_handle)
+                        .symbolic(true)
+                        .width(Length::Fixed(32.0))
+                        .height(Length::Fixed(32.0));
+                    if is_disabled {
+                        svg = svg.opacity(0.3);
+                    }
+                    svg.into()
+                } else {
+                    widget::Space::new(32.0, 32.0).into()
+                };
 
             // Center icon in fixed-size container
-            let icon_content = widget::container(icon_widget)
+            let icon_content = widget::container(svg_widget)
                 .width(Length::Fixed(52.0))
                 .height(Length::Fixed(52.0))
                 .center(Length::Fixed(52.0));

@@ -12,11 +12,29 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::widget;
 use cosmic::widget::icon;
 
+/// Theme-aware disabled text style (greyed out).
+fn disabled_text_style(theme: &cosmic::Theme) -> cosmic::iced::widget::text::Style {
+    cosmic::iced::widget::text::Style {
+        color: Some(cosmic::iced::Color::from(theme.cosmic().button.on_disabled)),
+    }
+}
+
+/// Create a text label styled as a disabled/greyed-out control value.
+fn disabled_text(value: String) -> Element<'static, Message> {
+    widget::text::body(value)
+        .class(cosmic::theme::style::iced::Text::Custom(
+            disabled_text_style,
+        ))
+        .into()
+}
+
 impl AppModel {
     /// Create the settings view for the context drawer
     ///
     /// Shows camera selection, format options, and backend settings.
     pub fn settings_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
+        let is_recording = self.recording.is_recording();
+
         // Mode dropdown (consolidated format selector)
         let current_mode_index = if let Some(active) = &self.active_format {
             self.mode_list.iter().position(|f| {
@@ -55,6 +73,22 @@ impl AppModel {
 
         // Camera section
         // Custom device row with label, info button, and dropdown
+        let device_control: Element<'_, Message> = if is_recording {
+            disabled_text(
+                self.camera_dropdown_options
+                    .get(self.current_camera_index)
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+        } else {
+            widget::dropdown(
+                &self.camera_dropdown_options,
+                Some(self.current_camera_index),
+                Message::SelectCamera,
+            )
+            .into()
+        };
+
         let device_label_with_info = widget::row()
             .push(widget::text::body(fl!("settings-device")))
             .push(widget::horizontal_space().width(Length::Fixed(4.0)))
@@ -64,11 +98,7 @@ impl AppModel {
                     .on_press(Message::ToggleDeviceInfo),
             )
             .push(widget::horizontal_space())
-            .push(widget::dropdown(
-                &self.camera_dropdown_options,
-                Some(self.current_camera_index),
-                Message::SelectCamera,
-            ))
+            .push(device_control)
             .align_y(Alignment::Center)
             .width(Length::Fill);
 
@@ -89,22 +119,43 @@ impl AppModel {
                 crate::backends::camera::CameraBackendType::Libcamera => 0,
                 crate::backends::camera::CameraBackendType::PipeWire => 1,
             };
-            camera_section = camera_section.add(
-                widget::settings::item::builder(fl!("settings-backend")).control(widget::dropdown(
+            let backend_control: Element<'_, Message> = if is_recording {
+                disabled_text(
+                    self.backend_dropdown_options
+                        .get(current_backend_index)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            } else {
+                widget::dropdown(
                     &self.backend_dropdown_options,
                     Some(current_backend_index),
                     Message::SelectBackend,
-                )),
+                )
+                .into()
+            };
+            camera_section = camera_section.add(
+                widget::settings::item::builder(fl!("settings-backend")).control(backend_control),
             );
         }
 
         if self.config.backend != crate::backends::camera::CameraBackendType::Libcamera {
-            camera_section = camera_section.add(
-                widget::settings::item::builder(fl!("settings-format")).control(widget::dropdown(
+            let format_control: Element<'_, Message> = if is_recording {
+                disabled_text(
+                    current_mode_index
+                        .and_then(|i| self.mode_dropdown_options.get(i).cloned())
+                        .unwrap_or_default(),
+                )
+            } else {
+                widget::dropdown(
                     &self.mode_dropdown_options,
                     current_mode_index,
                     Message::SelectMode,
-                )),
+                )
+                .into()
+            };
+            camera_section = camera_section.add(
+                widget::settings::item::builder(fl!("settings-format")).control(format_control),
             );
         }
 
@@ -115,48 +166,107 @@ impl AppModel {
             .unwrap_or(0); // Default to Opus (index 0)
 
         // Video section
-        let mut video_section = widget::settings::section()
-            .title(fl!("settings-video"))
-            .add(
-                widget::settings::item::builder(fl!("settings-encoder")).control(widget::dropdown(
-                    &self.video_encoder_dropdown_options,
-                    Some(self.current_video_encoder_index),
-                    Message::SelectVideoEncoder,
-                )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-quality")).control(widget::dropdown(
-                    &self.bitrate_preset_dropdown_options,
-                    Some(current_bitrate_index),
-                    Message::SelectBitratePreset,
-                )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-record-audio"))
-                    .toggler(self.config.record_audio, |_| Message::ToggleRecordAudio),
-            );
-
-        // Only show audio encoder and microphone selection when audio is enabled
-        if self.config.record_audio {
-            video_section = video_section
+        let mut video_section = if is_recording {
+            widget::settings::section()
+                .title(fl!("settings-video"))
                 .add(
-                    widget::settings::item::builder(fl!("settings-audio-encoder")).control(
-                        widget::dropdown(
-                            &self.audio_encoder_dropdown_options,
-                            Some(current_audio_encoder_index),
-                            Message::SelectAudioEncoder,
+                    widget::settings::item::builder(fl!("settings-encoder")).control(
+                        disabled_text(
+                            self.video_encoder_dropdown_options
+                                .get(self.current_video_encoder_index)
+                                .cloned()
+                                .unwrap_or_default(),
                         ),
                     ),
                 )
                 .add(
-                    widget::settings::item::builder(fl!("settings-microphone")).control(
-                        widget::dropdown(
-                            &self.audio_dropdown_options,
-                            Some(self.current_audio_device_index),
-                            Message::SelectAudioDevice,
+                    widget::settings::item::builder(fl!("settings-quality")).control(
+                        disabled_text(
+                            self.bitrate_preset_dropdown_options
+                                .get(current_bitrate_index)
+                                .cloned()
+                                .unwrap_or_default(),
                         ),
                     ),
-                );
+                )
+                .add(
+                    widget::settings::item::builder(fl!("settings-record-audio")).control(
+                        widget::toggler(self.config.record_audio)
+                            .on_toggle_maybe(None::<fn(bool) -> Message>),
+                    ),
+                )
+        } else {
+            widget::settings::section()
+                .title(fl!("settings-video"))
+                .add(
+                    widget::settings::item::builder(fl!("settings-encoder")).control(
+                        widget::dropdown(
+                            &self.video_encoder_dropdown_options,
+                            Some(self.current_video_encoder_index),
+                            Message::SelectVideoEncoder,
+                        ),
+                    ),
+                )
+                .add(
+                    widget::settings::item::builder(fl!("settings-quality")).control(
+                        widget::dropdown(
+                            &self.bitrate_preset_dropdown_options,
+                            Some(current_bitrate_index),
+                            Message::SelectBitratePreset,
+                        ),
+                    ),
+                )
+                .add(
+                    widget::settings::item::builder(fl!("settings-record-audio"))
+                        .toggler(self.config.record_audio, |_| Message::ToggleRecordAudio),
+                )
+        };
+
+        // Only show audio encoder and microphone selection when audio is enabled
+        if self.config.record_audio {
+            if is_recording {
+                video_section = video_section
+                    .add(
+                        widget::settings::item::builder(fl!("settings-audio-encoder")).control(
+                            disabled_text(
+                                self.audio_encoder_dropdown_options
+                                    .get(current_audio_encoder_index)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            ),
+                        ),
+                    )
+                    .add(
+                        widget::settings::item::builder(fl!("settings-microphone")).control(
+                            disabled_text(
+                                self.audio_dropdown_options
+                                    .get(self.current_audio_device_index)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            ),
+                        ),
+                    );
+            } else {
+                video_section = video_section
+                    .add(
+                        widget::settings::item::builder(fl!("settings-audio-encoder")).control(
+                            widget::dropdown(
+                                &self.audio_encoder_dropdown_options,
+                                Some(current_audio_encoder_index),
+                                Message::SelectAudioEncoder,
+                            ),
+                        ),
+                    )
+                    .add(
+                        widget::settings::item::builder(fl!("settings-microphone")).control(
+                            widget::dropdown(
+                                &self.audio_dropdown_options,
+                                Some(self.current_audio_device_index),
+                                Message::SelectAudioDevice,
+                            ),
+                        ),
+                    );
+            }
         }
 
         // Photo section (output format and HDR+ settings)

@@ -5,7 +5,7 @@
 //! Handles gallery operations, filter selection, settings, recovery, bug reports,
 //! and QR code detection.
 
-use crate::app::state::{AppModel, FilterType, Message};
+use crate::app::state::{AppModel, FilterType, Message, RecordingState};
 use cosmic::Task;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use tracing::{error, info};
@@ -125,6 +125,63 @@ impl AppModel {
         Task::none()
     }
 
+    pub(crate) fn handle_audio_list_changed(
+        &mut self,
+        new_devices: Vec<crate::backends::audio::AudioDevice>,
+    ) -> Task<cosmic::Action<Message>> {
+        info!(
+            old_count = self.available_audio_devices.len(),
+            new_count = new_devices.len(),
+            "Audio device list changed (hotplug event)"
+        );
+
+        // Try to keep the current device selected if it's still available
+        let current_still_available = if let Some(current) = self
+            .available_audio_devices
+            .get(self.current_audio_device_index)
+        {
+            new_devices
+                .iter()
+                .position(|d| d.serial == current.serial && d.name == current.name)
+        } else {
+            None
+        };
+
+        // Stop recording if the audio input used for recording was disconnected
+        if current_still_available.is_none()
+            && self.config.record_audio
+            && self.recording.is_recording()
+        {
+            info!("Audio input disconnected during recording, stopping recording gracefully");
+            if let Some(sender) = self.recording.take_stop_sender() {
+                let _ = sender.send(());
+            }
+            self.recording = RecordingState::Idle;
+        }
+
+        self.available_audio_devices = new_devices;
+        self.audio_dropdown_options = self
+            .available_audio_devices
+            .iter()
+            .map(|dev| {
+                if dev.is_default {
+                    format!("{} (Default)", dev.name)
+                } else {
+                    dev.name.clone()
+                }
+            })
+            .collect();
+
+        if let Some(new_index) = current_still_available {
+            self.current_audio_device_index = new_index;
+        } else {
+            // Reset to first device (default is sorted first)
+            self.current_audio_device_index = 0;
+        }
+
+        Task::none()
+    }
+
     pub(crate) fn handle_select_video_encoder(
         &mut self,
         index: usize,
@@ -164,6 +221,10 @@ impl AppModel {
     }
 
     pub(crate) fn handle_toggle_record_audio(&mut self) -> Task<cosmic::Action<Message>> {
+        if self.recording.is_recording() {
+            return Task::none();
+        }
+
         use cosmic::cosmic_config::CosmicConfigEntry;
 
         self.config.record_audio = !self.config.record_audio;
