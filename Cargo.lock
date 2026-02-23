@@ -1015,7 +1015,7 @@ dependencies = [
  "dng",
  "drm-fourcc",
  "futures",
- "gstreamer",
+ "gstreamer 0.24.4",
  "gstreamer-app",
  "gstreamer-video",
  "i18n-embed",
@@ -2639,8 +2639,21 @@ version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0071fe88dba8e40086c8ff9bbb62622999f49628344b1d1bf490a48a29d80f22"
 dependencies = [
- "glib-sys",
- "gobject-sys",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
+ "libc",
+ "system-deps",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "gio-sys"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64729ba2772c080448f9f966dba8f4456beeb100d8c28a865ef8a0f2ef4987e1"
+dependencies = [
+ "glib-sys 0.22.0",
+ "gobject-sys 0.22.0",
  "libc",
  "system-deps",
  "windows-sys 0.61.2",
@@ -2675,10 +2688,31 @@ dependencies = [
  "futures-executor",
  "futures-task",
  "futures-util",
- "gio-sys",
- "glib-macros",
- "glib-sys",
- "gobject-sys",
+ "gio-sys 0.21.5",
+ "glib-macros 0.21.5",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
+ "libc",
+ "memchr",
+ "smallvec",
+]
+
+[[package]]
+name = "glib"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3b79a62980e85d61aae88988e5bcca6a35f05b0008e1333aa43bd61ef9bf35"
+dependencies = [
+ "bitflags 2.11.0",
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-task",
+ "futures-util",
+ "gio-sys 0.22.0",
+ "glib-macros 0.22.0",
+ "glib-sys 0.22.0",
+ "gobject-sys 0.22.0",
  "libc",
  "memchr",
  "smallvec",
@@ -2698,10 +2732,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "glib-macros"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b48a968528354e04603ae96205f00cf7e77347ffde0fc943a2159948d7d6d80"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "glib-sys"
 version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d95e1a3a19ae464a7286e14af9a90683c64d70c02532d88d87ce95056af3e6c"
+dependencies = [
+ "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "glib-sys"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48073e3b228419faa80b9b7f7122759d4ab2f44cd52a065fde7ca08f34c03147"
 dependencies = [
  "libc",
  "system-deps",
@@ -2740,7 +2796,18 @@ version = "0.21.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dca35da0d19a18f4575f3cb99fe1c9e029a2941af5662f326f738a21edaf294"
 dependencies = [
- "glib-sys",
+ "glib-sys 0.21.5",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "gobject-sys"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18eda93f09d3778f38255b231b17ef67195013a592c91624a4daf8bead875565"
+dependencies = [
+ "glib-sys 0.22.0",
  "libc",
  "system-deps",
 ]
@@ -2813,8 +2880,33 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "glib",
- "gstreamer-sys",
+ "glib 0.21.5",
+ "gstreamer-sys 0.24.4",
+ "itertools 0.14.0",
+ "kstring",
+ "libc",
+ "muldiv",
+ "num-integer",
+ "num-rational",
+ "option-operations",
+ "pastey 0.2.1",
+ "pin-project-lite",
+ "smallvec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "gstreamer"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b308f4e01e375e0648f9737a0528dca6f6cbf7d4573f2374dbc069c88a027c6"
+dependencies = [
+ "cfg-if",
+ "futures-channel",
+ "futures-core",
+ "futures-util",
+ "glib 0.22.0",
+ "gstreamer-sys 0.25.0",
  "itertools 0.14.0",
  "kstring",
  "libc",
@@ -2836,10 +2928,10 @@ checksum = "895753fb0f976693f321e6b9d68f746ef9095f1a5b8277c11d85d807a949fbfc"
 dependencies = [
  "futures-core",
  "futures-sink",
- "glib",
- "gstreamer",
+ "glib 0.21.5",
+ "gstreamer 0.24.4",
  "gstreamer-app-sys",
- "gstreamer-base",
+ "gstreamer-base 0.24.4",
  "libc",
 ]
 
@@ -2849,9 +2941,9 @@ version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7719cee28afda1a48ab1ee93769628bd0653d3c5be1923bce9a8a4550fcc980"
 dependencies = [
- "glib-sys",
- "gstreamer-base-sys",
- "gstreamer-sys",
+ "glib-sys 0.21.5",
+ "gstreamer-base-sys 0.24.4",
+ "gstreamer-sys 0.24.4",
  "libc",
  "system-deps",
 ]
@@ -2864,9 +2956,23 @@ checksum = "4dd15c7e37d306573766834a5cbdd8ee711265f217b060f40a9a8eda45298488"
 dependencies = [
  "atomic_refcell",
  "cfg-if",
- "glib",
- "gstreamer",
- "gstreamer-base-sys",
+ "glib 0.21.5",
+ "gstreamer 0.24.4",
+ "gstreamer-base-sys 0.24.4",
+ "libc",
+]
+
+[[package]]
+name = "gstreamer-base"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c08353a8a382be9a49b15fb9c46b3abd6f8a6e6439e1eaedc87d08f1abdcfad1"
+dependencies = [
+ "atomic_refcell",
+ "cfg-if",
+ "glib 0.22.0",
+ "gstreamer 0.25.0",
+ "gstreamer-base-sys 0.25.0",
  "libc",
 ]
 
@@ -2876,9 +2982,22 @@ version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27a2eda2c61e13c11883bf19b290d07ea6b53d04fd8bfeb7af64b6006c6c9ee6"
 dependencies = [
- "glib-sys",
- "gobject-sys",
- "gstreamer-sys",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
+ "gstreamer-sys 0.24.4",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "gstreamer-base-sys"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6569606feeb89cfcf95a6476a64a0f0aec83fadcef0e91c24e576f7851ceac3a"
+dependencies = [
+ "glib-sys 0.22.0",
+ "gobject-sys 0.22.0",
+ "gstreamer-sys 0.25.0",
  "libc",
  "system-deps",
 ]
@@ -2890,23 +3009,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d88630697e757c319e7bcec7b13919ba80492532dd3238481c1c4eee05d4904"
 dependencies = [
  "cfg-if",
- "glib-sys",
- "gobject-sys",
+ "glib-sys 0.21.5",
+ "gobject-sys 0.21.5",
+ "libc",
+ "system-deps",
+]
+
+[[package]]
+name = "gstreamer-sys"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85d09343b4c23d64b3ef35f1f644598860cc9a4617e7ccded141de97cd528608"
+dependencies = [
+ "cfg-if",
+ "glib-sys 0.22.0",
+ "gobject-sys 0.22.0",
  "libc",
  "system-deps",
 ]
 
 [[package]]
 name = "gstreamer-video"
-version = "0.24.4"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33987f6a6a99750a07b0341d6288bac89b9b301be4672a209935203d4608d547"
+checksum = "51809937ed7f6fa3974b2730a39623d59fd7415ede882d08d5ecef5de39d758d"
 dependencies = [
  "cfg-if",
  "futures-channel",
- "glib",
- "gstreamer",
- "gstreamer-base",
+ "glib 0.22.0",
+ "gstreamer 0.25.0",
+ "gstreamer-base 0.25.0",
  "gstreamer-video-sys",
  "libc",
  "thiserror 2.0.18",
@@ -2914,14 +3046,14 @@ dependencies = [
 
 [[package]]
 name = "gstreamer-video-sys"
-version = "0.24.4"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a00c28faad96cd40a7b7592433051199691b131b08f622ed5d51c54e049792d3"
+checksum = "458f82631a5063057c10583a57ba0fbce689e67122cfdb5eddbeaa43eb812e75"
 dependencies = [
- "glib-sys",
- "gobject-sys",
- "gstreamer-base-sys",
- "gstreamer-sys",
+ "glib-sys 0.22.0",
+ "gobject-sys 0.22.0",
+ "gstreamer-base-sys 0.25.0",
+ "gstreamer-sys 0.25.0",
  "libc",
  "system-deps",
 ]
