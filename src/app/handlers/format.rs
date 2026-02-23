@@ -79,6 +79,17 @@ impl AppModel {
             info!("Mode switch won't change format - keeping same preview");
         }
 
+        // Reset filter when leaving photo mode
+        if self.mode == CameraMode::Photo && mode != CameraMode::Photo {
+            self.selected_filter = crate::app::state::FilterType::Standard;
+            // Close the filter drawer if it's open
+            if self.context_page == crate::app::state::ContextPage::Filters
+                && self.core.window.show_context
+            {
+                self.core.window.show_context = false;
+            }
+        }
+
         self.mode = mode;
         self.zoom_level = 1.0; // Reset zoom when switching modes
         self.switch_camera_or_mode(self.current_camera_index, mode);
