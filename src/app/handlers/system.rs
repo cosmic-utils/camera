@@ -135,6 +135,14 @@ impl AppModel {
             "Audio device list changed (hotplug event)"
         );
 
+        // If enumeration returned empty but we had devices before, treat it as
+        // an enumeration failure (e.g. pw-dump failed) rather than all devices
+        // being removed. Preserve the existing list to avoid killing recordings.
+        if new_devices.is_empty() && !self.available_audio_devices.is_empty() {
+            info!("Audio enumeration returned empty list, keeping existing devices");
+            return Task::none();
+        }
+
         // Try to keep the current device selected if it's still available
         let current_still_available = if let Some(current) = self
             .available_audio_devices
@@ -148,7 +156,10 @@ impl AppModel {
         };
 
         // Stop recording if the audio input used for recording was disconnected
+        // Only do this when we have a non-empty new device list (confirmed enumeration)
+        // and the specific device is genuinely missing from it
         if current_still_available.is_none()
+            && !new_devices.is_empty()
             && self.config.record_audio
             && self.recording.is_recording()
         {
@@ -174,7 +185,7 @@ impl AppModel {
 
         if let Some(new_index) = current_still_available {
             self.current_audio_device_index = new_index;
-        } else {
+        } else if !self.available_audio_devices.is_empty() {
             // Reset to first device (default is sorted first)
             self.current_audio_device_index = 0;
         }

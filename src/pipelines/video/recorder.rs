@@ -739,7 +739,26 @@ impl VideoRecorder {
                     frame_count * frame_duration_ns
                 };
 
-                let data = (*frame.data).to_vec();
+                // Strip stride padding if present so GStreamer sees tightly-packed rows.
+                // libcamera may return rows padded to alignment boundaries (e.g. 64 bytes),
+                // but appsrc caps only declare width — GStreamer assumes stride == width * bpp.
+                let bpp = frame.format.bytes_per_pixel();
+                let row_bytes = (frame.width as f32 * bpp) as usize;
+                let stride = frame.stride as usize;
+                let data = if stride > row_bytes && stride > 0 {
+                    let h = frame.height as usize;
+                    let mut tight = Vec::with_capacity(row_bytes * h);
+                    for y in 0..h {
+                        let start = y * stride;
+                        let end = start + row_bytes;
+                        if end <= frame.data.len() {
+                            tight.extend_from_slice(&frame.data[start..end]);
+                        }
+                    }
+                    tight
+                } else {
+                    (*frame.data).to_vec()
+                };
                 let mut buffer = gst::Buffer::from_mut_slice(data);
                 {
                     let buf_ref = buffer.get_mut().unwrap();
