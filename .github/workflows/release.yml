@@ -108,7 +108,7 @@ jobs:
           rm camera
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.arch }}
           path: dist/camera-${{ matrix.arch }}-linux.tar.gz
@@ -146,7 +146,7 @@ jobs:
         run: just flatpak-bundle x86_64
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-x86_64
           path: camera-x86_64.flatpak
@@ -192,7 +192,7 @@ jobs:
         run: just flatpak-bundle aarch64
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-aarch64
           path: camera-aarch64.flatpak
@@ -238,7 +238,7 @@ jobs:
         run: just flatpak-bundle arm
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-armhf
           path: camera-armhf.flatpak
