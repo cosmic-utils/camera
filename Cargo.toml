@@ -25,7 +25,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 gstreamer = "0.24.4"
 gstreamer-app = "0.24.4"
 gstreamer-video = "0.24.4"
-image = "0.25.9"
+image = "0.25.10"
 chrono = "0.4.44"
 ctrlc = "3.5"
 bytemuck = { version = "1.25.0", features = ["derive"] }
