@@ -240,6 +240,8 @@ pub struct AvailableExposureControls {
     // === Focus ===
     pub has_focus_auto: bool,
     pub focus: ControlRange,
+    /// Separate V4L2 subdevice path for focus control (lens actuator)
+    pub focus_device_path: Option<String>,
 
     // === Privacy ===
     /// Whether privacy control is available (hardware privacy switch)

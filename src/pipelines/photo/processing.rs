@@ -98,13 +98,33 @@ impl PostProcessor {
         let frame_width = frame.width;
         let frame_height = frame.height;
 
-        // Step 0: Convert YUV to RGBA if needed
+        // Step 0: Convert YUV/Bayer to RGBA if needed
         let rgba_data: Vec<u8> = if frame.format.is_yuv() {
             debug!(format = ?frame.format, "Converting YUV frame to RGBA for photo processing");
             match Self::convert_yuv_to_rgba(&frame).await {
                 Ok(rgba) => rgba,
                 Err(e) => {
                     return Err(format!("Failed to convert YUV to RGBA: {}", e));
+                }
+            }
+        } else if frame.format.is_bayer() {
+            debug!(format = ?frame.format, "Converting Bayer frame to RGBA for photo processing");
+            match Self::convert_yuv_to_rgba(&frame).await {
+                Ok(mut rgba) => {
+                    // Only apply gray-world AWB when ISP colour gains are unavailable.
+                    // The shader applies BLS + gains when colour_gains is present.
+                    if frame
+                        .libcamera_metadata
+                        .as_ref()
+                        .and_then(|m| m.colour_gains.as_ref())
+                        .is_none()
+                    {
+                        Self::apply_auto_white_balance(&mut rgba, frame_width, frame_height);
+                    }
+                    rgba
+                }
+                Err(e) => {
+                    return Err(format!("Failed to convert Bayer to RGBA: {}", e));
                 }
             }
         } else {
@@ -222,6 +242,9 @@ impl PostProcessor {
                     uv_stride: planes.uv_stride,
                     v_data: None,
                     v_stride: 0,
+                    colour_gains: None,
+                    colour_correction_matrix: None,
+                    black_level: None,
                 }
             }
             PixelFormat::I420 => {
@@ -244,6 +267,9 @@ impl PostProcessor {
                         None
                     },
                     v_stride: planes.v_stride,
+                    colour_gains: None,
+                    colour_correction_matrix: None,
+                    black_level: None,
                 }
             }
             // Packed 4:2:2 formats - all have same structure, just different byte order
@@ -258,20 +284,53 @@ impl PostProcessor {
                     uv_stride: 0,
                     v_data: None,
                     v_stride: 0,
+                    colour_gains: None,
+                    colour_correction_matrix: None,
+                    black_level: None,
                 }
             }
-            // Single-plane formats: Gray8, RGB24
-            PixelFormat::Gray8 | PixelFormat::RGB24 => GpuFrameInput {
-                format: frame.format,
-                width: frame.width,
-                height: frame.height,
-                y_data: buffer_data,
-                y_stride: frame.stride,
-                uv_data: None,
-                uv_stride: 0,
-                v_data: None,
-                v_stride: 0,
-            },
+            // Single-plane formats: Gray8, RGB24, ABGR, BGRA
+            PixelFormat::Gray8 | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
+                GpuFrameInput {
+                    format: frame.format,
+                    width: frame.width,
+                    height: frame.height,
+                    y_data: buffer_data,
+                    y_stride: frame.stride,
+                    uv_data: None,
+                    uv_stride: 0,
+                    v_data: None,
+                    v_stride: 0,
+                    colour_gains: None,
+                    colour_correction_matrix: None,
+                    black_level: None,
+                }
+            }
+            // Bayer patterns - single-plane raw data, handled by debayer shader
+            PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => {
+                let (colour_gains, ccm, black_level) = frame
+                    .libcamera_metadata
+                    .as_ref()
+                    .map(|m| (m.colour_gains, m.colour_correction_matrix, m.black_level))
+                    .unwrap_or((None, None, None));
+                GpuFrameInput {
+                    format: frame.format,
+                    width: frame.width,
+                    height: frame.height,
+                    y_data: buffer_data,
+                    y_stride: frame.stride,
+                    uv_data: None,
+                    uv_stride: 0,
+                    v_data: None,
+                    v_stride: 0,
+                    colour_gains,
+                    colour_correction_matrix: ccm,
+                    black_level,
+                }
+            }
             PixelFormat::RGBA => {
                 // Should not reach here - already RGBA
                 return Ok(buffer_data.to_vec());
@@ -297,6 +356,53 @@ impl PostProcessor {
             .read_rgba_to_cpu(frame.width, frame.height)
             .await
             .map_err(|e| format!("Failed to read RGBA from GPU: {}", e))
+    }
+
+    /// Apply simple gray-world auto white balance on RGBA data.
+    ///
+    /// Calculates the average of each channel and scales them so all channel
+    /// averages match the green channel (which has the best SNR in Bayer sensors).
+    fn apply_auto_white_balance(rgba: &mut [u8], width: u32, height: u32) {
+        let num_pixels = (width * height) as usize;
+        if num_pixels == 0 {
+            return;
+        }
+
+        // Calculate channel averages
+        let (mut sum_r, mut sum_g, mut sum_b) = (0u64, 0u64, 0u64);
+        for pixel in rgba.chunks(4).take(num_pixels) {
+            sum_r += pixel[0] as u64;
+            sum_g += pixel[1] as u64;
+            sum_b += pixel[2] as u64;
+        }
+
+        let avg_r = sum_r as f32 / num_pixels as f32;
+        let avg_g = sum_g as f32 / num_pixels as f32;
+        let avg_b = sum_b as f32 / num_pixels as f32;
+
+        // Avoid division by zero; skip WB if any channel is too dark
+        if avg_r < 1.0 || avg_g < 1.0 || avg_b < 1.0 {
+            return;
+        }
+
+        // Scale R and B to match G average (gray world assumption)
+        let gain_r = avg_g / avg_r;
+        let gain_b = avg_g / avg_b;
+
+        debug!(
+            avg_r = format!("{:.1}", avg_r),
+            avg_g = format!("{:.1}", avg_g),
+            avg_b = format!("{:.1}", avg_b),
+            gain_r = format!("{:.2}", gain_r),
+            gain_b = format!("{:.2}", gain_b),
+            "Auto white balance"
+        );
+
+        for pixel in rgba.chunks_mut(4).take(num_pixels) {
+            pixel[0] = ((pixel[0] as f32 * gain_r).round() as u32).min(255) as u8;
+            // pixel[1] unchanged (green reference)
+            pixel[2] = ((pixel[2] as f32 * gain_b).round() as u32).min(255) as u8;
+        }
     }
 
     /// Crop RGBA data to a rectangular region

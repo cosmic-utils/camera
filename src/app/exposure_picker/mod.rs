@@ -38,8 +38,19 @@ fn query_bool_control(device_path: &str, control_id: u32) -> bool {
 }
 
 /// Query all available exposure controls for a camera device
-pub fn query_exposure_controls(device_path: &str) -> AvailableExposureControls {
-    info!(device_path, "Querying exposure controls");
+///
+/// `focus_device_path` is an optional separate V4L2 subdevice for focus control
+/// (e.g., a lens actuator). If provided, focus controls are queried on that device
+/// instead of the main camera device.
+pub fn query_exposure_controls(
+    device_path: &str,
+    focus_device_path: Option<&str>,
+) -> AvailableExposureControls {
+    info!(
+        device_path,
+        ?focus_device_path,
+        "Querying exposure controls"
+    );
 
     let mut controls = AvailableExposureControls {
         device_path: Some(device_path.to_string()),
@@ -104,7 +115,10 @@ pub fn query_exposure_controls(device_path: &str) -> AvailableExposureControls {
     controls.has_autogain = query_bool_control(device_path, v4l2_controls::V4L2_CID_AUTOGAIN);
     controls.has_white_balance_auto =
         query_bool_control(device_path, v4l2_controls::V4L2_CID_AUTO_WHITE_BALANCE);
-    controls.has_focus_auto = query_bool_control(device_path, v4l2_controls::V4L2_CID_FOCUS_AUTO);
+    // Focus controls: query on separate focus device if available
+    let focus_path = focus_device_path.unwrap_or(device_path);
+    controls.has_focus_auto = query_bool_control(focus_path, v4l2_controls::V4L2_CID_FOCUS_AUTO);
+    controls.focus_device_path = focus_device_path.map(String::from);
 
     // Query range controls
     controls.backlight_compensation =
@@ -117,7 +131,7 @@ pub fn query_exposure_controls(device_path: &str) -> AvailableExposureControls {
         device_path,
         v4l2_controls::V4L2_CID_WHITE_BALANCE_TEMPERATURE,
     );
-    controls.focus = query_range_control(device_path, v4l2_controls::V4L2_CID_FOCUS_ABSOLUTE);
+    controls.focus = query_range_control(focus_path, v4l2_controls::V4L2_CID_FOCUS_ABSOLUTE);
 
     // Query privacy control (hardware privacy switch)
     controls.has_privacy = query_bool_control(device_path, v4l2_controls::V4L2_CID_PRIVACY);
@@ -236,6 +250,7 @@ fn reset_control_to_default(
 pub fn get_exposure_settings(
     device_path: &str,
     available: &AvailableExposureControls,
+    focus_device_path: Option<&str>,
 ) -> ExposureSettings {
     let mut settings = ExposureSettings::default();
 
@@ -312,18 +327,19 @@ pub fn get_exposure_settings(
         settings.autogain = Some(value != 0);
     }
 
-    // Get auto focus
+    // Get auto focus (from focus device if available)
+    let focus_path = focus_device_path.unwrap_or(device_path);
     if available.has_focus_auto
         && let Some(value) =
-            v4l2_controls::get_control(device_path, v4l2_controls::V4L2_CID_FOCUS_AUTO)
+            v4l2_controls::get_control(focus_path, v4l2_controls::V4L2_CID_FOCUS_AUTO)
     {
         settings.focus_auto = Some(value != 0);
     }
 
-    // Get focus position
+    // Get focus position (from focus device if available)
     if available.focus.available {
         settings.focus_absolute =
-            v4l2_controls::get_control(device_path, v4l2_controls::V4L2_CID_FOCUS_ABSOLUTE);
+            v4l2_controls::get_control(focus_path, v4l2_controls::V4L2_CID_FOCUS_ABSOLUTE);
     }
 
     settings

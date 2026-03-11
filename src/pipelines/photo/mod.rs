@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Photo pipeline module - some features are work-in-progress
-#![allow(dead_code)]
 
 //! Async photo capture pipeline
 //!
@@ -31,12 +29,13 @@ pub mod capture;
 pub mod encoding;
 pub mod processing;
 
-pub use encoding::{CameraMetadata, EncodingFormat, EncodingQuality, PhotoEncoder};
+pub use encoding::{CameraMetadata, EncodingFormat, EncodingQuality, PhotoEncoder, RawBayerData};
 pub use processing::{PostProcessingConfig, PostProcessor};
 
 use crate::backends::camera::types::CameraFrame;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::info;
 
 /// Complete photo capture pipeline
 ///
@@ -91,6 +90,29 @@ impl PhotoPipeline {
         frame: Arc<CameraFrame>,
         output_dir: PathBuf,
     ) -> Result<PathBuf, String> {
+        // DNG + Bayer: bypass post-processing, encode raw sensor data directly
+        if self.encoder.format() == EncodingFormat::Dng && frame.format.is_bayer() {
+            info!(
+                width = frame.width,
+                height = frame.height,
+                format = ?frame.format,
+                stride = frame.stride,
+                "DNG raw bypass: encoding Bayer data directly"
+            );
+
+            let raw = RawBayerData {
+                data: frame.data.to_vec(),
+                width: frame.width,
+                height: frame.height,
+                stride: frame.stride,
+                format: frame.format,
+            };
+
+            let encoded = self.encoder.encode_raw(raw).await?;
+            let output_path = self.encoder.save(encoded, output_dir).await?;
+            return Ok(output_path);
+        }
+
         // Stage 1: Post-process (async, CPU-bound)
         let processed = self.post_processor.process(frame).await?;
 
@@ -121,6 +143,25 @@ impl PhotoPipeline {
         F: FnMut(f32) + Send,
     {
         progress(0.0);
+
+        // DNG + Bayer: bypass post-processing
+        if self.encoder.format() == EncodingFormat::Dng && frame.format.is_bayer() {
+            let raw = RawBayerData {
+                data: frame.data.to_vec(),
+                width: frame.width,
+                height: frame.height,
+                stride: frame.stride,
+                format: frame.format,
+            };
+            progress(0.33);
+
+            let encoded = self.encoder.encode_raw(raw).await?;
+            progress(0.66);
+
+            let output_path = self.encoder.save(encoded, output_dir).await?;
+            progress(1.0);
+            return Ok(output_path);
+        }
 
         // Post-process
         let processed = self.post_processor.process(frame).await?;

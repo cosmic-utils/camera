@@ -41,6 +41,12 @@ jobs:
           - target: riscv64gc-unknown-linux-gnu
             arch: riscv64
             use_cross: true
+          - target: x86_64-unknown-linux-musl
+            arch: x86_64-musl
+            use_cross: true
+          - target: aarch64-unknown-linux-musl
+            arch: aarch64-musl
+            use_cross: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -59,6 +65,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            libcamera-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             libgstreamer-plugins-bad1.0-dev \
@@ -66,19 +73,28 @@ jobs:
             libxkbcommon-dev \
             libinput-dev \
             libudev-dev \
-            libseat-dev
+            libseat-dev \
+            cmake \
+            nasm
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
         run: cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Install podman
+        if: ${{ matrix.use_cross }}
+        run: sudo apt-get update && sudo apt-get install -y podman
+
       - name: Install just
         uses: extractions/setup-just@v3
 
       - name: Build release binary
+        env:
+          CROSS_CONTAINER_ENGINE: podman
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+            CROSS_BUILD_OPTS="--build-arg RUST_VERSION=$(rustc -V | cut -d' ' -f2)" \
+              cross build --release --target ${{ matrix.target }}
           else
             just build-release --target ${{ matrix.target }}
           fi
@@ -92,7 +108,7 @@ jobs:
           rm camera
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.arch }}
           path: dist/camera-${{ matrix.arch }}-linux.tar.gz
@@ -130,7 +146,7 @@ jobs:
         run: just flatpak-bundle x86_64
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-x86_64
           path: camera-x86_64.flatpak
@@ -156,7 +172,7 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder
 
       - name: Set up QEMU for multi-arch builds
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
@@ -176,7 +192,7 @@ jobs:
         run: just flatpak-bundle aarch64
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-aarch64
           path: camera-aarch64.flatpak
@@ -202,7 +218,7 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder
 
       - name: Set up QEMU for multi-arch builds
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm
 
@@ -222,7 +238,7 @@ jobs:
         run: just flatpak-bundle arm
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-armhf
           path: camera-armhf.flatpak
@@ -245,7 +261,7 @@ jobs:
           fetch-tags: true
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -256,6 +272,8 @@ jobs:
           mv artifacts/binary-aarch64/camera-aarch64-linux.tar.gz release-assets/
           mv artifacts/binary-armhf/camera-armhf-linux.tar.gz release-assets/
           mv artifacts/binary-riscv64/camera-riscv64-linux.tar.gz release-assets/
+          mv artifacts/binary-x86_64-musl/camera-x86_64-musl-linux.tar.gz release-assets/
+          mv artifacts/binary-aarch64-musl/camera-aarch64-musl-linux.tar.gz release-assets/
           mv artifacts/flatpak-x86_64/camera-x86_64.flatpak release-assets/
           # aarch64 flatpak is optional (only built when manually triggered)
           if [ -d "artifacts/flatpak-aarch64" ]; then
@@ -293,6 +311,8 @@ jobs:
           | `camera-aarch64-linux.tar.gz` | Linux binary for ARM64 |
           | `camera-armhf-linux.tar.gz` | Linux binary for armhf (32-bit) |
           | `camera-riscv64-linux.tar.gz` | Linux binary for RISC-V 64 |
+          | `camera-x86_64-musl-linux.tar.gz` | Linux binary for x86_64 (musl/static) |
+          | `camera-aarch64-musl-linux.tar.gz` | Linux binary for ARM64 (musl/static) |
           | `camera-${{ github.ref_name }}-source.zip` | Source code |
           EOF
           # Add aarch64 flatpak to release notes if it was built

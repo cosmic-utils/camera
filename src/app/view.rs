@@ -13,7 +13,7 @@ use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
-use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA};
+use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA, POPUP_BACKGROUND_ALPHA};
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -78,6 +78,63 @@ pub fn overlay_container_style(theme: &cosmic::Theme) -> widget::container::Styl
     }
 }
 
+/// Build a centered overlay popup dialog with icon, title, body text, and optional button
+///
+/// Used for modal-style popups (privacy warning, flash error) with a near-opaque background.
+fn build_overlay_popup<'a>(
+    icon: Element<'a, Message>,
+    title: &str,
+    body: &str,
+    button: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    let spacing = cosmic::theme::spacing();
+
+    let mut content = widget::column()
+        .push(icon)
+        .push(
+            widget::text(title.to_string())
+                .size(20)
+                .font(cosmic::font::bold()),
+        )
+        .push(widget::text(body.to_string()).size(14))
+        .spacing(spacing.space_s)
+        .align_x(Alignment::Center);
+
+    if let Some(btn) = button {
+        content = content.push(btn);
+    }
+
+    let popup_box =
+        widget::container(content)
+            .padding(spacing.space_l)
+            .style(|theme: &cosmic::Theme| {
+                let cosmic = theme.cosmic();
+                let bg = cosmic.bg_color();
+                let on_bg = cosmic.on_bg_color();
+                widget::container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        bg.red,
+                        bg.green,
+                        bg.blue,
+                        POPUP_BACKGROUND_ALPHA,
+                    ))),
+                    border: cosmic::iced::Border {
+                        radius: cosmic.corner_radii.radius_m.into(),
+                        ..Default::default()
+                    },
+                    text_color: Some(Color::from(on_bg)),
+                    ..Default::default()
+                }
+            });
+
+    widget::container(popup_box)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(cosmic::iced::alignment::Horizontal::Center)
+        .align_y(cosmic::iced::alignment::Vertical::Center)
+        .into()
+}
+
 /// Create an icon button with a themed background for use on camera preview overlays
 fn overlay_icon_button<'a, M: Clone + 'static>(
     handle: impl Into<widget::icon::Handle>,
@@ -116,7 +173,8 @@ impl AppModel {
         let camera_preview = self.build_camera_preview();
 
         // Flash mode - show only preview with white overlay, no UI
-        if self.flash_active {
+        // Only show screen flash overlay for front cameras (back cameras use hardware LED)
+        if self.flash_active && !self.use_hardware_flash() {
             let flash_overlay = widget::container(widget::Space::new(Length::Fill, Length::Fill))
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -317,7 +375,15 @@ impl AppModel {
 
                 bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
 
-                let theatre_stack = cosmic::iced::widget::stack![
+                // Flash error popup for theatre mode (centered in preview area)
+                let flash_error_popup: Option<Element<'_, Message>> =
+                    if self.flash_error_popup.is_some() {
+                        Some(self.build_flash_error_popup())
+                    } else {
+                        None
+                    };
+
+                let mut theatre_stack = cosmic::iced::widget::stack![
                     camera_preview,
                     // QR overlay (custom widget calculates positions at render time)
                     self.build_qr_overlay(),
@@ -334,20 +400,27 @@ impl AppModel {
                         .align_y(cosmic::iced::alignment::Vertical::Bottom)
                 ];
 
+                if let Some(popup) = flash_error_popup {
+                    theatre_stack = theatre_stack.push(popup);
+                }
+
                 theatre_stack
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
             } else {
                 // Theatre mode with UI hidden - show only full-screen preview with QR overlay and privacy warning
-                cosmic::iced::widget::stack![
+                let mut hidden_stack = cosmic::iced::widget::stack![
                     camera_preview,
                     self.build_qr_overlay(),
                     self.build_privacy_warning()
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                ];
+
+                if self.flash_error_popup.is_some() {
+                    hidden_stack = hidden_stack.push(self.build_flash_error_popup());
+                }
+
+                hidden_stack.width(Length::Fill).height(Length::Fill).into()
             }
         } else {
             // Normal mode - traditional layout
@@ -362,6 +435,11 @@ impl AppModel {
                     .width(Length::Fill)
                     .align_y(cosmic::iced::alignment::Vertical::Top)
             ];
+
+            // Flash permission error popup (centered in preview area)
+            if self.flash_error_popup.is_some() {
+                preview_stack = preview_stack.push(self.build_flash_error_popup());
+            }
 
             // Add zoom label overlapping bottom of preview (centered above capture button)
             if show_zoom_label {
@@ -397,7 +475,11 @@ impl AppModel {
         let mut main_stack = cosmic::iced::widget::stack![content];
 
         // Add iOS-style format picker overlay if visible
-        if self.format_picker_visible {
+        // Hide with libcamera backend in photo/video modes (resolution is handled automatically)
+        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
+            || self.mode == CameraMode::Video)
+            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
+        if self.format_picker_visible && !is_libcamera_no_picker {
             main_stack = main_stack.push(self.build_format_picker());
         }
 
@@ -461,10 +543,14 @@ impl AppModel {
         // - File source is set in Virtual mode (show file resolution instead)
         let has_file_source =
             self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
+        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
+            || self.mode == CameraMode::Video)
+            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
         let show_format_button = !self.format_picker_visible
             && (self.mode == CameraMode::Photo || !self.recording.is_recording())
             && !self.virtual_camera.is_streaming()
-            && !has_file_source;
+            && !has_file_source
+            && !is_libcamera_no_picker;
 
         if show_format_button {
             row = row.push(self.build_format_button());
@@ -791,8 +877,7 @@ impl AppModel {
             VideoContentFit::Contain
         };
 
-        // File sources should never be mirrored - match the video widget behavior
-        let should_mirror = self.config.mirror_preview && !self.current_frame_is_file_source;
+        let should_mirror = self.should_mirror_preview();
 
         build_qr_overlay(
             &self.qr_detections,
@@ -886,14 +971,16 @@ impl AppModel {
             ));
         }
 
-        // Filter button
-        let filter_active = self.selected_filter != FilterType::Standard;
-        buttons.push(self.build_tools_grid_button(
-            icon::from_name("image-filter-symbolic").symbolic(true),
-            fl!("tools-filter"),
-            Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
-            filter_active,
-        ));
+        // Filter button (only in photo mode)
+        if self.mode == CameraMode::Photo {
+            let filter_active = self.selected_filter != FilterType::Standard;
+            buttons.push(self.build_tools_grid_button(
+                icon::from_name("image-filter-symbolic").symbolic(true),
+                fl!("tools-filter"),
+                Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
+                filter_active,
+            ));
+        }
 
         // Theatre mode button
         let theatre_icon = if self.theatre.enabled {
@@ -1109,55 +1196,12 @@ impl AppModel {
             return widget::Space::new(Length::Fill, Length::Fill).into();
         }
 
-        let spacing = cosmic::theme::spacing();
-
-        // Warning icon and text
-        let warning_content = widget::column()
-            .push(
-                widget::icon(
-                    icon::from_name("dialog-warning-symbolic")
-                        .symbolic(true)
-                        .into(),
-                )
-                .size(48),
-            )
-            .push(
-                widget::text(fl!("privacy-cover-closed"))
-                    .size(20)
-                    .font(cosmic::font::bold()),
-            )
-            .push(widget::text(fl!("privacy-cover-hint")).size(14))
-            .spacing(spacing.space_s)
-            .align_x(Alignment::Center);
-
-        // Container with semi-transparent background
-        let warning_box = widget::container(warning_content)
-            .padding(spacing.space_m)
-            .style(|theme: &cosmic::Theme| {
-                let cosmic = theme.cosmic();
-                let bg = cosmic.bg_color();
-                widget::container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        bg.red,
-                        bg.green,
-                        bg.blue,
-                        OVERLAY_BACKGROUND_ALPHA,
-                    ))),
-                    border: cosmic::iced::Border {
-                        radius: cosmic.corner_radii.radius_m.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            });
-
-        // Center the warning in the preview area
-        widget::container(warning_box)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(cosmic::iced::alignment::Horizontal::Center)
-            .align_y(cosmic::iced::alignment::Vertical::Center)
-            .into()
+        build_overlay_popup(
+            widget::text("\u{26A0}").size(48).into(),
+            &fl!("privacy-cover-closed"),
+            &fl!("privacy-cover-hint"),
+            None,
+        )
     }
 
     /// Build the burst mode progress overlay
@@ -1263,6 +1307,28 @@ impl AppModel {
             .align_x(cosmic::iced::alignment::Horizontal::Center)
             .align_y(cosmic::iced::alignment::Vertical::Center)
             .into()
+    }
+
+    /// Build the flash permission error popup dialog
+    ///
+    /// Shows a centered modal with warning icon, error message, and OK button
+    /// when flash hardware was detected but cannot be controlled.
+    fn build_flash_error_popup(&self) -> Element<'_, Message> {
+        let error_msg = self
+            .flash_error_popup
+            .as_deref()
+            .unwrap_or("Flash permission error");
+
+        build_overlay_popup(
+            widget::text("\u{26A0}").size(48).into(),
+            "Flash Permission Error",
+            error_msg,
+            Some(
+                widget::button::suggested("OK")
+                    .on_press(Message::DismissFlashError)
+                    .into(),
+            ),
+        )
     }
 
     /// Build the timer countdown overlay

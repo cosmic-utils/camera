@@ -35,7 +35,7 @@ impl Default for EncoderConfig {
         Self {
             video_quality: VideoQuality::High,
             audio_quality: AudioQuality::High,
-            audio_channels: AudioChannels::Stereo,
+            audio_channels: AudioChannels::Mono,
             width: 1920,
             height: 1080,
             bitrate_override_kbps: None,
@@ -146,6 +146,6 @@ mod tests {
         let config = EncoderConfig::default();
         assert_eq!(config.width, 1920);
         assert_eq!(config.height, 1080);
-        assert_eq!(config.audio_channels, AudioChannels::Stereo);
+        assert_eq!(config.audio_channels, AudioChannels::Mono);
     }
 }

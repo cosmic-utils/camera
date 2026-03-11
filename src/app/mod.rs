@@ -38,7 +38,6 @@ mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
 mod insights;
-mod menu;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
@@ -63,7 +62,7 @@ pub use state::{
     FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, RecordingState, TheatreState,
     VirtualCameraState,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
 
 /// Get the photo save directory
@@ -250,6 +249,7 @@ impl cosmic::Application for AppModel {
             .collect();
 
         // Create backend manager
+        info!(backend = %config.backend, "Creating backend from config");
         let backend_manager = crate::backends::camera::CameraBackendManager::new(config.backend);
 
         // Convert preview source path to FileSource if provided
@@ -326,18 +326,36 @@ impl cosmic::Application for AppModel {
             selected_filter: FilterType::default(),
             flash_enabled: false,
             flash_active: false,
+            flash_hardware: {
+                let hw = crate::flash::FlashHardware::detect();
+                if hw.has_devices() {
+                    info!(
+                        count = hw.devices.len(),
+                        "Flash hardware detected and writable"
+                    );
+                } else if hw.has_error() {
+                    warn!("Flash hardware detected but not writable — permission error");
+                } else {
+                    info!("No flash hardware detected");
+                }
+                hw
+            },
+            flash_error_popup: None,
             photo_timer_setting: PhotoTimerSetting::default(),
             photo_timer_countdown: None,
             photo_timer_tick_start: None,
             photo_aspect_ratio: PhotoAspectRatio::default(),
             zoom_level: 1.0,
             last_bug_report_path: None,
+            last_media_path: None,
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,
             picker_selected_resolution: None,
             backend_manager: Some(backend_manager),
             camera_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             camera_stream_restart_counter: 0,
+            still_capture_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            latest_still_frame: std::sync::Arc::new(std::sync::Mutex::new(None)),
             current_frame: None,
             available_cameras,
             current_camera_index,
@@ -381,6 +399,14 @@ impl cosmic::Application for AppModel {
                 .iter()
                 .map(|e| e.display_name().to_string())
                 .collect(),
+            backend_dropdown_options: {
+                let mut options = Vec::new();
+                if gstreamer::ElementFactory::find("libcamerasrc").is_some() {
+                    options.push("libcamera".to_string());
+                }
+                options.push("PipeWire".to_string());
+                options
+            },
             device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
@@ -411,12 +437,9 @@ impl cosmic::Application for AppModel {
 
         let init_task = Task::perform(
             async move {
-                // Check available video encoders (can be slow)
-                crate::pipelines::video::check_available_encoders();
-
-                // Enumerate cameras (can be slow, especially with multiple devices)
+                // Enumerate cameras first (critical path to first frame)
                 info!(backend = %backend_type, "Enumerating cameras asynchronously");
-                let backend = crate::backends::camera::get_backend();
+                let backend = crate::backends::camera::get_backend_for_type(backend_type);
                 let cameras = backend.enumerate_cameras();
                 info!(count = cameras.len(), backend = %backend_type, "Found camera(s)");
 
@@ -450,6 +473,9 @@ impl cosmic::Application for AppModel {
                 } else {
                     Vec::new()
                 };
+
+                // Log available encoders after cameras are enumerated (non-critical)
+                crate::pipelines::video::check_available_encoders();
 
                 (cameras, camera_index, formats)
             },
@@ -490,12 +516,42 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![menu::menu_bar(&self.core)]
+        vec![]
     }
 
     /// Elements to pack at the end of the header bar.
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![]
+        let is_disabled = self.transition_state.ui_disabled;
+
+        if is_disabled {
+            // Disabled buttons during transitions
+            let about_button = widget::button::icon(widget::icon::from_name("help-about-symbolic"));
+            let settings_button =
+                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"));
+            vec![
+                widget::container(about_button)
+                    .style(|_theme| widget::container::Style {
+                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                        ..Default::default()
+                    })
+                    .into(),
+                widget::container(settings_button)
+                    .style(|_theme| widget::container::Style {
+                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                        ..Default::default()
+                    })
+                    .into(),
+            ]
+        } else {
+            vec![
+                widget::button::icon(widget::icon::from_name("help-about-symbolic"))
+                    .on_press(Message::ToggleContextPage(ContextPage::About))
+                    .into(),
+                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"))
+                    .on_press(Message::ToggleContextPage(ContextPage::Settings))
+                    .into(),
+            ]
+        }
     }
 
     /// Display a context drawer if the context page is requested.
@@ -575,7 +631,9 @@ impl cosmic::Application for AppModel {
         let camera_index = self.current_camera_index;
         let current_format = self.active_format.clone();
         let cancel_flag = Arc::clone(&self.camera_cancel_flag);
-
+        let still_capture_requested = Arc::clone(&self.still_capture_requested);
+        let latest_still_frame = Arc::clone(&self.latest_still_frame);
+        let backend_type = self.config.backend;
         // Create a unique ID based on format properties to trigger restart when format changes
         let format_id = current_format
             .as_ref()
@@ -587,6 +645,14 @@ impl cosmic::Application for AppModel {
 
         // Restart counter forces subscription to restart (e.g., after HDR+ processing)
         let restart_counter = self.camera_stream_restart_counter;
+
+        // Capture current mode so mode changes restart the libcamera pipeline
+        // (different modes use different stream roles: Raw for photo, VideoRecording for video)
+        let camera_mode = self.mode;
+
+        // Get the shared recording sender Arc so the capture thread can forward
+        // frames directly to the appsrc recording pipeline (libcamera only).
+        let recording_sender = self.backend_manager.as_ref().map(|m| m.recording_sender());
 
         // Check if file source is active - if so, don't run camera subscription
         // This applies in Virtual mode OR when --preview-source was used (any mode)
@@ -603,18 +669,19 @@ impl cosmic::Application for AppModel {
                     format_id,
                     // NOTE: is_recording is NOT included here!
                     // This allows preview to continue during recording (PipeWire multi-consumer)
-                    // NOTE: mode is NOT included here!
-                    // Camera only needs to restart when actual format changes, not on mode switch
                     cameras_initialized,
                     restart_counter, // Forces restart after HDR+ processing
+                    backend_type,
+                    camera_mode, // Restart pipeline when mode changes (different stream roles)
                 ),
                 cosmic::iced::stream::channel(100, move |mut output| async move {
-                    info!(camera_index, "Camera subscription started (PipeWire)");
+                    info!(camera_index, backend = %backend_type, "Camera subscription started");
 
                     // No artificial delay needed - PipelineManager serializes all operations
                     // and ensures proper cleanup before creating new pipelines
 
                     let mut frame_count = 0u64;
+                    let mut is_first_pipeline = true;
                     loop {
                         // Check cancel flag at the start of each loop iteration
                         // This prevents creating new pipelines after mode switch
@@ -674,21 +741,26 @@ impl cosmic::Application for AppModel {
                             // Note: Preview continues during recording since VideoRecorder has its own pipeline
                             // Both can access the same PipeWire node simultaneously
 
-                            // Give previous pipeline time to clean up
-                            tokio::time::sleep(tokio::time::Duration::from_millis(
-                                crate::constants::latency::PIPELINE_CLEANUP_DELAY_MS,
-                            ))
-                            .await;
+                            // Give previous pipeline time to clean up (skip on first startup)
+                            if !is_first_pipeline {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(
+                                    crate::constants::latency::PIPELINE_CLEANUP_DELAY_MS,
+                                ))
+                                .await;
 
-                            // Check cancel flag again after brief wait
-                            if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-                                info!("Cancel flag set after cleanup wait - skipping");
-                                break;
+                                // Check cancel flag again after brief wait
+                                if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+                                    info!("Cancel flag set after cleanup wait - skipping");
+                                    break;
+                                }
                             }
 
-                            // Create camera pipeline using PipeWire backend
+                            // Create camera pipeline based on backend type
+                            use crate::backends::camera::libcamera::NativeLibcameraPipeline;
                             use crate::backends::camera::pipewire::PipeWirePipeline;
-                            use crate::backends::camera::types::{CameraDevice, CameraFormat};
+                            use crate::backends::camera::types::{
+                                CameraBackendType, CameraDevice, CameraFormat,
+                            };
 
                             let (sender, mut receiver) =
                                 cosmic::iced::futures::channel::mpsc::channel(
@@ -712,6 +784,25 @@ impl cosmic::Application for AppModel {
                                     .as_ref()
                                     .map(|c| c.rotation)
                                     .unwrap_or_default(),
+                                pipeline_handler: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.pipeline_handler.clone()),
+                                supports_multistream: current_camera
+                                    .as_ref()
+                                    .map(|c| c.supports_multistream)
+                                    .unwrap_or(false),
+                                sensor_model: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.sensor_model.clone()),
+                                camera_location: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.camera_location.clone()),
+                                libcamera_version: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.libcamera_version.clone()),
+                                lens_actuator_path: current_camera
+                                    .as_ref()
+                                    .and_then(|c| c.lens_actuator_path.clone()),
                             };
 
                             let format = CameraFormat {
@@ -722,17 +813,106 @@ impl cosmic::Application for AppModel {
                                 pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
                             };
 
-                            let pipeline_opt = match PipeWirePipeline::new(&device, &format, sender)
-                            {
-                                Ok(pipeline) => {
-                                    info!("Pipeline created successfully");
-                                    Some(pipeline)
+                            // Select pipeline type based on backend configuration
+                            // Fields held to keep pipelines alive (RAII pattern)
+                            #[allow(dead_code)]
+                            enum ActivePipeline {
+                                PipeWire(PipeWirePipeline),
+                                Libcamera(NativeLibcameraPipeline),
+                            }
+
+                            let pipeline_opt: Option<ActivePipeline> = match backend_type {
+                                CameraBackendType::Libcamera => {
+                                    info!(backend = "libcamera", "Creating multi-stream pipeline");
+
+                                    // Small delay to allow previous pipeline to fully release camera hardware
+                                    // This is necessary because libcamera's "simple" pipeline handler
+                                    // needs time to release V4L2 resources before a new pipeline can start
+                                    // Skip on first startup since there is no previous pipeline
+                                    if !is_first_pipeline {
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(300))
+                                            .await;
+                                    }
+
+                                    // For libcamera, extract node ID from PipeWire path
+                                    // e.g., "pipewire-serial-60" -> "60"
+                                    let camera_name = device
+                                        .path
+                                        .strip_prefix("pipewire-serial-")
+                                        .unwrap_or(&device.path);
+
+                                    // For single-stream cameras the viewfinder IS the
+                                    // capture stream, so use full resolution.  Only cap
+                                    // the preview for multistream cameras that have a
+                                    // separate raw/still stream.
+                                    let preview_format = if device.supports_multistream
+                                        && (format.width > 1920 || format.height > 1080)
+                                    {
+                                        // Multistream: scale capture format to fit within 1080p,
+                                        // preserving exact aspect ratio so viewfinder FOV matches capture
+                                        let scale_w = 1920.0 / format.width as f64;
+                                        let scale_h = 1080.0 / format.height as f64;
+                                        let scale = scale_w.min(scale_h);
+                                        let w = ((format.width as f64 * scale) as u32) & !1;
+                                        let h = ((format.height as f64 * scale) as u32) & !1;
+                                        CameraFormat {
+                                            width: w,
+                                            height: h,
+                                            framerate: format.framerate,
+                                            hardware_accelerated: format.hardware_accelerated,
+                                            pixel_format: format.pixel_format.clone(),
+                                        }
+                                    } else {
+                                        // Single-stream: use full resolution
+                                        format.clone()
+                                    };
+
+                                    let video_mode = camera_mode == CameraMode::Video;
+
+                                    // Use the shared recording sender from the manager,
+                                    // or a dummy Arc if no manager is available.
+                                    let rec_sender = recording_sender
+                                        .clone()
+                                        .unwrap_or_else(|| Arc::new(Mutex::new(None)));
+
+                                    match NativeLibcameraPipeline::new(
+                                        camera_name,
+                                        &preview_format,
+                                        device.supports_multistream,
+                                        video_mode,
+                                        crate::backends::camera::libcamera::PipelineSharedState {
+                                            frame_sender: sender,
+                                            still_requested: Arc::clone(&still_capture_requested),
+                                            still_frame: Arc::clone(&latest_still_frame),
+                                            recording_sender: rec_sender,
+                                        },
+                                    ) {
+                                        Ok(pipeline) => {
+                                            info!("Native libcamera pipeline started");
+                                            Some(ActivePipeline::Libcamera(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to create libcamera pipeline");
+                                            None
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    error!(error = %e, "Failed to initialize pipeline");
-                                    None
+                                CameraBackendType::PipeWire => {
+                                    info!(backend = "PipeWire", "Creating PipeWire pipeline");
+                                    match PipeWirePipeline::new(&device, &format, sender) {
+                                        Ok(pipeline) => {
+                                            info!("PipeWire pipeline created successfully");
+                                            Some(ActivePipeline::PipeWire(pipeline))
+                                        }
+                                        Err(e) => {
+                                            error!(error = %e, "Failed to initialize PipeWire pipeline");
+                                            None
+                                        }
+                                    }
                                 }
                             };
+
+                            is_first_pipeline = false;
 
                             if let Some(pipeline) = pipeline_opt {
                                 info!("Waiting for frames from pipeline...");
@@ -931,6 +1111,51 @@ impl cosmic::Application for AppModel {
             }),
         );
 
+        // Audio device hotplug monitoring subscription
+        let current_audio_devices = self.available_audio_devices.clone();
+        let audio_hotplug_sub = Subscription::run_with_id(
+            "audio_hotplug",
+            cosmic::iced::stream::channel(10, move |mut output| async move {
+                info!("Audio device hotplug monitoring started");
+
+                let mut last_devices = current_audio_devices;
+
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+                    let new_devices = crate::backends::audio::enumerate_audio_devices();
+
+                    let devices_changed = last_devices.len() != new_devices.len()
+                        || !last_devices.iter().all(|d| {
+                            new_devices
+                                .iter()
+                                .any(|nd| nd.serial == d.serial && nd.name == d.name)
+                        });
+
+                    if devices_changed {
+                        info!(
+                            old_count = last_devices.len(),
+                            new_count = new_devices.len(),
+                            "Audio device list changed - hotplug event detected"
+                        );
+
+                        last_devices = new_devices.clone();
+
+                        if output
+                            .send(Message::AudioListChanged(new_devices))
+                            .await
+                            .is_err()
+                        {
+                            warn!("Failed to send audio list changed message - channel closed");
+                            break;
+                        }
+                    }
+                }
+
+                info!("Audio device hotplug monitoring stopped");
+            }),
+        );
+
         // QR detection subscription (samples frames at 1 FPS)
         let should_detect_qr = self.qr_detection_enabled
             && self
@@ -1076,6 +1301,7 @@ impl cosmic::Application for AppModel {
             config_sub,
             camera_sub,
             hotplug_sub,
+            audio_hotplug_sub,
             qr_detection_sub,
             file_source_preview_sub,
             timer_animation_sub,

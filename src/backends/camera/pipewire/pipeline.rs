@@ -53,9 +53,8 @@ pub fn get_output_format() -> Option<String> {
 /// Handles preview streaming with hardware-accelerated decoding.
 pub struct PipeWirePipeline {
     pipeline: gstreamer::Pipeline,
-    _appsink: AppSink,
+    appsink: AppSink,
     pub decoder: String,
-    recording: bool,
 }
 
 impl PipeWirePipeline {
@@ -285,9 +284,11 @@ impl PipeWirePipeline {
                         gstreamer_video::VideoFormat::Gray8 => PixelFormat::Gray8,
                         // RGBA variants
                         gstreamer_video::VideoFormat::Rgba | gstreamer_video::VideoFormat::Rgbx |
-                        gstreamer_video::VideoFormat::Bgra | gstreamer_video::VideoFormat::Bgrx |
-                        gstreamer_video::VideoFormat::Argb | gstreamer_video::VideoFormat::Abgr |
-                        gstreamer_video::VideoFormat::Xrgb | gstreamer_video::VideoFormat::Xbgr => PixelFormat::RGBA,
+                        gstreamer_video::VideoFormat::Argb | gstreamer_video::VideoFormat::Xrgb => PixelFormat::RGBA,
+                        // ABGR variants
+                        gstreamer_video::VideoFormat::Abgr | gstreamer_video::VideoFormat::Xbgr => PixelFormat::ABGR,
+                        // BGRA variants
+                        gstreamer_video::VideoFormat::Bgra | gstreamer_video::VideoFormat::Bgrx => PixelFormat::BGRA,
                         // RGB24 variants (should have been converted to RGBA by pipeline)
                         gstreamer_video::VideoFormat::Rgb | gstreamer_video::VideoFormat::Bgr => PixelFormat::RGB24,
                         _ => {
@@ -362,6 +363,8 @@ impl PipeWirePipeline {
                                 v_offset: 0,
                                 v_size: 0,
                                 v_stride: 0,
+                                uv_width: width / 2,
+                                uv_height: height / 2,
                             };
 
                             (FrameData::from_mapped_buffer(mapped), Some(yuv), y_stride)
@@ -388,6 +391,8 @@ impl PipeWirePipeline {
                                 v_offset,
                                 v_size,
                                 v_stride,
+                                uv_width: width / 2,
+                                uv_height: uv_height as u32,
                             };
 
                             (FrameData::from_mapped_buffer(mapped), Some(yuv), y_stride)
@@ -407,8 +412,17 @@ impl PipeWirePipeline {
                             let stride = strides[0] as u32;
                             (FrameData::from_mapped_buffer(mapped), None, stride)
                         }
-                        PixelFormat::RGBA => {
-                            // RGBA: Single plane, direct passthrough
+                        PixelFormat::RGBA | PixelFormat::ABGR | PixelFormat::BGRA => {
+                            // RGBA/ABGR/BGRA: Single plane, 4 bytes per pixel
+                            // ABGR/BGRA will be swizzled by GPU shader
+                            let stride = strides[0] as u32;
+                            (FrameData::from_mapped_buffer(mapped), None, stride)
+                        }
+                        PixelFormat::BayerRGGB
+                        | PixelFormat::BayerBGGR
+                        | PixelFormat::BayerGRBG
+                        | PixelFormat::BayerGBRG => {
+                            // Bayer formats: Raw sensor data, single plane, 1 byte per pixel
                             let stride = strides[0] as u32;
                             (FrameData::from_mapped_buffer(mapped), None, stride)
                         }
@@ -424,6 +438,8 @@ impl PipeWirePipeline {
                         stride,
                         yuv_planes,
                         captured_at: frame_start,
+                        sensor_timestamp_ns: None,
+                        libcamera_metadata: None,
                     };
 
                     // Capture size before send (frame is moved)
@@ -490,9 +506,8 @@ impl PipeWirePipeline {
 
         Ok(Self {
             pipeline,
-            _appsink: appsink,
+            appsink,
             decoder: decoder_name,
-            recording: false,
         })
     }
 
@@ -508,7 +523,7 @@ impl PipeWirePipeline {
 
         // Clear appsink callbacks to release all references
         debug!("Clearing appsink callbacks");
-        self._appsink
+        self.appsink
             .set_callbacks(gstreamer_app::AppSinkCallbacks::builder().build());
 
         // Set pipeline to NULL state to release camera
@@ -546,33 +561,27 @@ impl PipeWirePipeline {
     }
 
     /// Start recording video
+    ///
+    /// Note: This method exists for trait compliance but is NOT used by the app.
+    /// The app uses VideoRecorder (src/pipelines/video/recorder.rs) directly,
+    /// which creates its own pipewiresrc. PipeWire supports multi-consumer
+    /// access so both preview and recording can access the same camera.
     pub fn start_recording(&mut self, _output_path: PathBuf) -> BackendResult<()> {
-        if self.recording {
-            return Err(BackendError::RecordingInProgress);
-        }
-
-        // TODO: Implement recording for PipeWire
-        // For now, return error
         Err(BackendError::Other(
-            "Video recording not yet implemented for PipeWire backend".to_string(),
+            "Use VideoRecorder directly for recording (this method is unused)".to_string(),
         ))
     }
 
-    /// Stop recording video
+    /// Stop recording video (see start_recording note)
     pub fn stop_recording(&mut self) -> BackendResult<PathBuf> {
-        if !self.recording {
-            return Err(BackendError::NoRecordingInProgress);
-        }
-
-        // TODO: Implement recording stop
         Err(BackendError::Other(
-            "Video recording not yet implemented for PipeWire backend".to_string(),
+            "Use VideoRecorder directly for recording (this method is unused)".to_string(),
         ))
     }
 
-    /// Check if currently recording
+    /// Check if currently recording (always false - see start_recording note)
     pub fn is_recording(&self) -> bool {
-        self.recording
+        false
     }
 
     /// Get decoder name
@@ -584,11 +593,13 @@ impl PipeWirePipeline {
 impl Drop for PipeWirePipeline {
     fn drop(&mut self) {
         info!("Dropping PipeWire pipeline - explicitly stopping");
-        // Clear callbacks first
-        self._appsink
+        // Clear callbacks first to prevent any more frame processing
+        self.appsink
             .set_callbacks(gstreamer_app::AppSinkCallbacks::builder().build());
-        // Explicitly set pipeline to Null to release device immediately
+        // Explicitly set pipeline to Null to release device and buffers
         let _ = self.pipeline.set_state(gstreamer::State::Null);
-        info!("PipeWire pipeline stopped");
+        // Wait for state change to complete so GStreamer releases all resources
+        let _ = self.pipeline.state(gstreamer::ClockTime::from_seconds(2));
+        info!("PipeWire pipeline stopped and resources released");
     }
 }

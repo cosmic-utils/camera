@@ -181,6 +181,11 @@ pub mod ui {
     /// Used for semi-transparent backgrounds on buttons and panels overlaid on the camera preview.
     pub const OVERLAY_BACKGROUND_ALPHA: f32 = 0.6;
 
+    /// Popup dialog background opacity (0.0 = transparent, 1.0 = opaque)
+    ///
+    /// Used for near-opaque backgrounds on centered popup dialogs (privacy warning, flash error).
+    pub const POPUP_BACKGROUND_ALPHA: f32 = 0.95;
+
     /// Format picker border radius
     pub const PICKER_BORDER_RADIUS: f32 = 8.0;
 

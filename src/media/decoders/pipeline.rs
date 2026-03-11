@@ -116,10 +116,9 @@ fn try_create_pipewire_pipeline(
     caps_filter: &str,
     pixel_format: Option<&str>,
 ) -> Result<gstreamer::Pipeline, Box<dyn std::error::Error>> {
-    // Check if PipeWire source is available
-    gstreamer::ElementFactory::make("pipewiresrc")
-        .build()
-        .map_err(|e| format!("pipewiresrc not available: {}", e))?;
+    // Check if PipeWire source is available (factory check only, no element instantiation)
+    gstreamer::ElementFactory::find("pipewiresrc")
+        .ok_or_else(|| "pipewiresrc not available: factory not found".to_string())?;
 
     info!("✓ PipeWire available - creating camera pipeline");
 
@@ -511,6 +510,8 @@ fn try_launch_pipeline_with_bus_errors(
                         );
                         check_bus_for_errors(&pipeline);
                         let _ = pipeline.set_state(gstreamer::State::Null);
+                        // Wait for Null state to complete so GStreamer releases all buffers
+                        let _ = pipeline.state(gstreamer::ClockTime::from_seconds(2));
                         Err(format!(
                             "Pipeline failed to start (state: {:?}, result: {:?})",
                             state, result
@@ -523,6 +524,8 @@ fn try_launch_pipeline_with_bus_errors(
                     // Check bus for the actual error reason
                     check_bus_for_errors(&pipeline);
                     let _ = pipeline.set_state(gstreamer::State::Null);
+                    // Wait for Null state to complete so GStreamer releases all buffers
+                    let _ = pipeline.state(gstreamer::ClockTime::from_seconds(2));
                     Err(format!("Failed to set pipeline to PLAYING: {}", e).into())
                 }
             }

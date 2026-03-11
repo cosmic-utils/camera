@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Codec utilities - some methods for future format selection UI
-#![allow(dead_code)]
 
 //! Codec metadata and utilities for video pixel formats
 
@@ -101,16 +99,30 @@ impl Codec {
             "BGR" | "BGR3" | "BGR24" => Self::BGR24,
             "BGRA" | "BGRX" | "BGR4" | "BGR32" => Self::BGR32,
             // GStreamer ARGB/XRGB variants (alpha/padding in different positions)
-            "ARGB" | "XRGB" | "ARGB32" => Self::RGB32,
-            "ABGR" | "XBGR" | "ABGR32" => Self::BGR32,
+            "ARGB" | "XRGB" | "ARGB32" | "ARGB8888" => Self::RGB32,
+            "ABGR" | "XBGR" | "ABGR32" | "ABGR8888" => Self::BGR32,
 
-            // Bayer patterns (V4L2 FourCC codes)
+            // Bayer patterns (V4L2 FourCC codes + libcamera naming)
             "GRBG" | "BA81" | "SGRBG8" => Self::BayerGRBG,
             "RGGB" | "SRGGB8" => Self::BayerRGGB,
             "BGGR" | "BA82" | "SBGGR8" => Self::BayerBGGR,
             "GBRG" | "SGBRG8" => Self::BayerGBRG,
             // Generic "BAYER" defaults to GRBG (most common, Kinect uses this)
             "BAYER" => Self::BayerGRBG,
+            // libcamera Bayer format names (e.g., "BayerRGGB10LE" from caps enumeration)
+            s if s.starts_with("BAYER") => {
+                if s.contains("GRBG") {
+                    Self::BayerGRBG
+                } else if s.contains("RGGB") {
+                    Self::BayerRGGB
+                } else if s.contains("BGGR") {
+                    Self::BayerBGGR
+                } else if s.contains("GBRG") {
+                    Self::BayerGBRG
+                } else {
+                    Self::BayerGRBG
+                }
+            }
 
             // Depth/IR/Grayscale
             "Y10B" => Self::Y10B,

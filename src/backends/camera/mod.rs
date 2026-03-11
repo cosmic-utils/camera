@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Camera backend with trait-based abstraction for future multi-backend support
-#![allow(dead_code)]
 
 //! Camera backend abstraction
 //!
@@ -23,16 +22,19 @@
 //! │  CameraBackend Trait│  ← Common interface
 //! └──────────┬──────────┘
 //!            │
-//!            ▼
-//!       ┌────────┐
-//!       │PipeWire│  ← Concrete implementation
-//!       └────────┘
+//!    ┌───────┴───────┐
+//!    ▼               ▼
+//! ┌────────┐   ┌──────────┐
+//! │PipeWire│   │libcamera │  ← Native libcamera-rs bindings
+//! └────────┘   └──────────┘
 //! ```
 
+pub mod libcamera;
 pub mod manager;
 pub mod pipewire;
 pub mod types;
 pub mod v4l2_controls;
+pub mod v4l2_utils;
 
 pub use manager::CameraBackendManager;
 pub use types::*;
@@ -85,12 +87,6 @@ pub trait CameraBackend: Send + Sync {
 
     /// Check if the backend is currently initialized and operational
     fn is_initialized(&self) -> bool;
-
-    /// Attempt to recover from a crash or error state
-    ///
-    /// This tries to reinitialize the backend with the last known configuration.
-    /// Used by the manager for automatic crash recovery.
-    fn recover(&mut self) -> BackendResult<()>;
 
     // ===== Operations =====
 
@@ -185,12 +181,41 @@ pub trait CameraBackend: Send + Sync {
     fn current_format(&self) -> Option<&CameraFormat>;
 }
 
-/// Get a concrete backend instance (PipeWire only)
-pub fn get_backend() -> Box<dyn CameraBackend> {
-    Box::new(pipewire::PipeWireBackend::new())
+/// Get a concrete backend instance for the specified type
+pub fn get_backend_for_type(backend_type: CameraBackendType) -> Box<dyn CameraBackend> {
+    match backend_type {
+        CameraBackendType::PipeWire => Box::new(pipewire::PipeWireBackend::new()),
+        CameraBackendType::Libcamera => Box::new(libcamera::LibcameraBackend::new()),
+    }
 }
 
-/// Get the default backend (PipeWire)
+/// Get the default backend type
+///
+/// Returns Libcamera if libcamera detects cameras (for multi-stream capture),
+/// otherwise falls back to PipeWire.
+///
+/// The result is cached because libcamera only allows one CameraManager at a time
+/// (calling CameraManager::new() twice aborts the process).
 pub fn get_default_backend() -> CameraBackendType {
-    CameraBackendType::PipeWire
+    static DETECTED: std::sync::OnceLock<CameraBackendType> = std::sync::OnceLock::new();
+
+    *DETECTED.get_or_init(|| {
+        let libcamera_available = ::libcamera::camera_manager::CameraManager::new()
+            .map(|mgr| !mgr.cameras().is_empty())
+            .unwrap_or(false);
+
+        let backend = if libcamera_available {
+            CameraBackendType::Libcamera
+        } else {
+            CameraBackendType::PipeWire
+        };
+
+        tracing::info!(
+            libcamera = libcamera_available,
+            backend = %backend,
+            "Auto-detected default backend"
+        );
+
+        backend
+    })
 }

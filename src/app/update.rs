@@ -113,6 +113,8 @@ impl AppModel {
             Message::SetBacklightCompensation(value) => {
                 self.handle_set_backlight_compensation(value)
             }
+            Message::SetFocusAbsolute(value) => self.handle_set_focus_absolute(value),
+            Message::ToggleFocusAuto => self.handle_toggle_focus_auto(),
             Message::ResetExposureSettings => self.handle_reset_exposure_settings(),
             Message::ExposureModeSelected(entity) => self.handle_exposure_mode_selected(entity),
 
@@ -136,10 +138,13 @@ impl AppModel {
             Message::CamerasInitialized(cameras, index, formats) => {
                 self.handle_cameras_initialized(cameras, index, formats)
             }
+            Message::BrokenEncodersDetected(broken) => self.handle_broken_encoders_detected(broken),
             Message::CameraListChanged(cameras) => self.handle_camera_list_changed(cameras),
+            Message::AudioListChanged(devices) => self.handle_audio_list_changed(devices),
             Message::StartCameraTransition => self.handle_start_camera_transition(),
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
+            Message::SelectBackend(index) => self.handle_select_backend(index),
             Message::ToggleVirtualCameraEnabled => self.handle_toggle_virtual_camera_enabled(),
 
             // ===== Format Selection =====
@@ -156,6 +161,7 @@ impl AppModel {
             // ===== Capture Operations =====
             Message::Capture => self.handle_capture(),
             Message::ToggleFlash => self.handle_toggle_flash(),
+            Message::DismissFlashError => self.handle_dismiss_flash_error(),
             Message::ToggleBurstMode => self.handle_toggle_burst_mode(),
             Message::SetBurstModeFrameCount(index) => self.handle_set_burst_mode_frame_count(index),
             Message::BurstModeProgress(progress) => self.handle_burst_mode_progress(progress),
@@ -165,6 +171,7 @@ impl AppModel {
             Message::ResetBurstModeState => {
                 self.burst_mode.reset();
                 // Ensure flash is turned off when burst mode resets (safety measure)
+                self.turn_off_flash_hardware();
                 self.flash_active = false;
                 debug!("Burst mode state reset");
                 Task::none()
@@ -179,6 +186,7 @@ impl AppModel {
             Message::ZoomIn => self.handle_zoom_in(),
             Message::ZoomOut => self.handle_zoom_out(),
             Message::ResetZoom => self.handle_reset_zoom(),
+            Message::PinchZoom(level) => self.handle_pinch_zoom(level),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),
@@ -231,6 +239,7 @@ impl AppModel {
             Message::ToggleRecordAudio => self.handle_toggle_record_audio(),
             Message::SelectAudioEncoder(index) => self.handle_select_audio_encoder(index),
             Message::ToggleSaveBurstRaw => self.handle_toggle_save_burst_raw(),
+            Message::ResetAllSettings => self.handle_reset_all_settings(),
 
             // ===== System & Recovery =====
             Message::CameraRecoveryStarted {
@@ -273,10 +282,6 @@ impl AppModel {
             Message::CopyPipelineString => self.handle_copy_pipeline_string(),
 
             Message::Noop => Task::none(),
-
-            Message::Surface(action) => {
-                cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(action)))
-            }
         }
     }
 }

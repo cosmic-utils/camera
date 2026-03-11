@@ -404,6 +404,72 @@ impl AppModel {
         self.set_v4l2_control(v4l2_controls::V4L2_CID_BACKLIGHT_COMPENSATION, value)
     }
 
+    pub(crate) fn handle_set_focus_absolute(
+        &mut self,
+        value: i32,
+    ) -> Task<cosmic::Action<Message>> {
+        if let Some(ref mut settings) = self.exposure_settings {
+            settings.focus_absolute = Some(value);
+        }
+
+        let focus_path = self
+            .get_focus_device_path()
+            .or_else(|| self.get_v4l2_device_path());
+        let Some(focus_path) = focus_path else {
+            return Task::none();
+        };
+
+        debug!(focus = value, path = %focus_path, "Setting focus absolute");
+
+        Task::perform(
+            async move {
+                v4l2_controls::set_control(
+                    &focus_path,
+                    v4l2_controls::V4L2_CID_FOCUS_ABSOLUTE,
+                    value,
+                )
+            },
+            |result| {
+                cosmic::Action::App(match result {
+                    Ok(_) => Message::ExposureControlApplied,
+                    Err(e) => Message::ExposureControlFailed(e),
+                })
+            },
+        )
+    }
+
+    pub(crate) fn handle_toggle_focus_auto(&mut self) -> Task<cosmic::Action<Message>> {
+        let new_value = if let Some(ref mut settings) = self.exposure_settings {
+            let current = settings.focus_auto.unwrap_or(false);
+            settings.focus_auto = Some(!current);
+            !current
+        } else {
+            true
+        };
+
+        let focus_path = self
+            .get_focus_device_path()
+            .or_else(|| self.get_v4l2_device_path());
+        let Some(focus_path) = focus_path else {
+            return Task::none();
+        };
+
+        let value = if new_value { 1 } else { 0 };
+        debug!(enabled = new_value, path = %focus_path, "Setting focus auto");
+
+        Task::perform(
+            async move {
+                v4l2_controls::set_control(&focus_path, v4l2_controls::V4L2_CID_FOCUS_AUTO, value)
+            },
+            |result| {
+                cosmic::Action::App(match result {
+                    Ok(_) => Message::ExposureControlApplied,
+                    Err(e) => Message::ExposureControlFailed(e),
+                })
+            },
+        )
+    }
+
     /// Reset all exposure settings to camera defaults (preserving current mode)
     pub(crate) fn handle_reset_exposure_settings(&mut self) -> Task<cosmic::Action<Message>> {
         let Some(device_path) = self.get_v4l2_device_path() else {
@@ -546,16 +612,30 @@ impl AppModel {
         )
     }
 
+    /// Get the lens actuator device path for the current camera
+    pub(crate) fn get_focus_device_path(&self) -> Option<String> {
+        self.available_cameras
+            .get(self.current_camera_index)
+            .and_then(|cam| cam.lens_actuator_path.clone())
+    }
+
     /// Create a task to query exposure controls for the current camera
     /// This resets exposure settings to defaults (aperture priority mode, default backlight)
     pub(crate) fn query_exposure_controls_task(&self) -> Task<cosmic::Action<Message>> {
         if let Some(device_path) = self.get_v4l2_device_path() {
             let path = device_path.clone();
+            let focus_path = self.get_focus_device_path();
             Task::perform(
                 async move {
-                    let controls = crate::app::exposure_picker::query_exposure_controls(&path);
-                    let settings =
-                        crate::app::exposure_picker::get_exposure_settings(&path, &controls);
+                    let controls = crate::app::exposure_picker::query_exposure_controls(
+                        &path,
+                        focus_path.as_deref(),
+                    );
+                    let settings = crate::app::exposure_picker::get_exposure_settings(
+                        &path,
+                        &controls,
+                        focus_path.as_deref(),
+                    );
                     let color_settings =
                         crate::app::exposure_picker::get_color_settings(&path, &controls);
                     (controls, settings, color_settings)

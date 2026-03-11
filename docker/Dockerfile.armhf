@@ -14,20 +14,31 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
 
 # Install base tools (before adding armhf architecture)
 # Note: libglib2.0-dev-bin must be installed here (amd64) to prevent
-# conflicts when installing libglib2.0-dev:armhf later
+# conflicts when installing libglib2.0-dev:armhf later.
+# meson/ninja/python3 modules are needed for the vendored libcamera build.
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
+    cmake \
+    nasm \
     libglib2.0-dev-bin \
+    meson \
+    ninja-build \
+    python3-jinja2 \
+    python3-yaml \
+    python3-ply \
+    libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Add armhf architecture and install cross-compilation toolchain and dependencies
 # Combined into single RUN to ensure apt-get update is always fresh
+# libyaml-dev:armhf is needed by the vendored libcamera meson build
 RUN dpkg --add-architecture armhf && \
     apt-get update && apt-get install -y \
     gcc-arm-linux-gnueabihf \
     g++-arm-linux-gnueabihf \
+    libyaml-dev:armhf \
     libglib2.0-dev:armhf \
     libgstreamer1.0-dev:armhf \
     libgstreamer-plugins-base1.0-dev:armhf \
@@ -40,6 +51,8 @@ RUN dpkg --add-architecture armhf && \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up environment for cross-compilation
+# The vendored libcamera build generates a meson cross-file automatically
+# from the CC/CXX env vars below.
 ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
     CC_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc \
     CXX_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++ \

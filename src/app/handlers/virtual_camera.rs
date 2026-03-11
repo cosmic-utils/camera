@@ -12,6 +12,19 @@ use cosmic::Task;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+/// Parameters for video file streaming to virtual camera
+struct VideoStreamParams<'a> {
+    initial_filter: FilterType,
+    filter_rx: &'a mut tokio::sync::watch::Receiver<FilterType>,
+    stop_rx: tokio::sync::oneshot::Receiver<()>,
+    preview_tx:
+        tokio::sync::mpsc::UnboundedSender<Arc<crate::backends::camera::types::CameraFrame>>,
+    progress_tx: tokio::sync::mpsc::UnboundedSender<(f64, f64, f64)>,
+    control_rx: tokio::sync::mpsc::UnboundedReceiver<VideoPlaybackCommand>,
+    initial_seek_position: f64,
+    initial_paused: bool,
+}
+
 impl AppModel {
     // =========================================================================
     // Virtual Camera Handlers
@@ -70,7 +83,7 @@ impl AppModel {
         let (stop_tx, _stop_rx) = tokio::sync::oneshot::channel();
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel();
         let (filter_tx, mut filter_rx) = tokio::sync::watch::channel(filter_type);
-        self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx);
+        self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx, false);
 
         // Start the virtual camera streaming on a DEDICATED THREAD
         // This is critical: CPU filtering is blocking and must NOT run on the async executor
@@ -202,7 +215,7 @@ impl AppModel {
             tokio::sync::mpsc::unbounded_channel::<VideoPlaybackCommand>();
 
         // Use start_file_source to mark this as file source streaming
-        self.virtual_camera = VirtualCameraState::start_file_source(stop_tx, frame_tx, filter_tx);
+        self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx, true);
 
         // For video files, keep the current progress (with stored seek position) until
         // the streaming thread sends actual progress updates. This prevents the slider
@@ -238,14 +251,16 @@ impl AppModel {
                 ),
                 FileSource::Video(path) => Self::stream_video_to_virtual_camera(
                     &path,
-                    filter_type,
-                    &mut filter_rx,
-                    stop_rx,
-                    preview_tx,
-                    progress_tx,
-                    control_rx,
-                    initial_seek_position,
-                    initial_paused,
+                    VideoStreamParams {
+                        initial_filter: filter_type,
+                        filter_rx: &mut filter_rx,
+                        stop_rx,
+                        preview_tx,
+                        progress_tx,
+                        control_rx,
+                        initial_seek_position,
+                        initial_paused,
+                    },
                 ),
             };
 
@@ -360,20 +375,20 @@ impl AppModel {
     }
 
     /// Stream a video file to the virtual camera with looping
-    #[allow(clippy::too_many_arguments)]
     fn stream_video_to_virtual_camera(
         path: &std::path::Path,
-        initial_filter: FilterType,
-        filter_rx: &mut tokio::sync::watch::Receiver<FilterType>,
-        mut stop_rx: tokio::sync::oneshot::Receiver<()>,
-        preview_tx: tokio::sync::mpsc::UnboundedSender<
-            Arc<crate::backends::camera::types::CameraFrame>,
-        >,
-        progress_tx: tokio::sync::mpsc::UnboundedSender<(f64, f64, f64)>,
-        control_rx: tokio::sync::mpsc::UnboundedReceiver<VideoPlaybackCommand>,
-        initial_seek_position: f64,
-        initial_paused: bool,
+        params: VideoStreamParams<'_>,
     ) -> Result<(), String> {
+        let VideoStreamParams {
+            initial_filter,
+            filter_rx,
+            mut stop_rx,
+            preview_tx,
+            progress_tx,
+            control_rx,
+            initial_seek_position,
+            initial_paused,
+        } = params;
         use crate::backends::virtual_camera::{VideoDecoder, VirtualCameraManager};
 
         // Create video decoder

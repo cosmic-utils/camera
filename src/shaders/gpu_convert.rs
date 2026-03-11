@@ -27,6 +27,23 @@ struct ConvertParams {
     _pad1: u32,
 }
 
+/// Debayer conversion parameters (80 bytes, std140-compatible)
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct DebayerParams {
+    width: u32,
+    height: u32,
+    pattern: u32,        // 0=RGGB, 1=BGGR, 2=GRBG, 3=GBRG
+    use_isp_colour: u32, // 1 = apply gains+CCM, 0 = raw output
+    colour_gain_r: f32,
+    colour_gain_b: f32,
+    black_level: f32,
+    _pad0: u32,
+    ccm_row0: [f32; 4], // xyz used, w=pad
+    ccm_row1: [f32; 4], // xyz used, w=pad
+    ccm_row2: [f32; 4], // xyz used, w=pad
+}
+
 /// Input frame data for conversion
 pub struct GpuFrameInput<'a> {
     pub width: u32,
@@ -41,6 +58,47 @@ pub struct GpuFrameInput<'a> {
     /// V plane data (I420 only)
     pub v_data: Option<&'a [u8]>,
     pub v_stride: u32,
+    /// ISP white balance gains [R, B] (Bayer only)
+    pub colour_gains: Option<[f32; 2]>,
+    /// 3x3 colour correction matrix (row-major, Bayer only)
+    pub colour_correction_matrix: Option<[[f32; 3]; 3]>,
+    /// Sensor black level normalized to 0..1 (Bayer only)
+    pub black_level: Option<f32>,
+}
+
+/// Binding type specification for pipeline creation
+#[derive(Clone, Copy)]
+enum BindingSpec {
+    Texture,
+    StorageTexture,
+    Uniform,
+}
+
+impl BindingSpec {
+    fn to_layout_entry(self, binding: u32) -> wgpu::BindGroupLayoutEntry {
+        wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: match self {
+                BindingSpec::Texture => wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                BindingSpec::StorageTexture => wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                BindingSpec::Uniform => wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+            },
+            count: None,
+        }
+    }
 }
 
 /// Format-specific pipeline resources
@@ -82,10 +140,12 @@ impl GpuConvertPipeline {
             "GPU device created for format conversion"
         );
 
-        // Create uniform buffer (shared across all pipelines)
+        // Create uniform buffer (shared across all pipelines, sized for largest params struct)
+        let uniform_size =
+            std::mem::size_of::<ConvertParams>().max(std::mem::size_of::<DebayerParams>());
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("convert_uniform_buffer"),
-            size: std::mem::size_of::<ConvertParams>() as u64,
+            size: uniform_size as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -120,343 +180,114 @@ impl GpuConvertPipeline {
         debug!(?format, "Creating specialized pipeline");
 
         match format {
-            PixelFormat::NV12 => self.create_nv12_pipeline(),
-            PixelFormat::NV21 => self.create_nv21_pipeline(),
-            PixelFormat::I420 => self.create_i420_pipeline(),
-            PixelFormat::YUYV => {
-                self.create_packed_pipeline(include_str!("convert_yuyv.wgsl"), "yuyv")
+            PixelFormat::NV12 => self.create_pipeline(
+                include_str!("convert_nv12.wgsl"),
+                "nv12",
+                &Self::BIND_LAYOUT_TWO_TEXTURE,
+            ),
+            PixelFormat::NV21 => self.create_pipeline(
+                include_str!("convert_nv21.wgsl"),
+                "nv21",
+                &Self::BIND_LAYOUT_TWO_TEXTURE,
+            ),
+            PixelFormat::I420 => self.create_pipeline(
+                include_str!("convert_i420.wgsl"),
+                "i420",
+                &Self::BIND_LAYOUT_THREE_TEXTURE,
+            ),
+            PixelFormat::YUYV => self.create_pipeline(
+                include_str!("convert_yuyv.wgsl"),
+                "yuyv",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
+            PixelFormat::UYVY => self.create_pipeline(
+                include_str!("convert_uyvy.wgsl"),
+                "uyvy",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
+            PixelFormat::YVYU => self.create_pipeline(
+                include_str!("convert_yvyu.wgsl"),
+                "yvyu",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
+            PixelFormat::VYUY => self.create_pipeline(
+                include_str!("convert_vyuy.wgsl"),
+                "vyuy",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
+            PixelFormat::Gray8 => self.create_pipeline(
+                include_str!("convert_gray8.wgsl"),
+                "gray8",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
+            PixelFormat::RGBA | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
+                // Fallback for formats that don't need GPU conversion
+                self.create_pipeline(
+                    include_str!("convert_nv12.wgsl"),
+                    "fallback",
+                    &Self::BIND_LAYOUT_TWO_TEXTURE,
+                )
             }
-            PixelFormat::UYVY => {
-                self.create_packed_pipeline(include_str!("convert_uyvy.wgsl"), "uyvy")
-            }
-            PixelFormat::YVYU => {
-                self.create_packed_pipeline(include_str!("convert_yvyu.wgsl"), "yvyu")
-            }
-            PixelFormat::VYUY => {
-                self.create_packed_pipeline(include_str!("convert_vyuy.wgsl"), "vyuy")
-            }
-            PixelFormat::Gray8 => self.create_gray8_pipeline(),
-            PixelFormat::RGBA | PixelFormat::RGB24 => {
-                // RGBA doesn't need conversion, but create a dummy pipeline for API consistency
-                self.create_nv12_pipeline() // Fallback, shouldn't be used
-            }
+            PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => self.create_pipeline(
+                include_str!("debayer.wgsl"),
+                "debayer",
+                &Self::BIND_LAYOUT_ONE_TEXTURE,
+            ),
         }
     }
 
-    /// Create NV12 pipeline (Y + interleaved UV)
-    fn create_nv12_pipeline(&self) -> FormatPipeline {
+    // Bind group layout specifications (binding indices, not full entries)
+    // One texture + output + params (packed formats, gray8, debayer)
+    const BIND_LAYOUT_ONE_TEXTURE: [(u32, BindingSpec); 3] = [
+        (0, BindingSpec::Texture),
+        (1, BindingSpec::StorageTexture),
+        (2, BindingSpec::Uniform),
+    ];
+
+    // Two textures + output + params (NV12, NV21)
+    const BIND_LAYOUT_TWO_TEXTURE: [(u32, BindingSpec); 4] = [
+        (0, BindingSpec::Texture),
+        (1, BindingSpec::Texture),
+        (2, BindingSpec::StorageTexture),
+        (3, BindingSpec::Uniform),
+    ];
+
+    // Three textures + output + params (I420)
+    const BIND_LAYOUT_THREE_TEXTURE: [(u32, BindingSpec); 5] = [
+        (0, BindingSpec::Texture),
+        (1, BindingSpec::Texture),
+        (2, BindingSpec::Texture),
+        (3, BindingSpec::StorageTexture),
+        (4, BindingSpec::Uniform),
+    ];
+
+    /// Create a compute pipeline with the given shader and bind group layout spec
+    fn create_pipeline<const N: usize>(
+        &self,
+        shader_source: &str,
+        name: &str,
+        layout_spec: &[(u32, BindingSpec); N],
+    ) -> FormatPipeline {
         let shader = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("convert_nv12_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("convert_nv12.wgsl").into()),
-            });
-
-        let bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("nv12_bind_group_layout"),
-                    entries: &[
-                        // tex_y: Y plane (R8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // tex_uv: UV plane (RG8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // output: RGBA storage texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::StorageTexture {
-                                access: wgpu::StorageTextureAccess::WriteOnly,
-                                format: wgpu::TextureFormat::Rgba8Unorm,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        // params: uniform buffer
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("nv12_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("nv12_pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "main",
-                compilation_options: Default::default(),
-                cache: None,
-            });
-
-        FormatPipeline {
-            pipeline,
-            bind_group_layout,
-        }
-    }
-
-    /// Create NV21 pipeline (Y + interleaved VU)
-    fn create_nv21_pipeline(&self) -> FormatPipeline {
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("convert_nv21_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("convert_nv21.wgsl").into()),
-            });
-
-        // Same layout as NV12
-        let bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("nv21_bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::StorageTexture {
-                                access: wgpu::StorageTextureAccess::WriteOnly,
-                                format: wgpu::TextureFormat::Rgba8Unorm,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("nv21_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("nv21_pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "main",
-                compilation_options: Default::default(),
-                cache: None,
-            });
-
-        FormatPipeline {
-            pipeline,
-            bind_group_layout,
-        }
-    }
-
-    /// Create I420 pipeline (Y + U + V separate planes)
-    fn create_i420_pipeline(&self) -> FormatPipeline {
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("convert_i420_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("convert_i420.wgsl").into()),
-            });
-
-        let bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("i420_bind_group_layout"),
-                    entries: &[
-                        // tex_y: Y plane (R8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // tex_u: U plane (R8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // tex_v: V plane (R8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // output: RGBA storage texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 3,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::StorageTexture {
-                                access: wgpu::StorageTextureAccess::WriteOnly,
-                                format: wgpu::TextureFormat::Rgba8Unorm,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        // params: uniform buffer
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 4,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("i420_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("i420_pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "main",
-                compilation_options: Default::default(),
-                cache: None,
-            });
-
-        FormatPipeline {
-            pipeline,
-            bind_group_layout,
-        }
-    }
-
-    /// Create packed 4:2:2 pipeline (YUYV, UYVY, YVYU, VYUY)
-    fn create_packed_pipeline(&self, shader_source: &str, name: &str) -> FormatPipeline {
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(&format!("convert_{}_shader", name)),
+                label: Some(&format!("{}_shader", name)),
                 source: wgpu::ShaderSource::Wgsl(shader_source.into()),
             });
+
+        let entries: Vec<wgpu::BindGroupLayoutEntry> = layout_spec
+            .iter()
+            .map(|(binding, spec)| spec.to_layout_entry(*binding))
+            .collect();
 
         let bind_group_layout =
             self.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some(&format!("{}_bind_group_layout", name)),
-                    entries: &[
-                        // tex_packed: Packed data as RGBA8
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // output: RGBA storage texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::StorageTexture {
-                                access: wgpu::StorageTextureAccess::WriteOnly,
-                                format: wgpu::TextureFormat::Rgba8Unorm,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        // params: uniform buffer
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
+                    entries: &entries,
                 });
 
         let pipeline_layout = self
@@ -471,81 +302,6 @@ impl GpuConvertPipeline {
             .device
             .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(&format!("{}_pipeline", name)),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: "main",
-                compilation_options: Default::default(),
-                cache: None,
-            });
-
-        FormatPipeline {
-            pipeline,
-            bind_group_layout,
-        }
-    }
-
-    /// Create Gray8 pipeline
-    fn create_gray8_pipeline(&self) -> FormatPipeline {
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("convert_gray8_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("convert_gray8.wgsl").into()),
-            });
-
-        let bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("gray8_bind_group_layout"),
-                    entries: &[
-                        // tex_gray: Grayscale (R8)
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // output: RGBA storage texture
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::StorageTexture {
-                                access: wgpu::StorageTextureAccess::WriteOnly,
-                                format: wgpu::TextureFormat::Rgba8Unorm,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                            },
-                            count: None,
-                        },
-                        // params: uniform buffer
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("gray8_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("gray8_pipeline"),
                 layout: Some(&pipeline_layout),
                 module: &shader,
                 entry_point: "main",
@@ -576,7 +332,15 @@ impl GpuConvertPipeline {
             PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
                 (width / 2, height)
             }
-            PixelFormat::Gray8 | PixelFormat::RGBA | PixelFormat::RGB24 => (1, 1),
+            PixelFormat::Gray8
+            | PixelFormat::RGBA
+            | PixelFormat::RGB24
+            | PixelFormat::ABGR
+            | PixelFormat::BGRA
+            | PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => (1, 1),
         };
 
         // Y plane texture format and dimensions
@@ -584,7 +348,9 @@ impl GpuConvertPipeline {
             PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
                 (wgpu::TextureFormat::Rgba8Unorm, width / 2)
             }
-            PixelFormat::RGBA | PixelFormat::RGB24 => (wgpu::TextureFormat::Rgba8Unorm, width),
+            PixelFormat::RGBA | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
+                (wgpu::TextureFormat::Rgba8Unorm, width)
+            }
             _ => (wgpu::TextureFormat::R8Unorm, width),
         };
 
@@ -693,15 +459,55 @@ impl GpuConvertPipeline {
         // Upload textures based on format
         self.upload_textures(input, tex_y, tex_uv, tex_v)?;
 
-        // Update uniform buffer
-        let params = ConvertParams {
-            width: input.width,
-            height: input.height,
-            _pad0: 0,
-            _pad1: 0,
-        };
-        self.queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
+        // Update uniform buffer (different params struct for Bayer formats)
+        if input.format.is_bayer() {
+            let identity: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+            // Apply ISP colour when gains are available. Black level subtraction
+            // is required before gains to avoid amplifying the sensor's DC offset
+            // differently per channel (which causes colour casts).
+            let (use_isp, gain_r, gain_b, bl, ccm) =
+                match (input.colour_gains, input.colour_correction_matrix) {
+                    (Some(gains), Some(matrix)) => (
+                        1u32,
+                        gains[0],
+                        gains[1],
+                        input.black_level.unwrap_or(0.0),
+                        matrix,
+                    ),
+                    (Some(gains), None) => (
+                        1u32,
+                        gains[0],
+                        gains[1],
+                        input.black_level.unwrap_or(0.0),
+                        identity,
+                    ),
+                    _ => (0u32, 1.0, 1.0, 0.0, identity),
+                };
+            let params = DebayerParams {
+                width: input.width,
+                height: input.height,
+                pattern: input.format.bayer_pattern_code().unwrap_or(0),
+                use_isp_colour: use_isp,
+                colour_gain_r: gain_r,
+                colour_gain_b: gain_b,
+                black_level: bl,
+                _pad0: 0,
+                ccm_row0: [ccm[0][0], ccm[0][1], ccm[0][2], 0.0],
+                ccm_row1: [ccm[1][0], ccm[1][1], ccm[1][2], 0.0],
+                ccm_row2: [ccm[2][0], ccm[2][1], ccm[2][2], 0.0],
+            };
+            self.queue
+                .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
+        } else {
+            let params = ConvertParams {
+                width: input.width,
+                height: input.height,
+                _pad0: 0,
+                _pad1: 0,
+            };
+            self.queue
+                .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
+        }
 
         // Get the pipeline (it's guaranteed to exist now)
         let format_pipeline = self
@@ -763,6 +569,36 @@ impl GpuConvertPipeline {
             .ok_or("Output texture not allocated".to_string())
     }
 
+    /// Write a single plane to a GPU texture.
+    fn write_plane(
+        &self,
+        texture: &wgpu::Texture,
+        data: &[u8],
+        bytes_per_row: u32,
+        width: u32,
+        height: u32,
+    ) {
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     /// Upload textures based on format
     fn upload_textures(
         &self,
@@ -774,168 +610,87 @@ impl GpuConvertPipeline {
         match input.format {
             // Packed 4:2:2 formats
             PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
-                self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: tex_y,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
+                self.write_plane(
+                    tex_y,
                     input.y_data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(input.y_stride),
-                        rows_per_image: Some(input.height),
-                    },
-                    wgpu::Extent3d {
-                        width: input.width / 2,
-                        height: input.height,
-                        depth_or_array_layers: 1,
-                    },
+                    input.y_stride,
+                    input.width / 2,
+                    input.height,
                 );
             }
 
             // NV12/NV21: Y plane + UV plane
             PixelFormat::NV12 | PixelFormat::NV21 => {
-                // Y plane
-                self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: tex_y,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
+                self.write_plane(
+                    tex_y,
                     input.y_data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(input.y_stride),
-                        rows_per_image: Some(input.height),
-                    },
-                    wgpu::Extent3d {
-                        width: input.width,
-                        height: input.height,
-                        depth_or_array_layers: 1,
-                    },
+                    input.y_stride,
+                    input.width,
+                    input.height,
                 );
-
-                // UV plane
                 if let Some(uv_data) = input.uv_data {
                     let uv_height = input.height / 2;
-                    self.queue.write_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: tex_uv,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        uv_data,
-                        wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(input.uv_stride),
-                            rows_per_image: Some(uv_height),
-                        },
-                        wgpu::Extent3d {
-                            width: input.width / 2,
-                            height: uv_height,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                    self.write_plane(tex_uv, uv_data, input.uv_stride, input.width / 2, uv_height);
                 }
             }
 
             // I420: Y + U + V planes
             PixelFormat::I420 => {
-                // Y plane
-                self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: tex_y,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
+                self.write_plane(
+                    tex_y,
                     input.y_data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(input.y_stride),
-                        rows_per_image: Some(input.height),
-                    },
-                    wgpu::Extent3d {
-                        width: input.width,
-                        height: input.height,
-                        depth_or_array_layers: 1,
-                    },
+                    input.y_stride,
+                    input.width,
+                    input.height,
                 );
-
-                // U plane
                 if let Some(uv_data) = input.uv_data {
                     let uv_height = input.height / 2;
-                    self.queue.write_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: tex_uv,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        uv_data,
-                        wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(input.uv_stride),
-                            rows_per_image: Some(uv_height),
-                        },
-                        wgpu::Extent3d {
-                            width: input.width / 2,
-                            height: uv_height,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                    self.write_plane(tex_uv, uv_data, input.uv_stride, input.width / 2, uv_height);
                 }
-
-                // V plane
                 if let Some(v_data) = input.v_data {
                     let v_height = input.height / 2;
-                    self.queue.write_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: tex_v,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        v_data,
-                        wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(input.v_stride),
-                            rows_per_image: Some(v_height),
-                        },
-                        wgpu::Extent3d {
-                            width: input.width / 2,
-                            height: v_height,
-                            depth_or_array_layers: 1,
-                        },
-                    );
+                    self.write_plane(tex_v, v_data, input.v_stride, input.width / 2, v_height);
                 }
             }
 
             // Gray8: single channel
             PixelFormat::Gray8 => {
-                self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: tex_y,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
+                self.write_plane(
+                    tex_y,
                     input.y_data,
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(input.y_stride),
-                        rows_per_image: Some(input.height),
-                    },
-                    wgpu::Extent3d {
-                        width: input.width,
-                        height: input.height,
-                        depth_or_array_layers: 1,
-                    },
+                    input.y_stride,
+                    input.width,
+                    input.height,
                 );
+            }
+
+            // Bayer formats: raw sensor data, single channel
+            // CSI-2 packed formats (10/12/14-bit) need unpacking first
+            PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => {
+                let (upload_data, upload_stride) = if input.y_stride > input.width {
+                    let unpacked = unpack_bayer_packed_to_8bit(
+                        input.y_data,
+                        input.width,
+                        input.height,
+                        input.y_stride,
+                    );
+                    debug!(
+                        width = input.width,
+                        height = input.height,
+                        packed_stride = input.y_stride,
+                        unpacked_len = unpacked.len(),
+                        "Unpacked CSI2P Bayer data to 8-bit"
+                    );
+                    (Some(unpacked), input.width)
+                } else {
+                    (None, input.y_stride)
+                };
+
+                let data = upload_data.as_deref().unwrap_or(input.y_data);
+                self.write_plane(tex_y, data, upload_stride, input.width, input.height);
             }
 
             _ => {
@@ -1011,12 +766,16 @@ impl GpuConvertPipeline {
                 ],
             }),
 
-            // Packed formats and Gray8: tex_packed/tex_gray, output, params
+            // Packed formats, Gray8, and Bayer: tex_packed/tex_gray/tex_bayer, output, params
             PixelFormat::YUYV
             | PixelFormat::UYVY
             | PixelFormat::YVYU
             | PixelFormat::VYUY
-            | PixelFormat::Gray8 => self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            | PixelFormat::Gray8
+            | PixelFormat::BayerRGGB
+            | PixelFormat::BayerBGGR
+            | PixelFormat::BayerGRBG
+            | PixelFormat::BayerGBRG => self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("packed_bind_group"),
                 layout,
                 entries: &[
@@ -1152,6 +911,91 @@ impl GpuConvertPipeline {
     pub fn queue(&self) -> &Arc<wgpu::Queue> {
         &self.queue
     }
+}
+
+/// Unpack CSI-2 packed Bayer data to 8-bit per pixel (one byte per pixel).
+///
+/// CSI-2 packed formats store pixel data in groups with high bits first,
+/// followed by packed low bits:
+/// - 10-bit: 4 pixels in 5 bytes (bytes 0-3 = high 8 bits, byte 4 = low 2 bits)
+/// - 12-bit: 2 pixels in 3 bytes (bytes 0-1 = high 8 bits, byte 2 = low 4 bits)
+/// - 14-bit: 4 pixels in 7 bytes (bytes 0-3 = high 8 bits, bytes 4-6 = low 6 bits)
+///
+/// This function extracts the high 8 bits of each pixel. The packed_stride
+/// is the actual bytes per row from the buffer (may include alignment padding).
+/// Extract high 8 bits from CSI-2 packed pixel groups.
+///
+/// Copies the first `pixels_per_group` bytes from each `bytes_per_group`-byte
+/// group in the source row. The packed metadata (low bits) at the end of each
+/// group is discarded.
+fn unpack_groups(
+    packed: &[u8],
+    output: &mut [u8],
+    width: u32,
+    height: u32,
+    packed_stride: u32,
+    pixels_per_group: usize,
+    bytes_per_group: usize,
+) {
+    let num_groups = width as usize / pixels_per_group;
+    let remaining = width as usize % pixels_per_group;
+
+    for y in 0..height as usize {
+        let row_start = y * packed_stride as usize;
+        let out_start = y * width as usize;
+
+        for g in 0..num_groups {
+            let base = row_start + g * bytes_per_group;
+            let out_base = out_start + g * pixels_per_group;
+            output[out_base..out_base + pixels_per_group]
+                .copy_from_slice(&packed[base..base + pixels_per_group]);
+        }
+
+        if remaining > 0 {
+            let base = row_start + num_groups * bytes_per_group;
+            let out_base = out_start + num_groups * pixels_per_group;
+            output[out_base..out_base + remaining].copy_from_slice(&packed[base..base + remaining]);
+        }
+    }
+}
+
+fn unpack_bayer_packed_to_8bit(
+    packed: &[u8],
+    width: u32,
+    height: u32,
+    packed_stride: u32,
+) -> Vec<u8> {
+    // Detect bit depth from stride range (strides may include alignment padding)
+    let min_stride_10 = (width * 5).div_ceil(4);
+    let min_stride_12 = (width * 3).div_ceil(2);
+    let min_stride_14 = (width * 7).div_ceil(4);
+
+    let mut output = vec![0u8; (width * height) as usize];
+
+    if packed_stride >= min_stride_10 && packed_stride < min_stride_12 {
+        // CSI2P 10-bit: 4 pixels in 5 bytes
+        unpack_groups(packed, &mut output, width, height, packed_stride, 4, 5);
+    } else if packed_stride >= min_stride_12 && packed_stride < min_stride_14 {
+        // CSI2P 12-bit: 2 pixels in 3 bytes
+        unpack_groups(packed, &mut output, width, height, packed_stride, 2, 3);
+    } else if packed_stride >= min_stride_14 && packed_stride < width * 2 {
+        // CSI2P 14-bit: 4 pixels in 7 bytes
+        unpack_groups(packed, &mut output, width, height, packed_stride, 4, 7);
+    } else {
+        // Unknown packing or 16-bit - copy high bytes row by row
+        warn!(
+            packed_stride,
+            width, "Unknown Bayer packing, copying raw bytes"
+        );
+        for y in 0..height as usize {
+            let src = y * packed_stride as usize;
+            let dst = y * width as usize;
+            let copy_len = (width as usize).min(packed_stride as usize);
+            output[dst..dst + copy_len].copy_from_slice(&packed[src..src + copy_len]);
+        }
+    }
+
+    output
 }
 
 /// Cached global pipeline instance

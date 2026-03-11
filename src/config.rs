@@ -207,7 +207,8 @@ impl Default for Config {
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),
-            backend: crate::backends::camera::CameraBackendType::default(),
+            // Auto-detect: prefer libcamera if libcamerasrc available (multi-stream capture)
+            backend: crate::backends::camera::get_default_backend(),
             last_video_encoder_index: None,
             bug_report_url:
                 "https://github.com/cosmic-utils/camera/issues/new?template=bug_report_from_app.yml"

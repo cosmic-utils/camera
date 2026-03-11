@@ -7,16 +7,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+/// Gallery thumbnail data: image handle, RGBA bytes, width, height, and file path
+pub type GalleryThumbnailData = (
+    cosmic::widget::image::Handle,
+    Arc<Vec<u8>>,
+    u32,
+    u32,
+    PathBuf,
+);
+
 /// Load latest thumbnail for gallery button
 ///
 /// Scans both photo and video directories for files, finds the most recent one,
 /// and loads it as both an image handle and RGBA data for custom rendering.
 /// For videos, extracts the first frame as a thumbnail.
-/// Returns (Handle, RGBA bytes wrapped in Arc, width, height)
+/// Returns gallery thumbnail data for the most recent file
 pub async fn load_latest_thumbnail(
     photos_dir: PathBuf,
     videos_dir: PathBuf,
-) -> Option<(cosmic::widget::image::Handle, Arc<Vec<u8>>, u32, u32)> {
+) -> Option<GalleryThumbnailData> {
     // Get list of photo and video files from both directories (using blocking std::fs)
     let mut entries = tokio::task::spawn_blocking(move || {
         let mut files: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
@@ -76,7 +85,8 @@ pub async fn load_latest_thumbnail(
 
     // Check if it's a video file
     if file_formats::is_video_extension(&extension) {
-        return load_video_thumbnail(latest_path).await;
+        let (handle, rgba, w, h) = load_video_thumbnail(latest_path.clone()).await?;
+        return Some((handle, rgba, w, h, latest_path));
     }
 
     // Load image bytes
@@ -98,7 +108,7 @@ pub async fn load_latest_thumbnail(
 
     let handle = cosmic::widget::image::Handle::from_bytes(bytes);
 
-    Some((handle, Arc::new(rgba_data), width, height))
+    Some((handle, Arc::new(rgba_data), width, height, latest_path))
 }
 
 /// Load a thumbnail from a video file by extracting the first frame

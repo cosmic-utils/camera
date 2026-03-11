@@ -7,10 +7,18 @@
 //! - Thread-safe backend access
 
 use super::types::*;
-use super::{CameraBackend, get_backend};
+use super::{CameraBackend, get_backend_for_type};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use tracing::info;
+
+/// Shared recording sender type.
+///
+/// This Arc lives in the manager (not inside any pipeline) so it survives
+/// pipeline restarts and is accessible from both the subscription's capture
+/// thread and the recording start/stop code.
+pub type SharedRecordingSender = Arc<Mutex<Option<tokio::sync::mpsc::Sender<Arc<CameraFrame>>>>>;
 
 /// Internal manager state
 struct ManagerState {
@@ -27,6 +35,9 @@ struct ManagerState {
 #[derive(Clone)]
 pub struct CameraBackendManager {
     state: Arc<Mutex<ManagerState>>,
+    /// Shared recording sender — written by recording start/stop,
+    /// read by the capture thread (via Arc clone passed to the pipeline).
+    recording_sender: SharedRecordingSender,
 }
 
 impl CameraBackendManager {
@@ -37,7 +48,7 @@ impl CameraBackendManager {
     pub fn new(backend_type: CameraBackendType) -> Self {
         info!(backend = %backend_type, "Creating camera backend manager");
 
-        let backend = get_backend();
+        let backend = get_backend_for_type(backend_type);
 
         let state = ManagerState {
             backend,
@@ -46,6 +57,7 @@ impl CameraBackendManager {
 
         Self {
             state: Arc::new(Mutex::new(state)),
+            recording_sender: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -138,6 +150,24 @@ impl CameraBackendManager {
         self.state.lock().unwrap().backend.is_recording()
     }
 
+    /// Set (or clear) the direct recording sender.
+    ///
+    /// This writes to a shared Arc that the capture thread reads from,
+    /// independent of which pipeline instance is active.
+    pub fn set_recording_sender(
+        &self,
+        sender: Option<tokio::sync::mpsc::Sender<Arc<CameraFrame>>>,
+    ) {
+        *self.recording_sender.lock().unwrap() = sender;
+    }
+
+    /// Get a clone of the shared recording sender Arc.
+    ///
+    /// Pass this to the pipeline so the capture thread can read from it.
+    pub fn recording_sender(&self) -> SharedRecordingSender {
+        Arc::clone(&self.recording_sender)
+    }
+
     /// Get current device
     pub fn current_device(&self) -> Option<CameraDevice> {
         self.state.lock().unwrap().backend.current_device().cloned()
@@ -160,8 +190,8 @@ impl CameraBackendManager {
         // Shutdown current backend
         let _ = state.backend.shutdown(); // Ignore errors during shutdown
 
-        // Create new backend
-        let new_backend = get_backend();
+        // Create new backend for the specified type
+        let new_backend = get_backend_for_type(new_backend_type);
 
         state.backend = new_backend;
         state.backend_type = new_backend_type;

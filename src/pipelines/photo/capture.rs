@@ -118,6 +118,8 @@ mod tests {
             stride: 1920 * 4, // RGBA stride
             yuv_planes: None,
             captured_at: std::time::Instant::now(),
+            sensor_timestamp_ns: None,
+            libcamera_metadata: None,
         };
 
         let captured = PhotoCapture::capture_from_frame(frame).unwrap();

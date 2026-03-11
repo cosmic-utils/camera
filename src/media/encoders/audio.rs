@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Audio encoder module - some features for future multi-quality support
-#![allow(dead_code)]
 
 //! Audio encoder selection with quality configuration
 //!
@@ -155,30 +153,19 @@ pub fn select_audio_encoder(
 }
 
 /// Configure Opus encoder
-fn configure_opus_encoder(encoder: &gst::Element, quality: AudioQuality, channels: AudioChannels) {
+fn configure_opus_encoder(encoder: &gst::Element, quality: AudioQuality, _channels: AudioChannels) {
     let bitrate = quality.bitrate_bps();
 
     // Opus bitrate is in bits per second
     encoder.set_property("bitrate", bitrate);
 
-    // Audio type: voice for mono, music for stereo/multi-channel
-    let audio_type = match channels {
-        AudioChannels::Mono => "voice",
-        AudioChannels::Stereo | AudioChannels::MultiChannel(_) => "generic",
-    };
-    encoder.set_property_from_str("audio-type", audio_type);
+    // Use "generic" audio type with fullband for best quality on all channel
+    // configs.  Camera audio is environmental (not just voice) so full-bandwidth
+    // encoding preserves the most detail.
+    encoder.set_property_from_str("audio-type", "generic");
+    encoder.set_property_from_str("bandwidth", "fullband");
 
-    // Bandwidth: wide for voice, fullband for music
-    let bandwidth = match channels {
-        AudioChannels::Mono => "wideband",
-        AudioChannels::Stereo | AudioChannels::MultiChannel(_) => "fullband",
-    };
-    encoder.set_property_from_str("bandwidth", bandwidth);
-
-    debug!(
-        "Configured opusenc: bitrate={} bps, audio-type={}, bandwidth={}",
-        bitrate, audio_type, bandwidth
-    );
+    debug!(bitrate, "Configured opusenc: generic/fullband");
 }
 
 /// Configure AAC encoder

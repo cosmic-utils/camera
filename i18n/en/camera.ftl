@@ -32,6 +32,7 @@ light = Light
 settings-camera = Camera
 settings-video = Video
 settings-device = Device
+settings-backend = Backend
 settings-format = Format
 settings-microphone = Microphone
 settings-record-audio = Record audio
@@ -43,7 +44,9 @@ settings-video-quality = Video quality
 settings-manual-override = Manual mode override
 settings-mirror-preview = Mirror preview
 settings-mirror-preview-description = Flip the camera preview horizontally
+settings-reset-all = Reset all settings
 settings-bug-reports = Bug reports
+settings-stats-for-nerds = Stats for nerds
 settings-report-bug = Report bug
 settings-show-report = Show Report
 settings-resolution = Resolution
@@ -55,6 +58,15 @@ device-info-card = Card
 device-info-driver = Driver
 device-info-path = Path
 device-info-real-path = Real Path
+device-info-device-path = Device Path
+device-info-sensor = Sensor
+device-info-pipeline = Pipeline
+device-info-libcamera-version = libcamera
+device-info-multistream = Multi-stream
+device-info-multistream-yes = Supported
+device-info-multistream-no = Not supported
+device-info-rotation = Rotation
+device-info-none = No device information available
 
 # Bitrate presets
 preset-low = Low
@@ -102,6 +114,10 @@ exposure-backlight = Backlight
 exposure-manual-mode = Manual
 exposure-auto-mode = Auto
 exposure-not-supported = unsupported
+
+# Focus controls
+focus-auto = Focus
+focus-position = Focus
 
 # Color controls
 color-title = Color
@@ -162,9 +178,11 @@ about-support = Support & Feedback
 insights-title = Insights
 insights-pipeline = Pipeline
 insights-pipeline-full = GStreamer Pipeline
+insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Decoder Fallback Chain
 
-insights-performance = Live Performance
+insights-stream-combined = Preview + Capture Stream
+
 insights-frame-latency = Frame Latency
 insights-dropped-frames = Dropped Frames
 insights-frame-size-decoded = Frame Size
@@ -173,14 +191,66 @@ insights-copy-time = Frame Wrap Time
 insights-gpu-upload-time = GPU Upload Time
 insights-gpu-upload-bandwidth = GPU Upload Bandwidth
 
-insights-format = Format
 insights-format-source = Source
 insights-format-resolution = Resolution
 insights-format-framerate = Framerate
 insights-format-native = Native Format
 insights-format-gstreamer = GStreamer Output
+insights-cpu-processing = CPU Processing
+insights-cpu-decode-time = CPU Decode Time
 insights-format-wgpu = GPU Processing
 
 insights-selected = Selected
 insights-available = Available
 insights-unavailable = Unavailable
+
+# Insights - Backend
+insights-backend = Backend
+insights-backend-type = Type
+insights-pipeline-handler = Pipeline Handler
+insights-libcamera-version = libcamera Version
+insights-sensor-model = Sensor
+insights-mjpeg-decoder = MJPEG Decoder
+
+# Insights - Multi-stream
+insights-multistream-single = Single-stream
+insights-multistream-dual = Dual-stream
+insights-multistream-source-shared = Preview & Capture
+insights-multistream-source-separate = Preview / Capture
+insights-stream-preview = Preview Stream
+insights-stream-capture = Capture Stream
+insights-stream-role = Role
+insights-stream-resolution = Resolution
+insights-stream-pixel-format = Pixel Format
+insights-stream-frame-count = Frames
+
+# Insights - Audio
+insights-audio = Audio
+insights-audio-recording = Recording
+insights-audio-device = Device
+insights-audio-node = Node
+insights-audio-codec = Codec
+insights-audio-channels = Channels
+insights-audio-enabled = Enabled
+insights-audio-disabled = Disabled
+insights-audio-default = (Default)
+insights-audio-mono = Mono
+insights-audio-pipeline = Pipeline
+insights-audio-format = Format
+insights-audio-inputs = Input Channels
+insights-audio-output-level = Output Level
+insights-audio-not-recording = Not Recording
+
+# Insights - Per-frame metadata
+insights-metadata = Frame Metadata
+insights-meta-exposure = Exposure
+insights-meta-analogue-gain = Analogue Gain
+insights-meta-digital-gain = Digital Gain
+insights-meta-colour-temp = Colour Temp
+insights-meta-sequence = Sequence
+insights-meta-colour-gains = WB Gains (R, B)
+insights-meta-black-level = Black Level
+insights-meta-lens-position = Lens Position
+insights-meta-lux = Illuminance
+insights-meta-focus-fom = Focus FoM
+insights-meta-na = N/A
