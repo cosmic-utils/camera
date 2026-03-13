@@ -19,7 +19,7 @@ pub(crate) struct PipelineDiagnostics {
     pub(crate) pipeline_string: Option<String>,
     pub(crate) is_multistream: bool,
     pub(crate) preview_stream_info: Option<(String, String)>,
-    pub(crate) capture_stream_info: Option<(String, String)>,
+    pub(crate) capture_stream_info: Option<(String, String, u32, u32)>,
     pub(crate) mjpeg_decoder_name: Option<String>,
     pub(crate) mjpeg_decoded_format: Option<String>,
     pub(crate) preview_role: Option<String>,
@@ -81,12 +81,12 @@ pub(crate) fn get_mjpeg_decoded_format() -> Option<String> {
     DIAGNOSTICS.read().ok()?.mjpeg_decoded_format.clone()
 }
 
-pub(crate) fn get_capture_stream_info() -> Option<(String, String, String, u64)> {
+pub(crate) fn get_capture_stream_info() -> Option<(String, String, String, u64, u32, u32)> {
     let d = DIAGNOSTICS.read().ok()?;
     let info = d.capture_stream_info.clone()?;
     let role = d.capture_role.clone().unwrap_or_default();
     let count = STILL_FRAME_COUNT.load(Ordering::Relaxed);
-    Some((info.0, info.1, role, count))
+    Some((info.0, info.1, role, count, info.2, info.3))
 }
 
 /// Clear all global pipeline diagnostics (called on shutdown)
@@ -102,6 +102,7 @@ pub(crate) fn clear_global_diagnostics() {
 pub(crate) struct StreamDiag {
     pub(crate) size: libcamera::geometry::Size,
     pub(crate) format_name: String,
+    pub(crate) stride: u32,
 }
 
 pub(crate) struct DiagnosticParams {
@@ -151,6 +152,8 @@ pub(crate) fn publish_diagnostics(p: DiagnosticParams) {
         d.capture_stream_info = Some((
             format!("{}x{}", p.video.size.width, p.video.size.height),
             p.video.format_name,
+            p.video.stride,
+            p.video.size.height,
         ));
         d.preview_role = Some("View-finder".to_string());
         d.capture_role = Some("Video-recording".to_string());
@@ -158,6 +161,8 @@ pub(crate) fn publish_diagnostics(p: DiagnosticParams) {
         d.capture_stream_info = Some((
             format!("{}x{}", p.raw.size.width, p.raw.size.height),
             p.raw.format_name,
+            p.raw.stride,
+            p.raw.size.height,
         ));
         d.preview_role = Some("View-finder".to_string());
         d.capture_role = Some("Raw".to_string());

@@ -256,6 +256,7 @@ pub fn estimate_scene_brightness(frame: &CameraFrame) -> (f32, SceneBrightness) 
     }
 
     let mut total_luminance: f64 = 0.0;
+    let mut samples_taken: usize = 0;
 
     // Sample every Nth pixel for performance (full analysis not needed)
     let sample_stride = (pixels / 10000).max(1); // ~10k samples max
@@ -270,10 +271,13 @@ pub fn estimate_scene_brightness(frame: &CameraFrame) -> (f32, SceneBrightness) 
             // BT.601 luminance
             let lum = 0.299 * r + 0.587 * g + 0.114 * b;
             total_luminance += lum;
+            samples_taken += 1;
         }
     }
 
-    let samples_taken = pixels.div_ceil(sample_stride);
+    if samples_taken == 0 {
+        return (0.0, SceneBrightness::VeryDark);
+    }
     let avg_luminance = (total_luminance / samples_taken as f64) as f32;
     let brightness = SceneBrightness::from_luminance(avg_luminance);
 

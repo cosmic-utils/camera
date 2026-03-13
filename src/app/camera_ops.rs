@@ -47,9 +47,8 @@ impl AppModel {
         let camera_path = &camera.path;
 
         // Get formats for the new mode using configured backend
-        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
-        let device = camera.clone();
-        let formats_for_new_mode = backend.get_formats(&device, new_mode == CameraMode::Video);
+        let backend = crate::backends::camera::create_backend();
+        let formats_for_new_mode = backend.get_formats(camera, new_mode == CameraMode::Video);
 
         // Helper to check saved settings for a mode
         let check_saved_settings = |settings_map: &std::collections::HashMap<
@@ -230,9 +229,8 @@ impl AppModel {
         let camera_path = camera.path.clone();
 
         // Get formats for this camera using configured backend
-        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
-        let device = camera.clone();
-        self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
+        let backend = crate::backends::camera::create_backend();
+        self.available_formats = backend.get_formats(camera, mode == CameraMode::Video);
 
         // Format selection logic: both modes use saved settings, current format, or defaults
         // Virtual mode uses the same format selection as Photo mode

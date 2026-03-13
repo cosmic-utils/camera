@@ -163,7 +163,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 12]
+#[version = 13]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -175,8 +175,6 @@ pub struct Config {
     pub video_settings: HashMap<String, FormatSettings>,
     /// Photo mode settings per camera (key = camera device path)
     pub photo_settings: HashMap<String, FormatSettings>,
-    /// Camera backend to use (PipeWire or V4L2)
-    pub backend: crate::backends::camera::CameraBackendType,
     /// Last selected video encoder index
     pub last_video_encoder_index: Option<usize>,
     /// Bug report submission URL (GitHub issues URL)
@@ -207,8 +205,6 @@ impl Default for Config {
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),
-            // Auto-detect: prefer libcamera if libcamerasrc available (multi-stream capture)
-            backend: crate::backends::camera::get_default_backend(),
             last_video_encoder_index: None,
             bug_report_url:
                 "https://github.com/cosmic-utils/camera/issues/new?template=bug_report_from_app.yml"

@@ -2,8 +2,8 @@
 
 //! Shared V4L2 utility functions
 //!
-//! This module provides common V4L2 operations used by multiple camera backends,
-//! avoiding code duplication between PipeWire enumeration and native bindings.
+//! This module provides common V4L2 operations used by the camera backend,
+//! including device enumeration, driver queries, and sensor detection.
 
 use super::types::DeviceInfo;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -11,6 +11,9 @@ use tracing::debug;
 
 /// VIDIOC_QUERYCAP ioctl number
 const VIDIOC_QUERYCAP: libc::c_ulong = 0x80685600;
+
+/// V4L2 capability flag for single-planar video capture
+const V4L2_CAP_VIDEO_CAPTURE: u32 = 0x00000001;
 
 /// V4L2 capability structure for VIDIOC_QUERYCAP ioctl
 #[repr(C)]
@@ -132,9 +135,6 @@ pub fn discover_lens_actuators() -> Vec<(String, String)> {
 /// This function extracts the VID:PID, then scans `/sys/class/video4linux/`
 /// to find a matching `/dev/videoX` device.
 pub fn find_v4l2_device_for_libcamera(camera_id: &str) -> Option<String> {
-    // V4L2 capability flag for single-planar video capture
-    const V4L2_CAP_VIDEO_CAPTURE: u32 = 0x00000001;
-
     // Extract VID:PID from camera ID.
     // UVC IDs end with "-VVVV:PPPP" (4-hex-digit vendor : 4-hex-digit product).
     let vid_pid = camera_id.rsplit('-').next()?;
@@ -227,6 +227,84 @@ pub fn find_v4l2_device_for_libcamera(camera_id: &str) -> Option<String> {
 
     debug!(camera_id, "No V4L2 device found for libcamera camera");
     None
+}
+
+/// Discover new V4L2 video capture devices from a set of device node names.
+///
+/// For each node name (e.g. `"video2"`), opens `/dev/<name>`, checks it
+/// supports single-planar video capture, and returns `(dev_path, card_name)`
+/// for each match. Metadata-only nodes are filtered out.
+pub fn discover_v4l2_capture_devices(
+    node_names: &std::collections::BTreeSet<std::ffi::OsString>,
+) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+    for name in node_names {
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        let dev_path = format!("/dev/{}", name_str);
+        let file = match std::fs::File::open(&dev_path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let cap = match query_v4l2_cap(file.as_raw_fd()) {
+            Some(c) => c,
+            None => continue,
+        };
+        let caps = if cap.device_caps != 0 {
+            cap.device_caps
+        } else {
+            cap.capabilities
+        };
+        if caps & V4L2_CAP_VIDEO_CAPTURE == 0 {
+            continue;
+        }
+        let card_len = cap.card.iter().position(|&c| c == 0).unwrap_or(32);
+        let card = String::from_utf8_lossy(&cap.card[..card_len]).to_string();
+        debug!(dev_path, card, "Discovered V4L2 capture device");
+        results.push((dev_path, card));
+    }
+    results
+}
+
+/// Scan `/dev/` for `video*` device node names.
+///
+/// Returns a sorted set of filenames (e.g. `{"video0", "video1"}`).
+/// This works regardless of whether a capture pipeline is active because
+/// it doesn't touch libcamera at all.
+pub fn scan_video_device_nodes() -> std::collections::BTreeSet<std::ffi::OsString> {
+    let Ok(entries) = std::fs::read_dir("/dev") else {
+        return std::collections::BTreeSet::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name())
+        .filter(|name| {
+            name.to_str()
+                .map(|s| s.starts_with("video"))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+/// Detect CSI-2 bit depth from packed stride relative to image width.
+///
+/// Returns `Some(10)`, `Some(12)`, or `Some(14)` for recognized CSI-2 packed formats.
+/// Returns `None` if the stride doesn't match any known packing ratio.
+pub fn detect_csi2_bit_depth(width: u32, packed_stride: u32) -> Option<u32> {
+    let min_stride_10 = (width * 5).div_ceil(4);
+    let min_stride_12 = (width * 3).div_ceil(2);
+    let min_stride_14 = (width * 7).div_ceil(4);
+
+    if packed_stride >= min_stride_10 && packed_stride < min_stride_12 {
+        Some(10)
+    } else if packed_stride >= min_stride_12 && packed_stride < min_stride_14 {
+        Some(12)
+    } else if packed_stride >= min_stride_14 && packed_stride < width * 2 {
+        Some(14)
+    } else {
+        None
+    }
 }
 
 /// Check if a libcamera pipeline handler supports multi-stream capture

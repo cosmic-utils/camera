@@ -3,21 +3,17 @@ FROM alpine:edge
 
 # Install host build tools and clang/lld for cross-compilation
 # clang is a native cross-compiler — no separate toolchain download needed
-# meson/ninja/python3 modules are needed for the vendored libcamera build
+# clang-dev provides libclang.so needed by bindgen (used by libcamera-sys)
 RUN apk add --no-cache \
     alpine-keys \
     build-base \
     clang \
+    clang-dev \
     cmake \
     curl \
     lld \
-    meson \
     nasm \
-    ninja \
-    pkgconf \
-    py3-jinja2 \
-    py3-yaml \
-    py3-ply
+    pkgconf
 
 # Install Rust natively (musl-linked) so cargo runs without glibc.
 # RUST_VERSION is passed as a build arg to keep the image in sync with the host
@@ -43,7 +39,7 @@ RUN mkdir -p /aarch64-sysroot/etc/apk && \
         libinput-dev \
         eudev-dev \
         libseat-dev \
-        yaml-dev
+        libcamera-dev
 
 # Create symlinks so both aarch64-unknown-linux-musl (Rust's triple) and
 # aarch64-alpine-linux-musl (Alpine's GCC triple) resolve to the same directories.
@@ -71,10 +67,30 @@ RUN printf '#!/bin/sh\nUSE_LLD="-fuse-ld=lld"\nfor arg in "$@"; do case "$arg" i
         > /usr/local/bin/aarch64-linux-musl-clang++ && \
     chmod +x /usr/local/bin/aarch64-linux-musl-clang++
 
+# Wrap rustc to add -C target-feature=-crt-static for host (build script) compilations.
+# Rustup installs statically-linked musl binaries, and build scripts compiled as static
+# can't dlopen libclang.so (needed by bindgen/libcamera-sys). This wrapper detects host
+# compilations (no --target flag) and makes them dynamic. Uses $0.real so the wrapper
+# is path-independent and survives moves.
+RUN REAL_RUSTC=$(/root/.cargo/bin/rustup which rustc) && \
+    mv "$REAL_RUSTC" "${REAL_RUSTC}.real" && \
+    printf '#!/bin/sh\nIS_HOST=true\nSKIP=false\nfor arg in "$@"; do\n  if $SKIP; then IS_HOST=false; break; fi\n  case "$arg" in\n    --target=*) IS_HOST=false; break ;;\n    --target) SKIP=true ;;\n  esac\ndone\nif $IS_HOST; then\n  exec "$0.real" -C target-feature=-crt-static "$@"\nelse\n  exec "$0.real" "$@"\nfi\n' \
+        > "$REAL_RUSTC" && \
+    chmod +x "$REAL_RUSTC"
+
+# Wrap cargo to dynamically set BINDGEN_EXTRA_CLANG_ARGS with the sysroot's actual
+# GCC version, avoiding a hardcoded version that breaks on Alpine GCC updates.
+RUN mv /root/.cargo/bin/cargo /root/.cargo/bin/cargo.real && \
+    GCC_VER=$(ls /aarch64-sysroot/usr/include/c++/ 2>/dev/null | head -1) && \
+    printf '#!/bin/sh\nexport BINDGEN_EXTRA_CLANG_ARGS="--sysroot=/aarch64-sysroot -I/aarch64-sysroot/usr/include/c++/%s -I/aarch64-sysroot/usr/include/c++/%s/aarch64-alpine-linux-musl"\nexec /root/.cargo/bin/cargo.real "$@"\n' \
+        "$GCC_VER" "$GCC_VER" \
+        > /root/.cargo/bin/cargo && \
+    chmod +x /root/.cargo/bin/cargo
+
 # Set up environment for cross-compilation
-# Put native cargo first in PATH so it's found before cross-mounted /rust/bin
 # Disable crt-static so the target binary can dynamically link system libraries
 ENV PATH="/root/.cargo/bin:${PATH}" \
+    LIBCLANG_PATH=/usr/lib \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-clang \
     CC_aarch64_unknown_linux_musl=aarch64-linux-musl-clang \
     CXX_aarch64_unknown_linux_musl=aarch64-linux-musl-clang++ \

@@ -17,8 +17,8 @@
 //! └──────────────┘     └───────────────────┘     └──────────────┘
 //!
 //! ┌──────────────┐     ┌───────────────────┐     ┌──────────────┐
-//! │ Camera Node  │ ──▶ │  Video Pipeline   │ ──▶ │   MP4 File   │
-//! │  (PipeWire)  │     │  - GStreamer      │     │              │
+//! │ Camera Frame │ ──▶ │  Video Pipeline   │ ──▶ │   MP4 File   │
+//! │  (libcamera) │     │  - GStreamer      │     │              │
 //! │              │     │  - HW Encoding    │     │              │
 //! │              │     │  - Audio Muxing   │     │              │
 //! └──────────────┘     └───────────────────┘     └──────────────┘

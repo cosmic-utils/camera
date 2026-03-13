@@ -46,7 +46,8 @@ pub(crate) struct PipelineSharedState {
     pub(crate) frame_sender: FrameSender,
     pub(crate) still_requested: Arc<AtomicBool>,
     pub(crate) still_frame: Arc<Mutex<Option<CameraFrame>>>,
-    pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<Arc<CameraFrame>>>>>,
+    pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
+    pub(crate) jpeg_recording_mode: Arc<AtomicBool>,
 }
 
 /// Native libcamera pipeline using direct libcamera-rs bindings
@@ -71,7 +72,7 @@ pub(crate) struct NativeLibcameraPipeline {
     /// Dynamically-settable sender for direct recording path (bypasses UI thread).
     /// Set to Some(tx) when recording starts, None when recording stops.
     /// Kept alive here so the Arc is not dropped while the capture thread holds a clone.
-    _recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<Arc<CameraFrame>>>>>,
+    _recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
 }
 
 impl NativeLibcameraPipeline {
@@ -121,6 +122,7 @@ impl NativeLibcameraPipeline {
             still_frame_count: Arc::clone(&still_frame_count),
             frame_sender: shared.frame_sender,
             recording_sender: Arc::clone(&shared.recording_sender),
+            jpeg_recording_mode: Arc::clone(&shared.jpeg_recording_mode),
         };
 
         // Spawn capture thread - it owns all libcamera objects

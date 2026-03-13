@@ -54,13 +54,7 @@ impl AppModel {
         // For libcamera with multistream cameras, always restart the pipeline on mode switch
         // because different modes use different stream roles (Raw vs VideoRecording),
         // even if the preview format stays the same.
-        let current_camera = self.available_cameras.get(self.current_camera_index);
-        let need_restart = would_change_format
-            || (self.config.backend
-                == crate::backends::camera::types::CameraBackendType::Libcamera
-                && current_camera
-                    .map(|c| c.supports_multistream)
-                    .unwrap_or(false));
+        let need_restart = would_change_format || self.is_current_camera_multistream();
 
         if need_restart {
             if would_change_format {
@@ -73,8 +67,7 @@ impl AppModel {
             self.start_blur_transition();
             self.camera_cancel_flag
                 .store(true, std::sync::atomic::Ordering::Release);
-            self.camera_cancel_flag =
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         } else {
             info!("Mode switch won't change format - keeping same preview");
         }

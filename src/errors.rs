@@ -37,7 +37,7 @@ pub enum CameraError {
     Disconnected,
     /// Invalid camera format
     InvalidFormat(String),
-    /// Backend error (e.g., PipeWire)
+    /// Backend error (e.g., libcamera)
     BackendError(String),
     /// Camera is busy or in use
     Busy,

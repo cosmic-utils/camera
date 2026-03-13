@@ -542,36 +542,25 @@ impl AppModel {
     // =========================================================================
 
     pub(crate) fn handle_update_insights_metrics(&mut self) -> Task<cosmic::Action<Message>> {
-        use crate::backends::camera::types::CameraBackendType;
-
-        let is_libcamera = self.config.backend == CameraBackendType::Libcamera;
-
-        self.update_insights_pipeline(is_libcamera);
-        self.update_insights_backend(is_libcamera);
-        self.update_insights_format_chain(is_libcamera);
-        self.update_insights_performance(is_libcamera);
+        self.update_insights_pipeline();
+        self.update_insights_backend();
+        self.update_insights_format_chain();
+        self.update_insights_performance();
         self.update_insights_frame_metadata();
+        self.update_insights_recording();
 
         Task::none()
     }
 
-    fn update_insights_pipeline(&mut self, is_libcamera: bool) {
+    fn update_insights_pipeline(&mut self) {
         use crate::app::insights::InsightsState;
         use crate::backends::camera::libcamera::native::diagnostics as diag;
 
-        let new_pipeline = if is_libcamera {
-            diag::get_pipeline_string()
-        } else {
-            crate::media::get_full_pipeline_string()
-        };
+        let new_pipeline = diag::get_pipeline_string();
 
         let pixel_format = self.active_format.as_ref().map(|f| f.pixel_format.as_str());
         if new_pipeline != self.insights.full_pipeline_string {
-            let mjpeg_decoder = if is_libcamera {
-                diag::get_mjpeg_decoder()
-            } else {
-                None
-            };
+            let mjpeg_decoder = diag::get_mjpeg_decoder();
             if mjpeg_decoder.is_some() {
                 self.insights.decoder_chain = vec![crate::app::insights::types::DecoderStatus {
                     name: "turbojpeg",
@@ -586,99 +575,71 @@ impl AppModel {
         }
     }
 
-    fn update_insights_backend(&mut self, is_libcamera: bool) {
+    fn update_insights_backend(&mut self) {
         use crate::app::insights::types::StreamInfo;
         use crate::backends::camera::libcamera::native::diagnostics as diag;
 
-        if is_libcamera {
-            self.insights.backend_type = "libcamera".to_string();
-            if let Some(camera) = self.available_cameras.get(self.current_camera_index) {
-                self.insights.pipeline_handler = camera.pipeline_handler.clone();
-                self.insights.libcamera_version = camera.libcamera_version.clone();
-                self.insights.sensor_model = camera.sensor_model.clone();
-                self.insights.libcamera_multistream_capable = camera.pipeline_handler.is_some();
-            }
+        self.insights.backend_type = "libcamera";
+        if let Some(camera) = self.available_cameras.get(self.current_camera_index) {
+            self.insights.pipeline_handler = camera.pipeline_handler.clone();
+            self.insights.libcamera_version = camera.libcamera_version.clone();
+            self.insights.sensor_model = camera.sensor_model.clone();
+            self.insights.libcamera_multistream_capable = camera.pipeline_handler.is_some();
+        }
 
-            self.insights.mjpeg_decoder = diag::get_mjpeg_decoder();
-            self.insights.is_multistream = diag::get_is_multistream();
+        self.insights.mjpeg_decoder = diag::get_mjpeg_decoder();
+        self.insights.is_multistream = diag::get_is_multistream();
 
-            if let Some((resolution, pixel_fmt, role, frame_count)) =
-                diag::get_preview_stream_info()
-            {
-                self.insights.preview_stream = Some(StreamInfo {
-                    role,
-                    resolution,
-                    pixel_format: pixel_fmt,
-                    frame_count,
-                });
-            }
+        if let Some((resolution, pixel_fmt, role, frame_count)) = diag::get_preview_stream_info() {
+            self.insights.preview_stream = Some(StreamInfo {
+                role,
+                resolution,
+                pixel_format: pixel_fmt,
+                frame_count,
+                source: "libcamera (native)".to_string(),
+                ..Default::default()
+            });
+        }
 
-            if let Some((resolution, pixel_fmt, role, frame_count)) =
-                diag::get_capture_stream_info()
-            {
-                self.insights.capture_stream = Some(StreamInfo {
-                    role,
-                    resolution,
-                    pixel_format: pixel_fmt,
-                    frame_count,
-                });
-            } else if !self.insights.is_multistream {
-                self.insights.capture_stream = None;
-            }
-        } else {
-            self.insights.backend_type = "PipeWire".to_string();
-            self.insights.pipeline_handler = None;
-            self.insights.libcamera_version = None;
-            self.insights.sensor_model = None;
-            self.insights.is_multistream = false;
-            self.insights.libcamera_multistream_capable = false;
-            self.insights.preview_stream = None;
+        if let Some((resolution, pixel_fmt, role, frame_count, stride, height)) =
+            diag::get_capture_stream_info()
+        {
+            let frame_size_bytes = stride as usize * height as usize;
+            let gpu_processing = if pixel_fmt.contains("CSI2P") {
+                format!(
+                    "{} \u{2192} unpack (compute) \u{2192} demosaic (compute) \u{2192} RGBA",
+                    pixel_fmt
+                )
+            } else if pixel_fmt.starts_with('S') && pixel_fmt.contains("GG") {
+                // Unpacked Bayer (e.g. SRGGB10)
+                format!("{} \u{2192} demosaic (compute) \u{2192} RGBA", pixel_fmt)
+            } else {
+                String::new()
+            };
+            self.insights.capture_stream = Some(StreamInfo {
+                role,
+                resolution,
+                pixel_format: pixel_fmt,
+                frame_count,
+                source: "libcamera (native)".to_string(),
+                gpu_processing,
+                frame_size_bytes,
+            });
+        } else if !self.insights.is_multistream {
             self.insights.capture_stream = None;
         }
     }
 
-    fn update_insights_format_chain(&mut self, is_libcamera: bool) {
+    fn update_insights_format_chain(&mut self) {
         use crate::backends::camera::libcamera::native::diagnostics as diag;
-        use crate::backends::camera::pipewire::pipeline;
 
         let Some(format) = &self.active_format else {
             return;
         };
-        let codec = crate::media::Codec::from_fourcc(&format.pixel_format);
-        let needs_decoder = codec.needs_decoder();
 
-        let source = if is_libcamera {
-            "libcamera (native)".to_string()
-        } else {
-            self.insights
-                .full_pipeline_string
-                .as_ref()
-                .map(|p| {
-                    if !p.contains("pipewiresrc") {
-                        "Unknown"
-                    } else if p.contains("v4l2:") || p.contains("path=v4l2") {
-                        "V4L2 via PipeWire"
-                    } else if p.contains("libcamera") {
-                        "libcamera via PipeWire"
-                    } else {
-                        "PipeWire"
-                    }
-                })
-                .unwrap_or("Unknown")
-                .to_string()
-        };
+        let source = "libcamera (native)".to_string();
 
-        let gstreamer_output = if needs_decoder && !is_libcamera {
-            pipeline::get_output_format()
-        } else {
-            None
-        };
-
-        let mjpeg_decoder = if is_libcamera {
-            self.insights.mjpeg_decoder.as_ref()
-        } else {
-            None
-        };
+        let mjpeg_decoder = self.insights.mjpeg_decoder.as_ref();
 
         let mjpeg_decoded_fmt = if mjpeg_decoder.is_some() {
             diag::get_mjpeg_decoded_format()
@@ -690,14 +651,12 @@ impl AppModel {
             fmt.as_str()
         } else if mjpeg_decoder.is_some() {
             "I420"
-        } else if is_libcamera {
+        } else {
             self.insights
                 .preview_stream
                 .as_ref()
                 .map(|s| s.pixel_format.as_str())
                 .unwrap_or(&format.pixel_format)
-        } else {
-            gstreamer_output.as_deref().unwrap_or(&format.pixel_format)
         };
 
         let wgpu_processing = match gpu_input_format {
@@ -711,21 +670,17 @@ impl AppModel {
         };
 
         self.insights.format_chain.source = source;
-        self.insights.format_chain.resolution = if is_libcamera {
-            self.insights
-                .preview_stream
-                .as_ref()
-                .map(|s| s.resolution.clone())
-                .unwrap_or_else(|| format!("{}x{}", format.width, format.height))
-        } else {
-            format!("{}x{}", format.width, format.height)
-        };
+        self.insights.format_chain.resolution = self
+            .insights
+            .preview_stream
+            .as_ref()
+            .map(|s| s.resolution.clone())
+            .unwrap_or_else(|| format!("{}x{}", format.width, format.height));
         self.insights.format_chain.framerate = format
             .framerate
             .map(|fps| format!("{} fps", fps))
             .unwrap_or_else(|| "N/A".to_string());
         self.insights.format_chain.native_format = format.pixel_format.clone();
-        self.insights.format_chain.gstreamer_output = gstreamer_output;
         self.insights.format_chain.wgpu_processing = wgpu_processing;
 
         if let Some(ref decoded) = mjpeg_decoded_fmt {
@@ -746,40 +701,30 @@ impl AppModel {
         }
     }
 
-    fn update_insights_performance(&mut self, is_libcamera: bool) {
+    fn update_insights_performance(&mut self) {
         use crate::app::video_primitive;
         use crate::backends::camera::libcamera::native::diagnostics as diag;
-        use crate::backends::camera::pipewire::pipeline;
 
-        if is_libcamera {
-            self.insights.cpu_decode_time_us = diag::get_mjpeg_decode_time_us();
+        self.insights.cpu_decode_time_us = diag::get_mjpeg_decode_time_us();
 
-            if let Some(stream) = &self.insights.preview_stream
-                && let Some((w, h)) = stream.resolution.split_once('x')
-                && let (Ok(w), Ok(h)) = (w.parse::<usize>(), h.parse::<usize>())
+        if let Some(stream) = &self.insights.preview_stream
+            && let Some((w, h)) = stream.resolution.split_once('x')
+            && let (Ok(w), Ok(h)) = (w.parse::<usize>(), h.parse::<usize>())
+        {
+            let bpp = if stream.pixel_format.contains("I420")
+                || stream.pixel_format.contains("NV12")
             {
-                let bpp = if stream.pixel_format.contains("I420")
-                    || stream.pixel_format.contains("NV12")
-                {
-                    1.5_f64
-                } else if stream.pixel_format.contains("RGBA")
-                    || stream.pixel_format.contains("BGRA")
-                {
-                    4.0
-                } else if stream.pixel_format.contains("YUYV") {
-                    2.0
-                } else if stream.pixel_format.contains("RGB24") {
-                    3.0
-                } else {
-                    1.5
-                };
-                self.insights.frame_size_decoded = (w as f64 * h as f64 * bpp) as usize;
-            }
-        } else {
-            self.insights.gstreamer_decode_time_us = pipeline::get_decode_time_us();
-            self.insights.dropped_frames = pipeline::get_dropped_frame_count();
-            self.insights.frame_size_decoded = pipeline::get_last_frame_size() as usize;
-            self.insights.copy_time_us = pipeline::get_copy_time_us();
+                1.5_f64
+            } else if stream.pixel_format.contains("RGBA") || stream.pixel_format.contains("BGRA") {
+                4.0
+            } else if stream.pixel_format.contains("YUYV") {
+                2.0
+            } else if stream.pixel_format.contains("RGB24") {
+                3.0
+            } else {
+                1.5
+            };
+            self.insights.frame_size_decoded = (w as f64 * h as f64 * bpp) as usize;
         }
 
         self.insights.gpu_conversion_time_us = video_primitive::get_gpu_upload_time_us();
@@ -820,6 +765,15 @@ impl AppModel {
         }
     }
 
+    fn update_insights_recording(&mut self) {
+        self.insights.recording_diag = crate::pipelines::video::get_recording_diagnostics();
+        self.insights.recording_stats = if self.insights.recording_diag.is_some() {
+            Some(crate::pipelines::video::get_recording_stats())
+        } else {
+            None
+        };
+    }
+
     pub(crate) fn handle_copy_pipeline_string(&self) -> Task<cosmic::Action<Message>> {
         if let Some(pipeline) = &self.insights.full_pipeline_string {
             info!("Copying pipeline string to clipboard");
@@ -829,4 +783,323 @@ impl AppModel {
             Task::none()
         }
     }
+
+    // =========================================================================
+    // Insights Capture (raw frame dump)
+    // =========================================================================
+
+    /// Capture raw binary frames from all running streams plus metadata as JSON.
+    ///
+    /// `frame_count`: 1 for single capture, 6 for burst.
+    /// Saves to `{photos_dir}/insights/capture_{timestamp}_*.{bin,json}`.
+    pub(crate) fn handle_insights_capture(
+        &mut self,
+        frame_count: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        // Snapshot the insights state as a JSON-serialisable value
+        let insights_json = self.build_insights_json();
+
+        // Grab the current preview frame (viewfinder stream) immediately
+        let preview_frame = self.current_frame.clone();
+
+        // For the raw/capture stream we use the same still-capture mechanism as burst mode
+        let is_multistream = self.is_current_camera_multistream();
+        let still_requested = std::sync::Arc::clone(&self.still_capture_requested);
+        let still_frame = std::sync::Arc::clone(&self.latest_still_frame);
+
+        let save_dir =
+            crate::app::get_photo_directory(&self.config.save_folder_name).join("insights");
+
+        info!(frame_count, is_multistream, "Starting insights capture");
+
+        Task::perform(
+            async move {
+                // Ensure output directory exists
+                tokio::fs::create_dir_all(&save_dir)
+                    .await
+                    .map_err(|e| format!("Failed to create insights dir: {e}"))?;
+
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                let mut saved_paths = Vec::new();
+
+                // Save insights state JSON (once per capture session)
+                let insights_path = save_dir.join(format!("capture_{timestamp}_insights.json"));
+                tokio::fs::write(&insights_path, &insights_json)
+                    .await
+                    .map_err(|e| format!("Failed to write insights JSON: {e}"))?;
+                saved_paths.push(insights_path.display().to_string());
+
+                for i in 0..frame_count {
+                    // e.g. "_1_of_6" for burst, "" for single
+                    let suffix = if frame_count > 1 {
+                        format!("_{}_of_{}", i + 1, frame_count)
+                    } else {
+                        String::new()
+                    };
+
+                    // --- Preview frame ---
+                    // Snapshot from when capture was triggered (can't poll live
+                    // frames from async task, but the preview frame is useful
+                    // as a reference for each burst iteration's metadata).
+                    if let Some(ref frame) = preview_frame {
+                        let bin_path =
+                            save_dir.join(format!("capture_{timestamp}_preview{suffix}.bin"));
+                        tokio::fs::write(&bin_path, frame.data.as_ref())
+                            .await
+                            .map_err(|e| format!("Failed to write preview bin: {e}"))?;
+                        saved_paths.push(bin_path.display().to_string());
+
+                        let meta_path =
+                            save_dir.join(format!("capture_{timestamp}_preview{suffix}_meta.json"));
+                        let meta_json = frame_metadata_to_json(frame, "preview");
+                        tokio::fs::write(&meta_path, meta_json)
+                            .await
+                            .map_err(|e| format!("Failed to write preview meta: {e}"))?;
+                        saved_paths.push(meta_path.display().to_string());
+                    }
+
+                    // --- Raw/capture stream frame ---
+                    if is_multistream {
+                        still_requested.store(true, std::sync::atomic::Ordering::Release);
+
+                        let timeout = std::time::Duration::from_secs(2);
+                        let raw_frame =
+                            super::capture::wait_for_still_frame(&still_frame, timeout).await;
+                        if raw_frame.is_none() {
+                            info!(frame = i + 1, "Timeout waiting for raw frame, skipping");
+                        }
+
+                        if let Some(ref frame) = raw_frame {
+                            let bin_path =
+                                save_dir.join(format!("capture_{timestamp}_raw{suffix}.bin"));
+                            tokio::fs::write(&bin_path, frame.data.as_ref())
+                                .await
+                                .map_err(|e| format!("Failed to write raw bin: {e}"))?;
+                            saved_paths.push(bin_path.display().to_string());
+
+                            let meta_path =
+                                save_dir.join(format!("capture_{timestamp}_raw{suffix}_meta.json"));
+                            let meta_json = frame_metadata_to_json(frame, "raw");
+                            tokio::fs::write(&meta_path, meta_json)
+                                .await
+                                .map_err(|e| format!("Failed to write raw meta: {e}"))?;
+                            saved_paths.push(meta_path.display().to_string());
+                        }
+                    }
+                }
+
+                info!(
+                    count = saved_paths.len(),
+                    dir = %save_dir.display(),
+                    "Insights capture complete"
+                );
+                Ok(saved_paths)
+            },
+            |result| cosmic::Action::App(Message::InsightsCaptureComplete(result)),
+        )
+    }
+
+    /// Build a JSON string capturing the entire current insights state.
+    fn build_insights_json(&self) -> String {
+        let ins = &self.insights;
+        let mut map = serde_json::Map::new();
+
+        // Pipeline
+        if let Some(ref p) = ins.full_pipeline_string {
+            map.insert("pipeline".into(), serde_json::Value::String(p.clone()));
+        }
+        map.insert(
+            "decoder_chain".into(),
+            serde_json::Value::Array(
+                ins.decoder_chain
+                    .iter()
+                    .map(|d| {
+                        serde_json::json!({
+                            "name": d.name,
+                            "description": d.description,
+                            "state": format!("{:?}", d.state),
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+
+        // Format chain
+        map.insert(
+            "format_chain".into(),
+            serde_json::json!({
+                "source": ins.format_chain.source,
+                "resolution": ins.format_chain.resolution,
+                "framerate": ins.format_chain.framerate,
+                "native_format": ins.format_chain.native_format,
+                "wgpu_processing": ins.format_chain.wgpu_processing,
+            }),
+        );
+
+        // Performance
+        map.insert(
+            "performance".into(),
+            serde_json::json!({
+                "frame_latency_us": ins.frame_latency_us,
+                "dropped_frames": ins.dropped_frames,
+                "frame_size_decoded": ins.frame_size_decoded,
+                "gpu_conversion_time_us": ins.gpu_conversion_time_us,
+                "copy_time_us": ins.copy_time_us,
+                "cpu_decode_time_us": ins.cpu_decode_time_us,
+                "cpu_processing": ins.cpu_processing,
+                "copy_bandwidth_mbps": ins.copy_bandwidth_mbps,
+            }),
+        );
+
+        // Backend
+        map.insert(
+            "backend".into(),
+            serde_json::json!({
+                "type": ins.backend_type,
+                "pipeline_handler": ins.pipeline_handler,
+                "libcamera_version": ins.libcamera_version,
+                "sensor_model": ins.sensor_model,
+                "mjpeg_decoder": ins.mjpeg_decoder,
+                "is_multistream": ins.is_multistream,
+                "libcamera_multistream_capable": ins.libcamera_multistream_capable,
+            }),
+        );
+
+        // Streams
+        if let Some(ref s) = ins.preview_stream {
+            map.insert(
+                "preview_stream".into(),
+                serde_json::json!({
+                    "role": s.role,
+                    "resolution": s.resolution,
+                    "pixel_format": s.pixel_format,
+                    "frame_count": s.frame_count,
+                }),
+            );
+        }
+        if let Some(ref s) = ins.capture_stream {
+            map.insert(
+                "capture_stream".into(),
+                serde_json::json!({
+                    "role": s.role,
+                    "resolution": s.resolution,
+                    "pixel_format": s.pixel_format,
+                    "frame_count": s.frame_count,
+                }),
+            );
+        }
+
+        // Recording pipeline
+        if let Some(ref rec) = ins.recording_diag {
+            let mut rec_json = serde_json::json!({
+                "mode": rec.mode,
+                "encoder": rec.encoder,
+                "resolution": rec.resolution,
+                "framerate": rec.framerate,
+                "pipeline_string": rec.pipeline_string,
+            });
+            if let Some(ref stats) = ins.recording_stats {
+                rec_json["stats"] = serde_json::json!({
+                    "capture_sent": stats.capture_sent,
+                    "capture_dropped": stats.capture_dropped,
+                    "pusher_pushed": stats.pusher_pushed,
+                    "pusher_skipped": stats.pusher_skipped,
+                    "channel_backlog": stats.channel_backlog,
+                    "effective_fps": stats.effective_fps,
+                    "last_pts_ms": stats.last_pts_ms,
+                    "last_processing_delay_us": stats.last_processing_delay_us,
+                    "last_convert_time_us": stats.last_convert_time_us,
+                });
+            }
+            map.insert("recording_pipeline".into(), rec_json);
+        }
+
+        // Frame metadata
+        map.insert(
+            "frame_metadata".into(),
+            serde_json::json!({
+                "has_libcamera_metadata": ins.has_libcamera_metadata,
+                "exposure_us": ins.meta_exposure_us,
+                "analogue_gain": ins.meta_analogue_gain,
+                "digital_gain": ins.meta_digital_gain,
+                "colour_temperature": ins.meta_colour_temperature,
+                "sequence": ins.meta_sequence,
+                "colour_gains": ins.meta_colour_gains,
+                "black_level": ins.meta_black_level,
+                "lens_position": ins.meta_lens_position,
+                "lux": ins.meta_lux,
+                "focus_fom": ins.meta_focus_fom,
+            }),
+        );
+
+        serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap_or_default()
+    }
+}
+
+/// Serialize a single CameraFrame's metadata to JSON.
+fn frame_metadata_to_json(
+    frame: &crate::backends::camera::types::CameraFrame,
+    stream_name: &str,
+) -> String {
+    let mut map = serde_json::Map::new();
+
+    map.insert(
+        "stream".into(),
+        serde_json::Value::String(stream_name.to_string()),
+    );
+    map.insert("width".into(), serde_json::json!(frame.width));
+    map.insert("height".into(), serde_json::json!(frame.height));
+    map.insert(
+        "format".into(),
+        serde_json::Value::String(format!("{:?}", frame.format)),
+    );
+    map.insert("stride".into(), serde_json::json!(frame.stride));
+    map.insert("data_size".into(), serde_json::json!(frame.data.len()));
+    map.insert(
+        "sensor_timestamp_ns".into(),
+        serde_json::json!(frame.sensor_timestamp_ns),
+    );
+
+    if let Some(ref planes) = frame.yuv_planes {
+        map.insert(
+            "yuv_planes".into(),
+            serde_json::json!({
+                "y_offset": planes.y_offset,
+                "y_size": planes.y_size,
+                "uv_offset": planes.uv_offset,
+                "uv_size": planes.uv_size,
+                "uv_stride": planes.uv_stride,
+                "v_offset": planes.v_offset,
+                "v_size": planes.v_size,
+                "v_stride": planes.v_stride,
+                "uv_width": planes.uv_width,
+                "uv_height": planes.uv_height,
+            }),
+        );
+    }
+
+    if let Some(ref meta) = frame.libcamera_metadata {
+        map.insert(
+            "libcamera_metadata".into(),
+            serde_json::json!({
+                "exposure_time_us": meta.exposure_time,
+                "analogue_gain": meta.analogue_gain,
+                "digital_gain": meta.digital_gain,
+                "colour_temperature": meta.colour_temperature,
+                "lens_position": meta.lens_position,
+                "sensor_timestamp": meta.sensor_timestamp,
+                "sequence": meta.sequence,
+                "af_state": format!("{:?}", meta.af_state),
+                "ae_state": format!("{:?}", meta.ae_state),
+                "awb_state": format!("{:?}", meta.awb_state),
+                "colour_gains": meta.colour_gains,
+                "colour_correction_matrix": meta.colour_correction_matrix,
+                "black_level": meta.black_level,
+                "lux": meta.lux,
+                "focus_fom": meta.focus_fom,
+            }),
+        );
+    }
+
+    serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap_or_default()
 }

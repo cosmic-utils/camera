@@ -34,7 +34,7 @@ flatpak install camera-x86_64.flatpak
 
 - Rust (stable)
 - GStreamer 1.0 with plugins (base, good, bad, ugly)
-- libcamera
+- libcamera (>= 0.4.0)
 - cmake (for building embedded libjpeg-turbo)
 - libwayland
 - libxkbcommon
@@ -219,10 +219,10 @@ cross build --release --target aarch64-unknown-linux-gnu
 
 | Target | Dockerfile | Base |
 |--------|-----------|------|
-| `aarch64-unknown-linux-gnu` | `docker/Dockerfile.aarch64` | Ubuntu 24.04 |
-| `armv7-unknown-linux-gnueabihf` | `docker/Dockerfile.armhf` | Ubuntu 24.04 |
-| `riscv64gc-unknown-linux-gnu` | `docker/Dockerfile.riscv64` | Ubuntu 24.04 |
-| `x86_64-unknown-linux-gnu` | `docker/Dockerfile.x86_64` | Ubuntu 24.04 |
+| `aarch64-unknown-linux-gnu` | `docker/Dockerfile.aarch64` | Ubuntu 25.04 |
+| `armv7-unknown-linux-gnueabihf` | `docker/Dockerfile.armhf` | Ubuntu 25.04 |
+| `riscv64gc-unknown-linux-gnu` | `docker/Dockerfile.riscv64` | Ubuntu 25.04 |
+| `x86_64-unknown-linux-gnu` | `docker/Dockerfile.x86_64` | Ubuntu 25.04 |
 | `x86_64-unknown-linux-musl` | `docker/Dockerfile.x86_64-musl` | Alpine |
 | `aarch64-unknown-linux-musl` | `docker/Dockerfile.aarch64-musl` | Alpine + clang |
 

@@ -476,9 +476,8 @@ impl AppModel {
 
         // Add iOS-style format picker overlay if visible
         // Hide with libcamera backend in photo/video modes (resolution is handled automatically)
-        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Video)
-            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
+        let is_libcamera_no_picker =
+            self.mode == CameraMode::Photo || self.mode == CameraMode::Video;
         if self.format_picker_visible && !is_libcamera_no_picker {
             main_stack = main_stack.push(self.build_format_picker());
         }
@@ -543,9 +542,8 @@ impl AppModel {
         // - File source is set in Virtual mode (show file resolution instead)
         let has_file_source =
             self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
-        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Video)
-            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
+        let is_libcamera_no_picker =
+            self.mode == CameraMode::Photo || self.mode == CameraMode::Video;
         let show_format_button = !self.format_picker_visible
             && (self.mode == CameraMode::Photo || !self.recording.is_recording())
             && !self.virtual_camera.is_streaming()

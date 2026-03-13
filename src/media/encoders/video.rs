@@ -460,9 +460,10 @@ pub fn configure_video_encoder(
         // x265 software encoder
         "x265enc" => {
             encoder.set_property_from_str("speed-preset", quality.x264_preset());
+            encoder.set_property_from_str("tune", "zerolatency");
             encoder.set_property("bitrate", bitrate);
             debug!(
-                "Configured x265enc: preset={}, bitrate={} kbps",
+                "Configured x265enc: preset={}, tune=zerolatency, bitrate={} kbps",
                 quality.x264_preset(),
                 bitrate
             );
@@ -475,13 +476,16 @@ pub fn configure_video_encoder(
             debug!("Configured VA-API encoder: bitrate={} kbps", bitrate);
         }
 
-        // NVIDIA encoders
+        // NVIDIA encoders (NVENC)
+        // Preset p1-p7 scale from fastest (p1) to best quality (p7).
         "nvh264enc" | "nvh265enc" | "nvav1enc" => {
             encoder.set_property("bitrate", bitrate);
-            encoder.set_property_from_str("rc-mode", "vbr"); // Variable bitrate
+            encoder.set_property_from_str("rc-mode", "vbr");
             let preset = match quality {
-                VideoQuality::Low | VideoQuality::Medium => "fast",
-                VideoQuality::High | VideoQuality::Maximum => "hq",
+                VideoQuality::Low => "p1",
+                VideoQuality::Medium => "p3",
+                VideoQuality::High => "p5",
+                VideoQuality::Maximum => "p7",
             };
             encoder.set_property_from_str("preset", preset);
             debug!(

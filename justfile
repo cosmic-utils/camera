@@ -316,6 +316,7 @@ flatpak-deps arch="":
     sudo flatpak install -y --noninteractive flathub org.freedesktop.Platform//${RUNTIME_VERSION} $ARCH_FLAG
     sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk//${RUNTIME_VERSION} $ARCH_FLAG
     sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.rust-stable//${RUNTIME_VERSION} $ARCH_FLAG
+    sudo flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.llvm21//${RUNTIME_VERSION} $ARCH_FLAG
     sudo flatpak install -y --noninteractive flathub com.system76.Cosmic.BaseApp//stable $ARCH_FLAG
     echo "Flatpak dependencies installed!"
 

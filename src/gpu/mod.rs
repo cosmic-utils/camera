@@ -70,7 +70,7 @@ pub async fn create_low_priority_compute_device(
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: Some(label),
-                required_features: wgpu::Features::empty(),
+                required_features: adapter.features() & wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
                 required_limits: adapter_limits.clone(),
                 memory_hints: wgpu::MemoryHints::Performance,
             },

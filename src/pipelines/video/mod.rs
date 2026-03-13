@@ -15,8 +15,9 @@ pub mod recorder;
 // Re-export commonly used types
 pub use encoder_selection::EncoderConfig;
 pub use recorder::{
-    AppsrcRecorderConfig, AudioLevels, PipeWireRecorderConfig, RecorderConfig, SharedAudioLevels,
-    VideoRecorder, check_available_encoders,
+    AppsrcRecorderConfig, AudioLevels, RecorderConfig, RecordingDiagnostics,
+    RecordingStatsSnapshot, SharedAudioLevels, VideoRecorder, check_available_encoders,
+    get_recording_diagnostics, get_recording_stats,
 };
 
 // Re-export encoder types for convenience

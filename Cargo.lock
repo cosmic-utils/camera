@@ -3894,13 +3894,15 @@ checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 [[package]]
 name = "libcamera"
 version = "0.7.0"
-source = "git+https://github.com/FreddyFunk/libcamera-rs.git?rev=aaf51ee#aaf51eefe23cf710e9463065e3fc7740ffba7ad3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0af3de3417824209a2f1619bce9c2b19aca5bdeb4233376208fcea87e6104f36"
 dependencies = [
  "bitflags 2.11.0",
  "drm-fourcc",
  "libc",
  "libcamera-sys",
  "num_enum 0.6.1",
+ "pkg-config",
  "semver",
  "smallvec",
  "thiserror 1.0.69",
@@ -3909,9 +3911,9 @@ dependencies = [
 [[package]]
 name = "libcamera-sys"
 version = "0.7.0"
-source = "git+https://github.com/FreddyFunk/libcamera-rs.git?rev=aaf51ee#aaf51eefe23cf710e9463065e3fc7740ffba7ad3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb33a6d621530b7d10c25d8871d86615e84249854d8e5974812ca77458df9253"
 dependencies = [
- "anyhow",
  "bindgen",
  "cc",
  "pkg-config",

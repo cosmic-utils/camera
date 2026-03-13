@@ -71,6 +71,46 @@ pub struct WarpParams {
     pub _padding3: u32,
 }
 
+/// Parameters for sharpness estimation shader
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SharpnessParams {
+    pub width: u32,
+    pub height: u32,
+    pub tile_size: u32,
+    pub n_tiles_x: u32,
+    pub n_tiles_y: u32,
+    pub _padding: [u32; 3],
+}
+
+/// Parameters for noise estimation shader
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct NoiseParams {
+    pub width: u32,
+    pub height: u32,
+    pub num_bins: u32,
+    pub bin_scale: f32,
+    pub median_value: f32,
+    pub _padding0: u32,
+    pub _padding1: u32,
+    pub _padding2: u32,
+}
+
+/// Parameters for local luminance computation shader
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LocalLumParams {
+    pub width: u32,
+    pub height: u32,
+    pub block_size: u32,
+    pub lum_width: u32,
+    pub lum_height: u32,
+    pub _padding0: u32,
+    pub _padding1: u32,
+    pub _padding2: u32,
+}
+
 /// Parameters for chromatic aberration estimation shader
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -134,18 +174,47 @@ pub struct ChromaDenoiseParams {
     pub edge_threshold: f32,
 }
 
-/// Parameters for guided filter shader (currently only used by WGSL shader)
+/// Parameters for Bayer finishing shader (demosaic merged planes + WB + CCM).
+///
+/// HDR+ paper Section 6: after Bayer-domain merge, apply finishing pipeline.
+/// Gamma/tonemapping is handled separately by the tonemap shader.
+/// Must match FinishParams in bayer_finish.wgsl (std140 layout).
+///
+/// WGSL std140 alignment: vec4<f32> requires 16-byte alignment, so we need
+/// explicit padding after gain_b (offset 24) to align ccm_row0 at offset 32.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-#[allow(dead_code)]
-pub struct GuidedFilterParams {
-    pub width: u32,
-    pub height: u32,
-    pub radius: u32,
-    pub epsilon: f32,
-}
+pub struct BayerFinishParams {
+    /// Half-resolution dimensions (Bayer plane dimensions)
+    pub half_width: u32, // offset 0
+    pub half_height: u32, // offset 4
+    /// Full-resolution output dimensions
+    pub full_width: u32, // offset 8
+    pub full_height: u32, // offset 12
+    /// White balance gain for red channel
+    pub gain_r: f32, // offset 16
+    /// White balance gain for blue channel
+    pub gain_b: f32, // offset 20
+    /// Padding for vec4 alignment of ccm_row0
+    pub _align_pad0: u32, // offset 24
+    pub _align_pad1: u32, // offset 28
+    /// Colour correction matrix row 0 (xyz used, w=pad)
+    pub ccm_row0: [f32; 4], // offset 32 (16-aligned)
+    /// Colour correction matrix row 1
+    pub ccm_row1: [f32; 4], // offset 48
+    /// Colour correction matrix row 2
+    pub ccm_row2: [f32; 4], // offset 64
+    /// Whether to apply WB+CCM (1=yes, 0=no)
+    pub use_colour: u32, // offset 80
+    pub _pad0: u32,       // offset 84
+    pub _pad1: u32,       // offset 88
+    pub _pad2: u32,       // offset 92
+} // total: 96 bytes
 
 // Size assertions to catch WGSL/Rust struct mismatches at compile time
+const _: () = assert!(std::mem::size_of::<SharpnessParams>() == 32);
+const _: () = assert!(std::mem::size_of::<NoiseParams>() == 32);
+const _: () = assert!(std::mem::size_of::<LocalLumParams>() == 32);
 const _: () = assert!(std::mem::size_of::<LuminanceParams>() == 16);
 const _: () = assert!(std::mem::size_of::<PyramidParams>() == 16);
 const _: () = assert!(std::mem::size_of::<AlignParams>() == 48);
@@ -154,4 +223,5 @@ const _: () = assert!(std::mem::size_of::<CAEstimateParams>() == 32);
 const _: () = assert!(std::mem::size_of::<MergeParams>() == 56);
 const _: () = assert!(std::mem::size_of::<SpatialDenoiseParams>() == 40);
 const _: () = assert!(std::mem::size_of::<ChromaDenoiseParams>() == 16);
-const _: () = assert!(std::mem::size_of::<GuidedFilterParams>() == 16);
+// BayerFinishParams: 4*u32(16) + 2*f32(8) + 2*pad(8) + 3*vec4(48) + u32(4) + 3*pad(12) = 96
+const _: () = assert!(std::mem::size_of::<BayerFinishParams>() == 96);

@@ -3,7 +3,7 @@
 //! Bug report generation
 //!
 //! Collects comprehensive system information for debugging purposes:
-//! - PipeWire video/audio devices
+//! - Video/audio devices
 //! - Available video encoders
 //! - GPU information from WGPU
 //! - System information (kernel, flatpak, etc.)
@@ -54,7 +54,7 @@ impl BugReportGenerator {
         // GPU information
         report.push_str(&Self::get_gpu_info().await);
 
-        // PipeWire video devices
+        // Video devices
         report.push_str(&Self::format_video_devices(video_devices));
 
         // PipeWire audio devices
@@ -66,7 +66,7 @@ impl BugReportGenerator {
             selected_encoder_index,
         ));
 
-        // PipeWire detailed dump
+        // PipeWire dump (optional diagnostics)
         report.push_str(&Self::get_pipewire_dump().await);
 
         // Save to file
@@ -205,9 +205,9 @@ impl BugReportGenerator {
         info
     }
 
-    /// Format PipeWire video devices
+    /// Format video devices
     fn format_video_devices(devices: &[crate::backends::camera::types::CameraDevice]) -> String {
-        let mut info = String::from("## PipeWire Video Devices\n\n");
+        let mut info = String::from("## Video Devices\n\n");
 
         if devices.is_empty() {
             info.push_str("**No video devices detected**\n\n");
@@ -217,9 +217,6 @@ impl BugReportGenerator {
         for (idx, device) in devices.iter().enumerate() {
             info.push_str(&format!("### Device {} - {}\n\n", idx + 1, device.name));
             info.push_str(&format!("- **Path:** {}\n", device.path));
-            if let Some(metadata_path) = &device.metadata_path {
-                info.push_str(&format!("- **Metadata Path:** {}\n", metadata_path));
-            }
             info.push('\n');
         }
 

@@ -3,7 +3,7 @@
 //! Backend abstraction layer for camera and audio capture
 //!
 //! This module provides platform-specific backend implementations for:
-//! - Camera capture via PipeWire
+//! - Camera capture via libcamera
 //! - Audio device enumeration via PipeWire
 //! - Virtual camera output via PipeWire
 //!
@@ -21,7 +21,7 @@
 //! │              Backend Layer                   │
 //! │  ┌─────────────┐    ┌──────────────────┐   │
 //! │  │    Audio    │    │     Camera       │   │
-//! │  │  (PipeWire) │    │    (PipeWire)    │   │
+//! │  │  (PipeWire) │    │   (libcamera)    │   │
 //! │  └─────────────┘    └──────────────────┘   │
 //! │                     ┌──────────────────┐   │
 //! │                     │ Virtual Camera   │   │

@@ -71,21 +71,30 @@ fn convert_nv12(pos: vec2<u32>) -> vec3<f32> {
     // Sample Y at full resolution
     let y = textureLoad(tex_y, pos, 0).r;
 
-    // Sample UV at half resolution (2x2 pixels share same UV)
-    let uv_pos = pos / 2u;
+    // Scale UV coordinates based on actual texture dimensions
+    let y_dim = textureDimensions(tex_y);
+    let uv_dim = textureDimensions(tex_uv);
+    let uv_pos = vec2(pos.x * uv_dim.x / y_dim.x, pos.y * uv_dim.y / y_dim.y);
     let uv = textureLoad(tex_uv, uv_pos, 0);
 
     return yuv_to_rgb_bt601(y, uv.r, uv.g);
 }
 
-// Convert I420 pixel at given position
-// I420: Y plane (full res) + U plane (half res) + V plane (half res)
+// Convert planar YUV pixel at given position
+// Supports any chroma subsampling (I420 4:2:0, I422 4:2:2, I444 4:4:4)
+// by deriving UV coordinates from actual texture dimensions.
 fn convert_i420(pos: vec2<u32>) -> vec3<f32> {
     // Sample Y at full resolution
     let y = textureLoad(tex_y, pos, 0).r;
 
-    // Sample U and V at half resolution
-    let uv_pos = pos / 2u;
+    // Scale UV coordinates based on actual texture dimensions.
+    // This handles all subsampling types automatically:
+    //   4:2:0 (I420): UV is half-width, half-height → pos * uv_dim / y_dim
+    //   4:2:2 (I422): UV is half-width, full-height → scales x only
+    //   4:4:4 (I444): UV is full-width, full-height → no scaling
+    let y_dim = textureDimensions(tex_y);
+    let uv_dim = textureDimensions(tex_uv);
+    let uv_pos = vec2(pos.x * uv_dim.x / y_dim.x, pos.y * uv_dim.y / y_dim.y);
     let u = textureLoad(tex_uv, uv_pos, 0).r;
     let v = textureLoad(tex_v, uv_pos, 0).r;
 
@@ -176,8 +185,10 @@ fn convert_nv21(pos: vec2<u32>) -> vec3<f32> {
     // Sample Y at full resolution
     let y = textureLoad(tex_y, pos, 0).r;
 
-    // Sample VU at half resolution (V in R channel, U in G channel)
-    let uv_pos = pos / 2u;
+    // Scale VU coordinates based on actual texture dimensions
+    let y_dim = textureDimensions(tex_y);
+    let uv_dim = textureDimensions(tex_uv);
+    let uv_pos = vec2(pos.x * uv_dim.x / y_dim.x, pos.y * uv_dim.y / y_dim.y);
     let vu = textureLoad(tex_uv, uv_pos, 0);
 
     // VU layout: R=V, G=U (swapped from NV12's UV)

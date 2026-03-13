@@ -284,9 +284,6 @@ pub mod latency {
     /// Higher values reduce overhead but slow camera switching response
     pub const CANCEL_CHECK_INTERVAL_MS: u64 = 100;
 
-    /// High latency warning threshold in microseconds (33ms = 2 frames at 60fps)
-    pub const HIGH_LATENCY_WARNING_US: u128 = 33_000;
-
     /// Pipeline cleanup delay in milliseconds before creating new pipeline
     pub const PIPELINE_CLEANUP_DELAY_MS: u64 = 20;
 }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Camera backend with trait-based abstraction for future multi-backend support
+// Camera backend using native libcamera-rs bindings
 
 //! Camera backend abstraction
 //!
-//! This module provides a complete trait-based abstraction for the PipeWire camera backend.
+//! This module provides the libcamera camera backend with trait-based abstraction.
 //!
 //! # Architecture
 //!
@@ -22,24 +22,20 @@
 //! │  CameraBackend Trait│  ← Common interface
 //! └──────────┬──────────┘
 //!            │
-//!    ┌───────┴───────┐
-//!    ▼               ▼
-//! ┌────────┐   ┌──────────┐
-//! │PipeWire│   │libcamera │  ← Native libcamera-rs bindings
-//! └────────┘   └──────────┘
+//!            ▼
+//!       ┌──────────┐
+//!       │libcamera │  ← Native libcamera-rs bindings
+//!       └──────────┘
 //! ```
 
 pub mod libcamera;
 pub mod manager;
-pub mod pipewire;
 pub mod types;
 pub mod v4l2_controls;
 pub mod v4l2_utils;
 
 pub use manager::CameraBackendManager;
 pub use types::*;
-
-use std::path::PathBuf;
 
 /// Complete camera backend trait
 ///
@@ -114,43 +110,12 @@ pub trait CameraBackend: Send + Sync {
     ///
     /// This captures a single frame with the current camera settings.
     /// The frame data is copied immediately, so the camera preview is not blocked.
-    /// The frame is in RGBA format and ready for processing by the photo pipeline.
+    /// The frame format depends on the camera (RGBA, Bayer, or YUV).
     ///
     /// # Returns
     /// * `Ok(CameraFrame)` - Frame captured successfully
     /// * `Err(BackendError)` - Capture failed
     fn capture_photo(&self) -> BackendResult<CameraFrame>;
-
-    // ===== Capture: Video =====
-
-    /// Start video recording to a file
-    ///
-    /// This starts recording video (and audio if configured) to the specified path.
-    /// Preview continues uninterrupted during recording.
-    /// Only one recording can be active at a time.
-    ///
-    /// # Arguments
-    /// * `output_path` - Path where the video file will be saved
-    ///
-    /// # Returns
-    /// * `Ok(())` - Recording started successfully
-    /// * `Err(BackendError::RecordingInProgress)` - Already recording
-    /// * `Err(BackendError)` - Failed to start recording
-    fn start_recording(&mut self, output_path: PathBuf) -> BackendResult<()>;
-
-    /// Stop video recording and finalize the file
-    ///
-    /// This stops the active recording, flushes the encoder, and finalizes the output file.
-    /// Preview continues uninterrupted.
-    ///
-    /// # Returns
-    /// * `Ok(PathBuf)` - Path to the saved video file
-    /// * `Err(BackendError::NoRecordingInProgress)` - No active recording
-    /// * `Err(BackendError)` - Failed to stop recording
-    fn stop_recording(&mut self) -> BackendResult<PathBuf>;
-
-    /// Check if currently recording
-    fn is_recording(&self) -> bool;
 
     // ===== Preview =====
 
@@ -166,12 +131,7 @@ pub trait CameraBackend: Send + Sync {
 
     // ===== Metadata =====
 
-    /// Get the backend type identifier
-    fn backend_type(&self) -> CameraBackendType;
-
     /// Check if this backend is available on the current system
-    ///
-    /// This checks for required system components (PipeWire daemon, V4L2 devices, etc.)
     fn is_available(&self) -> bool;
 
     /// Get the currently active camera device (if initialized)
@@ -181,41 +141,7 @@ pub trait CameraBackend: Send + Sync {
     fn current_format(&self) -> Option<&CameraFormat>;
 }
 
-/// Get a concrete backend instance for the specified type
-pub fn get_backend_for_type(backend_type: CameraBackendType) -> Box<dyn CameraBackend> {
-    match backend_type {
-        CameraBackendType::PipeWire => Box::new(pipewire::PipeWireBackend::new()),
-        CameraBackendType::Libcamera => Box::new(libcamera::LibcameraBackend::new()),
-    }
-}
-
-/// Get the default backend type
-///
-/// Returns Libcamera if libcamera detects cameras (for multi-stream capture),
-/// otherwise falls back to PipeWire.
-///
-/// The result is cached because libcamera only allows one CameraManager at a time
-/// (calling CameraManager::new() twice aborts the process).
-pub fn get_default_backend() -> CameraBackendType {
-    static DETECTED: std::sync::OnceLock<CameraBackendType> = std::sync::OnceLock::new();
-
-    *DETECTED.get_or_init(|| {
-        let libcamera_available = ::libcamera::camera_manager::CameraManager::new()
-            .map(|mgr| !mgr.cameras().is_empty())
-            .unwrap_or(false);
-
-        let backend = if libcamera_available {
-            CameraBackendType::Libcamera
-        } else {
-            CameraBackendType::PipeWire
-        };
-
-        tracing::info!(
-            libcamera = libcamera_available,
-            backend = %backend,
-            "Auto-detected default backend"
-        );
-
-        backend
-    })
+/// Create a new backend instance
+pub fn create_backend() -> Box<dyn CameraBackend> {
+    Box::new(libcamera::LibcameraBackend::new())
 }

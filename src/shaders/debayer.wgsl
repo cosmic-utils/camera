@@ -10,24 +10,34 @@
 // Algorithm: Bilinear interpolation
 // - Each pixel directly measures one color (R, G, or B based on position)
 // - The other two colors are interpolated from neighboring pixels
+//
+// White balance gains are read from a storage buffer (binding 3).
+// When ISP provides gains, the CPU writes them directly to the buffer.
+// When ISP gains are absent, the GPU AWB shader computes and writes them.
 
 struct DebayerParams {
     width: u32,
     height: u32,
     pattern: u32,           // 0=RGGB, 1=BGGR, 2=GRBG, 3=GBRG
     use_isp_colour: u32,    // 1 = apply gains+CCM, 0 = raw output
-    colour_gain_r: f32,
-    colour_gain_b: f32,
     black_level: f32,
     _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
     ccm_row0: vec4<f32>,
     ccm_row1: vec4<f32>,
     ccm_row2: vec4<f32>,
 }
 
+struct AwbGains {
+    gain_r: f32,
+    gain_b: f32,
+}
+
 @group(0) @binding(0) var tex_bayer: texture_2d<f32>;
 @group(0) @binding(1) var output: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(2) var<uniform> params: DebayerParams;
+@group(0) @binding(3) var<storage, read> awb_gains: AwbGains;
 
 // Get pixel value with bounds checking (clamp to edge)
 fn sample_bayer(x: i32, y: i32) -> f32 {
@@ -122,7 +132,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         b = center;
     }
 
-    // Apply ISP white balance and colour correction (in linear space, before gamma)
+    // Apply white balance and colour correction (in linear space, before gamma)
     if (params.use_isp_colour == 1u) {
         // Subtract sensor black level so gains don't amplify the DC offset per-channel
         let bl = params.black_level;
@@ -131,11 +141,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         g = max(g - bl, 0.0) * scale;
         b = max(b - bl, 0.0) * scale;
 
-        // White balance gains (green gain is implicitly 1.0, ISP normalizes to green)
-        r = r * params.colour_gain_r;
-        b = b * params.colour_gain_b;
+        // White balance gains from storage buffer (ISP or GPU AWB computed)
+        r = r * awb_gains.gain_r;
+        b = b * awb_gains.gain_b;
 
-        // Colour correction matrix (sensor RGB → sRGB)
+        // Colour correction matrix (sensor RGB -> sRGB)
         let linear = vec3(r, g, b);
         r = dot(linear, params.ccm_row0.xyz);
         g = dot(linear, params.ccm_row1.xyz);

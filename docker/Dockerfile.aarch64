@@ -1,21 +1,20 @@
 # Cross-compilation image for aarch64-unknown-linux-gnu
-FROM ubuntu:24.04
+FROM ubuntu:25.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Configure apt sources: amd64 from archive.ubuntu.com, aarch64 (arm64) from ports.ubuntu.com
 RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources && \
-    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main universe' > /etc/apt/sources.list && \
-    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main universe' >> /etc/apt/sources.list && \
-    echo 'deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main universe' >> /etc/apt/sources.list && \
-    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe' >> /etc/apt/sources.list && \
-    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe' >> /etc/apt/sources.list && \
-    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe' >> /etc/apt/sources.list
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu plucky main universe' > /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://archive.ubuntu.com/ubuntu plucky-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=amd64] http://security.ubuntu.com/ubuntu plucky-security main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports plucky main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports plucky-updates main universe' >> /etc/apt/sources.list && \
+    echo 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports plucky-security main universe' >> /etc/apt/sources.list
 
 # Install base tools (before adding aarch64 architecture)
 # Note: libglib2.0-dev-bin must be installed here (amd64) to prevent
 # conflicts when installing libglib2.0-dev:arm64 later.
-# meson/ninja/python3 modules are needed for the vendored libcamera build.
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
@@ -23,23 +22,17 @@ RUN apt-get update && apt-get install -y \
     cmake \
     nasm \
     libglib2.0-dev-bin \
-    meson \
-    ninja-build \
-    python3-jinja2 \
-    python3-yaml \
-    python3-ply \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Add aarch64 architecture and install cross-compilation toolchain and dependencies
 # Combined into single RUN to ensure apt-get update is always fresh
 # (dpkg architecture name: arm64)
-# libyaml-dev:arm64 is needed by the vendored libcamera meson build
 RUN dpkg --add-architecture arm64 && \
     apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
-    libyaml-dev:arm64 \
+    libcamera-dev:arm64 \
     libglib2.0-dev:arm64 \
     libgstreamer1.0-dev:arm64 \
     libgstreamer-plugins-base1.0-dev:arm64 \
@@ -52,8 +45,6 @@ RUN dpkg --add-architecture arm64 && \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up environment for cross-compilation
-# The vendored libcamera build generates a meson cross-file automatically
-# from the CC/CXX env vars below.
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
     CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
     CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \

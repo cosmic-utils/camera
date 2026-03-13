@@ -41,7 +41,7 @@ libc = "0.2.183"
 dng = "1.5"
 async-stream = "0.3"
 # Native libcamera bindings for direct camera access (bypasses GStreamer)
-libcamera = { git = "https://github.com/FreddyFunk/libcamera-rs.git", rev = "aaf51ee", features = ["vendored", "pkg-config", "pregenerated-bindings"] }
+libcamera = "0.7.0"
 drm-fourcc = "2.2"
 turbojpeg = { version = "1.3", default-features = false, features = ["cmake"] }
 

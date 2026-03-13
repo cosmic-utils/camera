@@ -35,18 +35,6 @@ impl AppModel {
     pub fn settings_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
         let is_recording = self.recording.is_recording();
 
-        // Mode dropdown (consolidated format selector)
-        let current_mode_index = if let Some(active) = &self.active_format {
-            self.mode_list.iter().position(|f| {
-                f.width == active.width
-                    && f.height == active.height
-                    && f.framerate == active.framerate
-                    && f.pixel_format == active.pixel_format
-            })
-        } else {
-            None
-        };
-
         // Bitrate preset index
         let current_bitrate_index = BitratePreset::ALL
             .iter()
@@ -111,52 +99,6 @@ impl AppModel {
         // Add device info panel if visible
         if self.device_info_visible {
             camera_section = camera_section.add(self.build_device_info_panel());
-        }
-
-        // Backend dropdown (only show if libcamera is available)
-        if self.backend_dropdown_options.len() > 1 {
-            let current_backend_index = match self.config.backend {
-                crate::backends::camera::CameraBackendType::Libcamera => 0,
-                crate::backends::camera::CameraBackendType::PipeWire => 1,
-            };
-            let backend_control: Element<'_, Message> = if is_recording {
-                disabled_text(
-                    self.backend_dropdown_options
-                        .get(current_backend_index)
-                        .cloned()
-                        .unwrap_or_default(),
-                )
-            } else {
-                widget::dropdown(
-                    &self.backend_dropdown_options,
-                    Some(current_backend_index),
-                    Message::SelectBackend,
-                )
-                .into()
-            };
-            camera_section = camera_section.add(
-                widget::settings::item::builder(fl!("settings-backend")).control(backend_control),
-            );
-        }
-
-        if self.config.backend != crate::backends::camera::CameraBackendType::Libcamera {
-            let format_control: Element<'_, Message> = if is_recording {
-                disabled_text(
-                    current_mode_index
-                        .and_then(|i| self.mode_dropdown_options.get(i).cloned())
-                        .unwrap_or_default(),
-                )
-            } else {
-                widget::dropdown(
-                    &self.mode_dropdown_options,
-                    current_mode_index,
-                    Message::SelectMode,
-                )
-                .into()
-            };
-            camera_section = camera_section.add(
-                widget::settings::item::builder(fl!("settings-format")).control(format_control),
-            );
         }
 
         // Audio encoder index
@@ -410,7 +352,7 @@ impl AppModel {
         let mut info_column = widget::column().spacing(4);
 
         if let Some(info) = device_info {
-            // V4L2/PipeWire device info
+            // V4L2 device info
             if !info.card.is_empty() {
                 info_column = info_column.push(info_row(fl!("device-info-card"), &info.card));
             }

@@ -383,6 +383,12 @@ impl BurstModeState {
         self.target_frame_count = target_frame_count;
     }
 
+    /// Set frames directly (used when frames are captured via capture_photo() in multistream mode)
+    pub fn set_frames(&mut self, frames: Vec<Arc<CameraFrame>>) {
+        self.target_frame_count = frames.len();
+        self.frame_buffer = frames;
+    }
+
     /// Start processing
     pub fn start_processing(&mut self) {
         self.stage = BurstModeStage::Processing;
@@ -601,7 +607,10 @@ pub struct AppModel {
     pub gallery_thumbnail_rgba: Option<(Arc<Vec<u8>>, u32, u32)>,
     /// Currently selected resolution in the picker (width for grouping)
     pub picker_selected_resolution: Option<u32>,
-    /// Camera backend manager (PipeWire)
+    /// V4L2 device path the user is trying to switch to (set when switching
+    /// to a hotplugged camera that needs full re-enumeration).
+    pub pending_hotplug_switch: Option<String>,
+    /// Camera backend manager
     pub backend_manager: Option<CameraBackendManager>,
     /// Flag to cancel camera subscription (used when switching backends/cameras)
     pub camera_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -652,8 +661,6 @@ pub struct AppModel {
     pub photo_output_format_dropdown_options: Vec<String>,
     /// Audio encoder dropdown options (Opus, AAC)
     pub audio_encoder_dropdown_options: Vec<String>,
-    /// Backend dropdown options (e.g., "libcamera", "PipeWire")
-    pub backend_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -709,7 +716,7 @@ impl Default for TransitionState {
 pub enum CameraMode {
     Photo,
     Video,
-    /// Virtual camera mode - streams filtered video to a PipeWire virtual camera
+    /// Virtual camera mode - streams filtered video to a virtual camera
     Virtual,
 }
 
@@ -1172,6 +1179,14 @@ pub enum Message {
     BrokenEncodersDetected(Vec<String>),
     /// Camera list changed (hotplug event)
     CameraListChanged(Vec<crate::backends::camera::types::CameraDevice>),
+    /// Device nodes in /dev/video* were removed — a camera was unplugged.
+    /// Contains the removed node names (e.g. `["video8", "video9"]`).
+    /// Only stops capture if the current camera was affected.
+    HotplugDeviceRemoved(Vec<String>),
+    /// New /dev/video* device nodes appeared — a camera was plugged in.
+    /// Contains lightweight V4L2 device info (path, card name) for the new nodes.
+    /// Does NOT stop the current capture stream.
+    HotplugDeviceAdded(Vec<(String, String)>),
     /// Audio device list changed (hotplug event)
     AudioListChanged(Vec<crate::backends::audio::AudioDevice>),
     /// Start camera transition (capture last frame and show blur)
@@ -1180,8 +1195,6 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
-    /// Select camera backend (0 = libcamera, 1 = PipeWire)
-    SelectBackend(usize),
 
     // ===== Motor/PTZ Controls =====
     /// Toggle motor controls picker visibility
@@ -1232,6 +1245,8 @@ pub enum Message {
     BurstModeProgress(f32),
     /// Burst mode frames collected, ready to process
     BurstModeFramesCollected,
+    /// Burst mode raw frames captured via capture_photo() (multistream mode)
+    BurstModeRawFramesCaptured(Result<Vec<std::sync::Arc<CameraFrame>>, String>),
     /// Burst mode capture complete (path or error)
     BurstModeComplete(Result<String, String>),
     /// Poll burst mode processing progress (timer-based)
@@ -1389,6 +1404,15 @@ pub enum Message {
     UpdateInsightsMetrics,
     /// Copy pipeline string to clipboard
     CopyPipelineString,
+    /// Capture single frame from all running streams (raw .bin + metadata JSON)
+    InsightsCaptureFrames,
+    /// Capture burst (6 frames) from all running streams (raw .bin + metadata JSON)
+    InsightsCaptureBurst,
+    /// Insights capture complete (list of saved file paths, or error)
+    InsightsCaptureComplete(Result<Vec<String>, String>),
+
+    /// GPU shader pipelines precompiled at startup
+    GpuPipelinesWarmed(Result<(), String>),
 
     /// No-op message for async tasks that don't need a response
     Noop,
