@@ -192,6 +192,9 @@ struct YuvTextures {
     uv_width: u32,
     uv_height: u32,
     format: PixelFormat,
+    /// Cached bind group for the YUV→RGBA compute shader.
+    /// Invalidated when textures are recreated (dimension/format change).
+    convert_bind_group: Option<wgpu::BindGroup>,
 }
 
 /// Custom pipeline for efficient video rendering
@@ -899,6 +902,10 @@ impl VideoPipeline {
             self.textures.insert(frame.id, new_tex);
             // Remove all bindings for this video_id since texture changed
             self.bindings.retain(|(vid, _), _| *vid != frame.id);
+            // Invalidate cached YUV bind group (references old output view)
+            if let Some(yuv) = self.yuv_textures.get_mut(&frame.id) {
+                yuv.convert_bind_group = None;
+            }
             let create_time = create_start.elapsed();
             if create_time.as_millis() > 5 {
                 tracing::warn!(
@@ -1054,16 +1061,16 @@ impl VideoPipeline {
             frame.format,
         );
 
-        // Get output texture for compute shader
-        let output_texture = match self.textures.get(&frame.id) {
-            Some(tex) => &tex.texture,
+        // Get output texture view (already cached in VideoTexture)
+        let output_view = match self.textures.get(&frame.id) {
+            Some(tex) => &tex.view,
             None => {
                 tracing::error!("Output texture not found for YUV conversion");
                 return;
             }
         };
 
-        let yuv_textures = match self.yuv_textures.get(&frame.id) {
+        let yuv_textures = match self.yuv_textures.get_mut(&frame.id) {
             Some(t) => t,
             None => {
                 tracing::error!("YUV textures not found after ensure_yuv_textures");
@@ -1316,48 +1323,51 @@ impl VideoPipeline {
             queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&[params]));
         }
 
-        // Create output texture view for storage binding
-        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Create bind group lazily (reused across frames — only recreated when textures change)
+        if yuv_textures.convert_bind_group.is_none() {
+            let bind_group_layout = match &self.yuv_bind_group_layout {
+                Some(layout) => layout,
+                None => {
+                    tracing::error!("YUV bind group layout not initialized");
+                    return;
+                }
+            };
 
-        // Create bind group for compute shader
-        let bind_group_layout = match &self.yuv_bind_group_layout {
-            Some(layout) => layout,
-            None => {
-                tracing::error!("YUV bind group layout not initialized");
-                return;
-            }
-        };
+            yuv_textures.convert_bind_group = Some(
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("yuv_convert_bind_group"),
+                    layout: bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_y_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_uv_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_v_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(output_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: self
+                                .yuv_uniform_buffer
+                                .as_ref()
+                                .unwrap()
+                                .as_entire_binding(),
+                        },
+                    ],
+                }),
+            );
+        }
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("yuv_convert_bind_group"),
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_y_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_uv_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&yuv_textures.tex_v_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&output_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self
-                        .yuv_uniform_buffer
-                        .as_ref()
-                        .unwrap()
-                        .as_entire_binding(),
-                },
-            ],
-        });
+        let bind_group = yuv_textures.convert_bind_group.as_ref().unwrap();
 
         // Dispatch compute shader
         let compute_pipeline = match &self.yuv_compute_pipeline {
@@ -1379,7 +1389,7 @@ impl VideoPipeline {
             });
 
             compute_pass.set_pipeline(compute_pipeline);
-            compute_pass.set_bind_group(0, Some(&bind_group), &[]);
+            compute_pass.set_bind_group(0, Some(bind_group), &[]);
 
             // Dispatch: workgroup size is 16x16, so divide and round up
             let workgroup_x = frame.width.div_ceil(16);
@@ -1519,6 +1529,7 @@ impl VideoPipeline {
                 uv_width,
                 uv_height,
                 format,
+                convert_bind_group: None, // Created lazily on first use
             },
         );
 
