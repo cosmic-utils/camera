@@ -1134,6 +1134,7 @@ impl VideoRecorder {
                min-latency={lat} max-latency={lat} \
              ! queue max-size-buffers=60 max-size-time=3000000000 \
              ! {decoder} name=jpeg-decoder \
+             ! videoconvert \
              ! {encoder} name=recording-encoder \
              {parser} \
              ! {muxer} name=recording-muxer \
