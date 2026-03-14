@@ -328,6 +328,7 @@ impl cosmic::Application for AppModel {
             current_frame_is_file_source: has_preview_source,
             current_frame_rotation: crate::backends::camera::types::SensorRotation::None,
             blur_frame_rotation: crate::backends::camera::types::SensorRotation::None,
+            blur_frame_mirror: false,
             video_file_progress: None,
             video_preview_seek_position: 0.0,
             video_file_paused: false,

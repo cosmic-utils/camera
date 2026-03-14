@@ -1276,6 +1276,8 @@ impl AppModel {
         // Start a short blur transition (200ms) after stream restarts
         // This keeps the last frame blurred until new frames arrive, then fades out smoothly
         // Don't disable UI since capture is complete
+        self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start_with_duration(200, false);
 
         // Restart the camera stream after HDR+ processing

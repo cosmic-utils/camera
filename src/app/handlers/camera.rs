@@ -72,8 +72,18 @@ impl AppModel {
         self.camera_cancel_flag
             .store(true, std::sync::atomic::Ordering::Release);
         self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        self.current_frame = None;
 
+        // Capture blur state from the OLD camera before changing anything.
+        // blur_frame_rotation: rotation of the camera that produced the last frame
+        // blur_frame_mirror: whether the old camera's preview was mirrored
+        self.blur_frame_rotation = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|c| c.rotation)
+            .unwrap_or_default();
+        self.blur_frame_mirror = self.should_mirror_preview();
+
+        self.current_frame = None;
         self.current_camera_index = new_index;
         self.zoom_level = 1.0;
         self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
@@ -202,6 +212,10 @@ impl AppModel {
         };
 
         if let Some(task) = self.transition_state.on_frame_received(frame.captured_at) {
+            // First frame from the new camera — update blur state so the blurred
+            // preview of the NEW camera uses the correct rotation/mirror.
+            self.blur_frame_rotation = frame_rotation;
+            self.blur_frame_mirror = self.should_mirror_preview();
             self.current_frame = Some(Arc::clone(&frame));
             self.current_frame_is_file_source = is_file_source;
             self.current_frame_rotation = frame_rotation;
@@ -561,6 +575,8 @@ impl AppModel {
 
     pub(crate) fn handle_start_camera_transition(&mut self) -> Task<cosmic::Action<Message>> {
         info!("Starting camera transition with blur effect");
+        self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start();
         Task::none()
     }

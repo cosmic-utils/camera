@@ -86,11 +86,15 @@ impl AppModel {
             };
 
             let filter_mode = self.selected_filter;
-            let should_mirror = self.should_mirror_preview();
 
-            // Use the rotation stored with the current frame
-            // This ensures correct rotation during camera switch blur transitions
-            let sensor_rotation = self.current_frame_rotation;
+            // During blur transitions, use the rotation and mirror state captured
+            // at transition start (from the old camera) since the blur frame is
+            // from the old camera.
+            let (sensor_rotation, should_mirror) = if should_blur {
+                (self.blur_frame_rotation, self.blur_frame_mirror)
+            } else {
+                (self.current_frame_rotation, self.should_mirror_preview())
+            };
             let rotation = sensor_rotation.gpu_rotation_code();
 
             // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)

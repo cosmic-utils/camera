@@ -24,12 +24,14 @@ impl AppModel {
     /// not the rotation of the camera being switched to.
     pub fn start_blur_transition(&mut self) {
         self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start();
     }
 
     /// Start a blur transition with custom duration
     pub fn start_blur_transition_with_duration(&mut self, duration_ms: u64, disable_ui: bool) {
         self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self
             .transition_state
             .start_with_duration(duration_ms, disable_ui);
