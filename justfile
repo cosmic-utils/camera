@@ -288,6 +288,8 @@ flatpak-install:
     DEPS_MISSING=false
     flatpak info org.freedesktop.Sdk//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
     flatpak info org.freedesktop.Platform//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
+    flatpak info org.freedesktop.Sdk.Extension.rust-stable//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
+    flatpak info org.freedesktop.Sdk.Extension.llvm21//${RUNTIME_VERSION} &>/dev/null || DEPS_MISSING=true
     flatpak info com.system76.Cosmic.BaseApp//stable &>/dev/null || DEPS_MISSING=true
     if [ "$DEPS_MISSING" = true ]; then
         echo "Flatpak dependencies missing, installing..."
