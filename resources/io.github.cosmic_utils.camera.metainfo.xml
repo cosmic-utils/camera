@@ -112,9 +112,9 @@
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
     </screenshot>
     <screenshot>
-      <caption>Format/resolution picker</caption>
-      <caption xml:lang="cs">Výběr formátu/rozlišení</caption>
-      <caption xml:lang="uk">Вибір формату/роздільної здатності</caption>
+      <caption>Advanced settings</caption>
+      <caption xml:lang="cs">Pokročilá nastavení</caption>
+      <caption xml:lang="uk">Розширені налаштування</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
     </screenshot>
     <screenshot>
@@ -134,12 +134,6 @@
       <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
       <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-009.png</image>
-    </screenshot>
-    <screenshot>
-      <caption>Theatre/fullscreen mode</caption>
-      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
-      <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-010.png</image>
     </screenshot>
   </screenshots>
   <releases>

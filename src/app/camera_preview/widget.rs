@@ -99,11 +99,18 @@ impl AppModel {
 
             // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)
             // Theatre mode always uses native resolution for full-screen display
+            // File sources should always use native aspect ratio (no camera-based cropping)
             // Use rotation-aware crop since GPU shader rotates after sampling
             let crop_uv = match self.mode {
-                crate::app::state::CameraMode::Photo if !self.theatre.enabled => self
-                    .photo_aspect_ratio
-                    .crop_uv_with_rotation(frame.width, frame.height, sensor_rotation),
+                crate::app::state::CameraMode::Photo
+                    if !self.theatre.enabled && !self.current_frame_is_file_source =>
+                {
+                    self.photo_aspect_ratio.crop_uv_with_rotation(
+                        frame.width,
+                        frame.height,
+                        sensor_rotation,
+                    )
+                }
                 _ => None,
             };
 

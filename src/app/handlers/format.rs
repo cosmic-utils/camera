@@ -51,10 +51,15 @@ impl AppModel {
 
         let would_change_format = self.would_format_change_for_mode(mode);
 
+        // Skip blur transition and camera restart when a file source is active
+        // (no camera stream to restart, blur would never resolve)
+        let file_source_active = self.virtual_camera_file_source.is_some();
+
         // For libcamera with multistream cameras, always restart the pipeline on mode switch
         // because different modes use different stream roles (Raw vs VideoRecording),
         // even if the preview format stays the same.
-        let need_restart = would_change_format || self.is_current_camera_multistream();
+        let need_restart =
+            !file_source_active && (would_change_format || self.is_current_camera_multistream());
 
         if need_restart {
             if would_change_format {
