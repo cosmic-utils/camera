@@ -32,6 +32,7 @@ light = Світла
 settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
+settings-backend = Backend
 settings-format = Формат
 settings-microphone = Мікрофон
 settings-record-audio = Запис звуку
@@ -40,10 +41,12 @@ settings-encoder = Кодувальник
 settings-quality = Якість
 settings-video-encoder = Відеокодувальник
 settings-video-quality = Якість відео
-settings-manual-override = Ручне керування
-settings-mirror-preview = Дзеркальний перегляд
+settings-manual-override = Перевизначити вручну
+settings-mirror-preview = Дзеркалити
 settings-mirror-preview-description = Відобразити попередній перегляд по горизонталі
+settings-reset-all = Скинути всі налаштування
 settings-bug-reports = Звіти про вади
+settings-stats-for-nerds = Для допитливих
 settings-report-bug = Повідомити про ваду
 settings-show-report = Показати звіт
 settings-resolution = Роздільна здатність
@@ -55,6 +58,15 @@ device-info-card = Card
 device-info-driver = Драйвер
 device-info-path = Шлях
 device-info-real-path = Реальний шлях
+device-info-device-path = Шлях пристрою
+device-info-sensor = Сенсор
+device-info-pipeline = Pipeline
+device-info-libcamera-version = libcamera
+device-info-multistream = Багатопотоковість
+device-info-multistream-yes = Підтримується
+device-info-multistream-no = Не підтримується
+device-info-rotation = Обертання
+device-info-none = Інформація про пристрій відсутня
 
 # Bitrate presets
 preset-low = Низький
@@ -65,7 +77,7 @@ preset-high = Високий
 initializing-camera = Підготовка камери…
 
 # Format picker
-format-resolution = Роздільна здатність:
+format-resolution = Роздільність:
 format-framerate = Частота кадрів:
 
 # Status indicators
@@ -98,10 +110,14 @@ exposure-auto-priority = Частота кадрів
 exposure-no-controls = Налаштування експозиції недоступні
 exposure-title = Експозиція
 exposure-reset = Поновити
-exposure-backlight = Зворотне світло
+exposure-backlight = Заднє світло
 exposure-manual-mode = Ручний
 exposure-auto-mode = Авто
 exposure-not-supported = не підтримується
+
+# Focus controls
+focus-auto = Фокус
+focus-position = Фокус
 
 # Color controls
 color-title = Колір
@@ -116,11 +132,11 @@ color-manual = Ручний
 
 # Tools menu
 tools-timer = Таймер
-tools-aspect = Співвідношення сторін
+tools-aspect = Пропорції
 tools-exposure = Експозиція
 tools-color = Колір
 tools-filter = Фільтр
-tools-theatre = Театральний режим
+tools-theatre = Театральний
 
 # PTZ controls
 ptz-title = Регулювання камери
@@ -133,8 +149,8 @@ privacy-cover-hint = Відкрийте шторку для роботи кам�
 burst-mode-hold-steady = Тримайте стабільно...
 burst-mode-frames = { $captured }/{ $total } кадрів
 burst-mode-processing = Обробка...
-burst-mode-quality = Якість (FFT)
-burst-mode-fast = Швидкість (Spatial)
+burst-mode-quality = Якість
+burst-mode-fast = Швидкість
 
 # HDR+ dropdown options
 hdr-plus-off = Вимк.
@@ -162,25 +178,98 @@ about-support = Підтримка та відгуки
 insights-title = Аналітика
 insights-pipeline = Pipeline
 insights-pipeline-full = GStreamer Pipeline
+insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Резервний ланцюг декодерів
 
-insights-performance = Продуктивність у реальному часі
+insights-stream-combined = Перегляд + Зйомка
+
 insights-frame-latency = Затримка кадру
 insights-dropped-frames = Втрачені кадри
 insights-frame-size-decoded = Розмір кадру
 insights-decode-time-gst = Обробка буфера
 insights-copy-time = Час копіювання кадру
 insights-gpu-upload-time = Час передачі на GPU
-insights-gpu-upload-bandwidth = Пропускна здатність GPU
+insights-gpu-upload-bandwidth = Швидкість передачі на GPU
 
-insights-format = Формат
 insights-format-source = Джерело
 insights-format-resolution = Роздільна здатність
 insights-format-framerate = Частота кадрів
 insights-format-native = Рідний формат
 insights-format-gstreamer = Вивід GStreamer
+insights-cpu-processing = Обробка на CPU
+insights-cpu-decode-time = Час декодування CPU
 insights-format-wgpu = Обробка на GPU
 
 insights-selected = Обрано
 insights-available = Доступно
 insights-unavailable = Недоступно
+
+# Insights - Backend
+insights-backend = Система обробки
+insights-backend-type = Тип
+insights-pipeline-handler = Обробник ланцюга
+insights-libcamera-version = Версія libcamera
+insights-sensor-model = Сенсор
+insights-mjpeg-decoder = Декодер MJPEG
+
+# Insights - Multi-stream
+insights-multistream-single = Один потік
+insights-multistream-dual = Два потоки
+insights-multistream-source-shared = Перегляд і зйомка
+insights-multistream-source-separate = Перегляд / зйомка
+insights-stream-preview = Потік перегляду
+insights-stream-capture = Потік зйомки
+insights-stream-role = Роль
+insights-stream-resolution = Роздільна здатність
+insights-stream-pixel-format = Піксельний формат
+insights-stream-frame-count = Кадри
+
+# Insights - Recording
+insights-recording = Ланцюг запису
+insights-recording-mode = Режим
+insights-recording-encoder = Кодувальник
+insights-recording-resolution = Роздільна здатність
+insights-recording-framerate = Частота кадрів
+insights-recording-capture = Потік захоплення
+insights-recording-channel = Канал
+insights-recording-pusher = Надсилання appsrc
+insights-recording-fps = Ефективний FPS
+insights-recording-delay = Затримка обробки
+insights-recording-convert = Перетворення NV12
+insights-recording-pts = Поточний PTS
+insights-recording-pipeline = Pipeline
+
+# Insights - Audio
+insights-audio = Аудіо
+insights-audio-recording = Запис
+insights-audio-device = Пристрій
+insights-audio-node = Вузол
+insights-audio-codec = Кодек
+insights-audio-channels = Канали
+insights-audio-enabled = Увімкнено
+insights-audio-disabled = Вимкнено
+insights-audio-default = (Типово)
+insights-audio-mono = Моно
+insights-audio-pipeline = Ланцюг аудіо
+insights-audio-format = Формат
+insights-audio-inputs = Вхідні канали
+insights-audio-output-level = Рівень виходу
+insights-audio-not-recording = Запис не ведеться
+
+# Insights - Per-frame metadata
+insights-metadata = Метадані кадру
+insights-meta-exposure = Експозиція
+insights-meta-analogue-gain = Аналогове підсилення
+insights-meta-digital-gain = Цифрове підсилення
+insights-meta-colour-temp = Колірна температура
+insights-meta-sequence = Послідовність
+insights-meta-colour-gains = Підсил. ББ (R, B)
+insights-meta-black-level = Рівень чорного
+insights-meta-lens-position = Позиція лінзи
+insights-meta-lux = Освітленість
+insights-meta-focus-fom = Показник фокуса
+insights-meta-na = N/A
+
+# Insights - Capture
+insights-capture = Зйомка
+insights-capture-burst = Серійна зйомка
