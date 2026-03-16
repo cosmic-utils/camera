@@ -39,7 +39,7 @@ settings-record-audio = Spela in ljud
 settings-audio-encoder = Ljudkodare
 settings-encoder = Kodare
 settings-quality = Kvalitet
-settings-video-encoder = Video avkodare
+settings-video-encoder = Video kodare
 settings-video-quality = Video kvalitet
 settings-manual-override = Manuell lägesöverstyrning
 settings-mirror-preview = Spegelförhandsvisning
@@ -223,7 +223,7 @@ insights-stream-frame-count = Bildrutor
 # Insikter - Inspelning
 insights-recording = Inspelnings pipeline
 insights-recording-mode = Läge
-insights-recording-encoder = Avkodare
+insights-recording-encoder = Kodare
 insights-recording-resolution = Upplösning
 insights-recording-framerate = Bildfrekvens
 insights-recording-capture = Fångst tråd
