@@ -35,18 +35,26 @@ impl AppModel {
         centered_group = centered_group.push(self.build_gallery_button());
 
         centered_group = centered_group
-            .push(widget::horizontal_space().width(spacing.space_m))
+            .push(widget::space::horizontal().width(spacing.space_m))
             .push(self.build_mode_switcher())
-            .push(widget::horizontal_space().width(spacing.space_m))
+            .push(widget::space::horizontal().width(spacing.space_m))
             .align_y(Alignment::Center);
 
         centered_group = centered_group.push(self.build_camera_switcher());
 
         // Center the entire group in the bottom bar
         let bottom_row = widget::row()
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .push(centered_group)
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .padding(spacing.space_xs)
             .align_y(Alignment::Center);
 

@@ -79,10 +79,11 @@ impl AppModel {
         // Scale corner radius proportionally when button size changes
         let corner_radius = base_corner_radius * (inner_size / ui::CAPTURE_BUTTON_INNER);
 
-        let button_inner = widget::container(widget::Space::new(
-            Length::Fixed(inner_size),
-            Length::Fixed(inner_size),
-        ))
+        let button_inner = widget::container(
+            widget::Space::new()
+                .width(Length::Fixed(inner_size))
+                .height(Length::Fixed(inner_size)),
+        )
         .style(move |_theme| widget::container::Style {
             background: Some(Background::Color(capture_button_color)),
             border: cosmic::iced::Border {

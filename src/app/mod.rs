@@ -55,6 +55,7 @@ use crate::fl;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::Subscription;
+use cosmic::iced_futures::subscription;
 use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
 pub use state::{
@@ -64,6 +65,40 @@ pub use state::{
 };
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
+
+/// Helper to create a subscription with an ID and a stream, replacing the removed `run_with_id`.
+///
+/// The `id` is hashed for subscription identity. The `stream` is the actual event stream.
+fn subscription_with_id<I, S, T>(id: I, stream: S) -> Subscription<T>
+where
+    I: std::hash::Hash + 'static,
+    S: futures::Stream<Item = T> + Send + 'static,
+    T: 'static,
+{
+    use std::hash::Hash;
+    struct IdStream<I, S> {
+        id: I,
+        stream: S,
+    }
+    impl<I, S> subscription::Recipe for IdStream<I, S>
+    where
+        I: Hash + 'static,
+        S: futures::Stream + Send + 'static,
+    {
+        type Output = S::Item;
+        fn hash(&self, state: &mut subscription::Hasher) {
+            std::any::TypeId::of::<I>().hash(state);
+            self.id.hash(state);
+        }
+        fn stream(
+            self: Box<Self>,
+            _input: subscription::EventStream,
+        ) -> cosmic::iced_futures::BoxStream<Self::Output> {
+            Box::pin(self.stream)
+        }
+    }
+    subscription::from_recipe(IdStream { id, stream })
+}
 
 /// Get the photo save directory
 ///
@@ -249,8 +284,8 @@ impl cosmic::Application for AppModel {
             .collect();
 
         // Create backend manager
-        info!(backend = %config.backend, "Creating backend from config");
-        let backend_manager = crate::backends::camera::CameraBackendManager::new(config.backend);
+        info!("Creating libcamera backend");
+        let backend_manager = crate::backends::camera::CameraBackendManager::new();
 
         // Convert preview source path to FileSource if provided
         let preview_file_source = flags.preview_source.and_then(|path| {
@@ -293,6 +328,7 @@ impl cosmic::Application for AppModel {
             current_frame_is_file_source: has_preview_source,
             current_frame_rotation: crate::backends::camera::types::SensorRotation::None,
             blur_frame_rotation: crate::backends::camera::types::SensorRotation::None,
+            blur_frame_mirror: false,
             video_file_progress: None,
             video_preview_seek_position: 0.0,
             video_file_paused: false,
@@ -324,6 +360,7 @@ impl cosmic::Application for AppModel {
             auto_detected_frame_count: 1, // Start with 1 (no HDR+) until first brightness evaluation
             hdr_override_disabled: false,
             selected_filter: FilterType::default(),
+            recording_filter_code: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
             flash_enabled: false,
             flash_active: false,
             flash_hardware: {
@@ -351,6 +388,7 @@ impl cosmic::Application for AppModel {
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,
             picker_selected_resolution: None,
+            pending_hotplug_switch: None,
             backend_manager: Some(backend_manager),
             camera_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             camera_stream_restart_counter: 0,
@@ -399,14 +437,6 @@ impl cosmic::Application for AppModel {
                 .iter()
                 .map(|e| e.display_name().to_string())
                 .collect(),
-            backend_dropdown_options: {
-                let mut options = Vec::new();
-                if gstreamer::ElementFactory::find("libcamerasrc").is_some() {
-                    options.push("libcamera".to_string());
-                }
-                options.push("PipeWire".to_string());
-                options
-            },
             device_info_visible: false,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
@@ -432,16 +462,15 @@ impl cosmic::Application for AppModel {
         app.update_codec_options();
 
         // Initialize cameras and video encoders asynchronously (non-blocking)
-        let backend_type = app.config.backend;
         let last_camera_path = app.config.last_camera_path.clone();
 
         let init_task = Task::perform(
             async move {
                 // Enumerate cameras first (critical path to first frame)
-                info!(backend = %backend_type, "Enumerating cameras asynchronously");
-                let backend = crate::backends::camera::get_backend_for_type(backend_type);
+                info!("Enumerating cameras asynchronously");
+                let backend = crate::backends::camera::create_backend();
                 let cameras = backend.enumerate_cameras();
-                info!(count = cameras.len(), backend = %backend_type, "Found camera(s)");
+                info!(count = cameras.len(), "Found camera(s)");
 
                 // Find the last used camera or default to first
                 let camera_index = if let Some(ref last_path) = last_camera_path {
@@ -508,9 +537,24 @@ impl cosmic::Application for AppModel {
             Task::none()
         };
 
+        // Precompile GPU shader pipelines in background (eliminates ~270ms first-capture penalty)
+        let gpu_warmup_task = Task::perform(
+            async { crate::shaders::warmup_gpu_pipelines().await },
+            |result| cosmic::Action::App(Message::GpuPipelinesWarmed(result)),
+        );
+
+        // Apply the theme from config on startup (THEME global defaults to Dark)
+        let theme_task = cosmic::command::set_theme(app.config.app_theme.theme());
+
         (
             app,
-            Task::batch([init_task, load_thumbnail_task, preview_source_task]),
+            Task::batch([
+                init_task,
+                load_thumbnail_task,
+                preview_source_task,
+                gpu_warmup_task,
+                theme_task,
+            ]),
         )
     }
 
@@ -633,7 +677,6 @@ impl cosmic::Application for AppModel {
         let cancel_flag = Arc::clone(&self.camera_cancel_flag);
         let still_capture_requested = Arc::clone(&self.still_capture_requested);
         let latest_still_frame = Arc::clone(&self.latest_still_frame);
-        let backend_type = self.config.backend;
         // Create a unique ID based on format properties to trigger restart when format changes
         let format_id = current_format
             .as_ref()
@@ -653,6 +696,11 @@ impl cosmic::Application for AppModel {
         // Get the shared recording sender Arc so the capture thread can forward
         // frames directly to the appsrc recording pipeline (libcamera only).
         let recording_sender = self.backend_manager.as_ref().map(|m| m.recording_sender());
+        let jpeg_recording_mode = self
+            .backend_manager
+            .as_ref()
+            .map(|m| m.jpeg_recording_mode())
+            .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
 
         // Check if file source is active - if so, don't run camera subscription
         // This applies in Virtual mode OR when --preview-source was used (any mode)
@@ -662,25 +710,25 @@ impl cosmic::Application for AppModel {
             // No camera subscription when file source is active (file source handles preview)
             Subscription::none()
         } else {
-            Subscription::run_with_id(
+            subscription_with_id(
                 (
                     "camera",
                     camera_index,
                     format_id,
                     // NOTE: is_recording is NOT included here!
-                    // This allows preview to continue during recording (PipeWire multi-consumer)
+                    // This allows preview to continue during recording
                     cameras_initialized,
                     restart_counter, // Forces restart after HDR+ processing
-                    backend_type,
-                    camera_mode, // Restart pipeline when mode changes (different stream roles)
+                    camera_mode,     // Restart pipeline when mode changes (different stream roles)
                 ),
-                cosmic::iced::stream::channel(100, move |mut output| async move {
-                    info!(camera_index, backend = %backend_type, "Camera subscription started");
+                cosmic::iced::stream::channel(100, async move |mut output| {
+                    info!(camera_index, "Camera subscription started");
 
                     // No artificial delay needed - PipelineManager serializes all operations
                     // and ensures proper cleanup before creating new pipelines
 
                     let mut frame_count = 0u64;
+                    let mut last_forward = std::time::Instant::now();
                     let mut is_first_pipeline = true;
                     loop {
                         // Check cancel flag at the start of each loop iteration
@@ -730,7 +778,6 @@ impl cosmic::Application for AppModel {
                             info!(format = %fmt, "Using format");
                         }
 
-                        // PipeWire backend for any mode (Photo or Video)
                         {
                             // Check cancel flag before creating pipeline
                             if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
@@ -739,7 +786,6 @@ impl cosmic::Application for AppModel {
                             }
 
                             // Note: Preview continues during recording since VideoRecorder has its own pipeline
-                            // Both can access the same PipeWire node simultaneously
 
                             // Give previous pipeline time to clean up (skip on first startup)
                             if !is_first_pipeline {
@@ -757,10 +803,7 @@ impl cosmic::Application for AppModel {
 
                             // Create camera pipeline based on backend type
                             use crate::backends::camera::libcamera::NativeLibcameraPipeline;
-                            use crate::backends::camera::pipewire::PipeWirePipeline;
-                            use crate::backends::camera::types::{
-                                CameraBackendType, CameraDevice, CameraFormat,
-                            };
+                            use crate::backends::camera::types::{CameraDevice, CameraFormat};
 
                             let (sender, mut receiver) =
                                 cosmic::iced::futures::channel::mpsc::channel(
@@ -774,9 +817,6 @@ impl cosmic::Application for AppModel {
                                     .map(|c| c.name.clone())
                                     .unwrap_or_else(|| "Default Camera".to_string()),
                                 path: device_path.unwrap_or("").to_string(),
-                                metadata_path: current_camera
-                                    .as_ref()
-                                    .and_then(|c| c.metadata_path.clone()),
                                 device_info: current_camera
                                     .as_ref()
                                     .and_then(|c| c.device_info.clone()),
@@ -813,101 +853,79 @@ impl cosmic::Application for AppModel {
                                 pixel_format: pixel_format.unwrap_or("MJPEG").to_string(),
                             };
 
-                            // Select pipeline type based on backend configuration
-                            // Fields held to keep pipelines alive (RAII pattern)
-                            #[allow(dead_code)]
-                            enum ActivePipeline {
-                                PipeWire(PipeWirePipeline),
-                                Libcamera(NativeLibcameraPipeline),
-                            }
+                            let pipeline_opt = {
+                                info!(backend = "libcamera", "Creating multi-stream pipeline");
 
-                            let pipeline_opt: Option<ActivePipeline> = match backend_type {
-                                CameraBackendType::Libcamera => {
-                                    info!(backend = "libcamera", "Creating multi-stream pipeline");
-
-                                    // Small delay to allow previous pipeline to fully release camera hardware
-                                    // This is necessary because libcamera's "simple" pipeline handler
-                                    // needs time to release V4L2 resources before a new pipeline can start
-                                    // Skip on first startup since there is no previous pipeline
-                                    if !is_first_pipeline {
-                                        tokio::time::sleep(tokio::time::Duration::from_millis(300))
-                                            .await;
-                                    }
-
-                                    // For libcamera, extract node ID from PipeWire path
-                                    // e.g., "pipewire-serial-60" -> "60"
-                                    let camera_name = device
-                                        .path
-                                        .strip_prefix("pipewire-serial-")
-                                        .unwrap_or(&device.path);
-
-                                    // For single-stream cameras the viewfinder IS the
-                                    // capture stream, so use full resolution.  Only cap
-                                    // the preview for multistream cameras that have a
-                                    // separate raw/still stream.
-                                    let preview_format = if device.supports_multistream
-                                        && (format.width > 1920 || format.height > 1080)
-                                    {
-                                        // Multistream: scale capture format to fit within 1080p,
-                                        // preserving exact aspect ratio so viewfinder FOV matches capture
-                                        let scale_w = 1920.0 / format.width as f64;
-                                        let scale_h = 1080.0 / format.height as f64;
-                                        let scale = scale_w.min(scale_h);
-                                        let w = ((format.width as f64 * scale) as u32) & !1;
-                                        let h = ((format.height as f64 * scale) as u32) & !1;
-                                        CameraFormat {
-                                            width: w,
-                                            height: h,
-                                            framerate: format.framerate,
-                                            hardware_accelerated: format.hardware_accelerated,
-                                            pixel_format: format.pixel_format.clone(),
-                                        }
-                                    } else {
-                                        // Single-stream: use full resolution
-                                        format.clone()
-                                    };
-
-                                    let video_mode = camera_mode == CameraMode::Video;
-
-                                    // Use the shared recording sender from the manager,
-                                    // or a dummy Arc if no manager is available.
-                                    let rec_sender = recording_sender
-                                        .clone()
-                                        .unwrap_or_else(|| Arc::new(Mutex::new(None)));
-
-                                    match NativeLibcameraPipeline::new(
-                                        camera_name,
-                                        &preview_format,
-                                        device.supports_multistream,
-                                        video_mode,
-                                        crate::backends::camera::libcamera::PipelineSharedState {
-                                            frame_sender: sender,
-                                            still_requested: Arc::clone(&still_capture_requested),
-                                            still_frame: Arc::clone(&latest_still_frame),
-                                            recording_sender: rec_sender,
-                                        },
-                                    ) {
-                                        Ok(pipeline) => {
-                                            info!("Native libcamera pipeline started");
-                                            Some(ActivePipeline::Libcamera(pipeline))
-                                        }
-                                        Err(e) => {
-                                            error!(error = %e, "Failed to create libcamera pipeline");
-                                            None
-                                        }
-                                    }
+                                // Small delay to allow previous pipeline to fully release camera hardware
+                                // This is necessary because libcamera's "simple" pipeline handler
+                                // needs time to release V4L2 resources before a new pipeline can start
+                                // Skip on first startup since there is no previous pipeline
+                                if !is_first_pipeline {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(300))
+                                        .await;
                                 }
-                                CameraBackendType::PipeWire => {
-                                    info!(backend = "PipeWire", "Creating PipeWire pipeline");
-                                    match PipeWirePipeline::new(&device, &format, sender) {
-                                        Ok(pipeline) => {
-                                            info!("PipeWire pipeline created successfully");
-                                            Some(ActivePipeline::PipeWire(pipeline))
-                                        }
-                                        Err(e) => {
-                                            error!(error = %e, "Failed to initialize PipeWire pipeline");
-                                            None
-                                        }
+
+                                // Extract camera name from device path
+                                // e.g., "pipewire-serial-60" -> "60" (legacy path format)
+                                let camera_name = device
+                                    .path
+                                    .strip_prefix("pipewire-serial-")
+                                    .unwrap_or(&device.path);
+
+                                // For single-stream cameras the viewfinder IS the
+                                // capture stream, so use full resolution.  Only cap
+                                // the preview for multistream cameras that have a
+                                // separate raw/still stream.
+                                let preview_format = if device.supports_multistream
+                                    && (format.width > 1920 || format.height > 1080)
+                                {
+                                    // Multistream: scale capture format to fit within 1080p,
+                                    // preserving exact aspect ratio so viewfinder FOV matches capture
+                                    let scale_w = 1920.0 / format.width as f64;
+                                    let scale_h = 1080.0 / format.height as f64;
+                                    let scale = scale_w.min(scale_h);
+                                    let w = ((format.width as f64 * scale) as u32) & !1;
+                                    let h = ((format.height as f64 * scale) as u32) & !1;
+                                    CameraFormat {
+                                        width: w,
+                                        height: h,
+                                        framerate: format.framerate,
+                                        hardware_accelerated: format.hardware_accelerated,
+                                        pixel_format: format.pixel_format.clone(),
+                                    }
+                                } else {
+                                    // Single-stream: use full resolution
+                                    format.clone()
+                                };
+
+                                let video_mode = camera_mode == CameraMode::Video;
+
+                                // Use the shared recording sender from the manager,
+                                // or a dummy Arc if no manager is available.
+                                let rec_sender = recording_sender
+                                    .clone()
+                                    .unwrap_or_else(|| Arc::new(Mutex::new(None)));
+
+                                match NativeLibcameraPipeline::new(
+                                    camera_name,
+                                    &preview_format,
+                                    device.supports_multistream,
+                                    video_mode,
+                                    crate::backends::camera::libcamera::PipelineSharedState {
+                                        frame_sender: sender,
+                                        still_requested: Arc::clone(&still_capture_requested),
+                                        still_frame: Arc::clone(&latest_still_frame),
+                                        recording_sender: rec_sender,
+                                        jpeg_recording_mode: Arc::clone(&jpeg_recording_mode),
+                                    },
+                                ) {
+                                    Ok(pipeline) => {
+                                        info!("Native libcamera pipeline started");
+                                        Some(pipeline)
+                                    }
+                                    Err(e) => {
+                                        error!(error = %e, "Failed to create libcamera pipeline");
+                                        None
                                     }
                                 }
                             };
@@ -921,7 +939,7 @@ impl cosmic::Application for AppModel {
                                     // Check cancel flag first (set when switching cameras/modes)
                                     if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
                                         info!(
-                                            "Cancel flag set - PipeWire subscription being cancelled"
+                                            "Cancel flag set - Camera subscription being cancelled"
                                         );
                                         break;
                                     }
@@ -929,7 +947,7 @@ impl cosmic::Application for AppModel {
                                     // Check if subscription is still active before processing next frame
                                     if output.is_closed() {
                                         info!(
-                                            "Output channel closed - PipeWire subscription being cancelled"
+                                            "Output channel closed - Camera subscription being cancelled"
                                         );
                                         break;
                                     }
@@ -953,7 +971,29 @@ impl cosmic::Application for AppModel {
                                                 drained_count += 1;
                                             }
 
+                                            // Frame pacing: smooth out bursty ISP delivery.
+                                            // If we forwarded a frame recently, wait until the
+                                            // next target interval before sending another.
+                                            // This turns ISP bursts (3-4 frames at once) into
+                                            // evenly-spaced UI updates.
+                                            const MIN_FRAME_INTERVAL: tokio::time::Duration =
+                                                tokio::time::Duration::from_millis(30);
+                                            let since_last = last_forward.elapsed();
+                                            if since_last < MIN_FRAME_INTERVAL && drained_count > 0
+                                            {
+                                                let wait =
+                                                    MIN_FRAME_INTERVAL.saturating_sub(since_last);
+                                                tokio::time::sleep(wait).await;
+                                                // After sleeping, drain again to get the absolute
+                                                // latest frame
+                                                while let Ok(newer_frame) = receiver.try_recv() {
+                                                    latest_frame = newer_frame;
+                                                    drained_count += 1;
+                                                }
+                                            }
+
                                             frame_count += 1;
+                                            last_forward = std::time::Instant::now();
                                             // Calculate frame latency (time from capture to subscription delivery)
                                             let latency_us =
                                                 latest_frame.captured_at.elapsed().as_micros();
@@ -966,18 +1006,6 @@ impl cosmic::Application for AppModel {
                                                     latency_ms = latency_us as f64 / 1000.0,
                                                     drained = drained_count,
                                                     "Received frame from pipeline"
-                                                );
-                                            }
-
-                                            // Warn if latency exceeds threshold
-                                            if latency_us
-                                                > crate::constants::latency::HIGH_LATENCY_WARNING_US
-                                            {
-                                                tracing::warn!(
-                                                    frame = frame_count,
-                                                    latency_ms = latency_us as f64 / 1000.0,
-                                                    drained = drained_count,
-                                                    "High frame latency detected - possible stuttering"
                                                 );
                                             }
 
@@ -1004,7 +1032,7 @@ impl cosmic::Application for AppModel {
                                                     // Check if channel is closed (subscription cancelled)
                                                     if e.is_disconnected() {
                                                         info!(
-                                                            "Output channel disconnected - PipeWire subscription being cancelled"
+                                                            "Output channel disconnected - Camera subscription being cancelled"
                                                         );
                                                         break;
                                                     }
@@ -1012,7 +1040,7 @@ impl cosmic::Application for AppModel {
                                             }
                                         }
                                         Ok(None) => {
-                                            info!("PipeWire pipeline frame stream ended");
+                                            info!("Camera pipeline frame stream ended");
                                             break;
                                         }
                                         Err(_) => {
@@ -1021,7 +1049,7 @@ impl cosmic::Application for AppModel {
                                         }
                                     }
                                 }
-                                info!("Cleaning up PipeWire pipeline");
+                                info!("Cleaning up camera pipeline");
                                 // Pipeline will be dropped here, stopping the camera
                                 drop(pipeline);
                             } else {
@@ -1037,72 +1065,81 @@ impl cosmic::Application for AppModel {
         }; // End of camera_sub if/else
 
         // Camera hotplug monitoring subscription
-        let backend_manager = self.backend_manager.clone();
-        let current_cameras = self.available_cameras.clone();
-        let hotplug_sub = Subscription::run_with_id(
+        // Monitors /dev/video* device nodes instead of calling enumerate_cameras(),
+        // which returns stale cached results when a capture pipeline is active.
+        let hotplug_sub = subscription_with_id(
             "camera_hotplug",
-            cosmic::iced::stream::channel(10, move |mut output| async move {
-                info!("Camera hotplug monitoring started");
+            cosmic::iced::stream::channel(10, async move |mut output| {
+                info!("Camera hotplug monitoring started (device node scanning)");
 
-                let mut last_cameras = current_cameras;
+                // Collect initial set of /dev/video* device nodes
+                let mut last_video_nodes: std::collections::BTreeSet<std::ffi::OsString> =
+                    crate::backends::camera::v4l2_utils::scan_video_device_nodes();
 
-                // Only run if backend_manager is available
-                let Some(backend_mgr) = backend_manager else {
-                    warn!("No backend manager available for hotplug monitoring");
-                    return;
-                };
+                info!(count = last_video_nodes.len(), "Initial /dev/video* nodes");
 
                 loop {
                     // Wait 2 seconds between checks
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-                    // Enumerate current cameras
-                    if let Ok(new_cameras) = backend_mgr.enumerate_cameras() {
-                        // Compare with last known list
-                        // Check if camera list changed (different count or different cameras)
-                        let cameras_changed = last_cameras.len() != new_cameras.len()
-                            || !last_cameras.iter().all(|c| {
-                                new_cameras
-                                    .iter()
-                                    .any(|nc| nc.path == c.path && nc.name == c.name)
-                            });
+                    let current_nodes =
+                        crate::backends::camera::v4l2_utils::scan_video_device_nodes();
 
-                        if cameras_changed {
-                            info!(
-                                old_count = last_cameras.len(),
-                                new_count = new_cameras.len(),
-                                "Camera list changed - hotplug event detected"
-                            );
+                    if current_nodes != last_video_nodes {
+                        let added: std::collections::BTreeSet<_> = current_nodes
+                            .difference(&last_video_nodes)
+                            .cloned()
+                            .collect();
+                        let removed: std::collections::BTreeSet<_> = last_video_nodes
+                            .difference(&current_nodes)
+                            .cloned()
+                            .collect();
 
-                            last_cameras = new_cameras.clone();
+                        info!(
+                            old_count = last_video_nodes.len(),
+                            new_count = current_nodes.len(),
+                            added = added.len(),
+                            removed = removed.len(),
+                            "Device node change detected - hotplug event"
+                        );
 
-                            // Send camera list changed message
-                            if output
-                                .send(Message::CameraListChanged(new_cameras))
-                                .await
-                                .is_err()
-                            {
-                                warn!(
-                                    "Failed to send camera list changed message - channel closed"
+                        let msg = if !removed.is_empty() {
+                            // Nodes removed → camera unplugged.
+                            // Always update tracking set for removals.
+                            last_video_nodes = current_nodes;
+                            let removed_names: Vec<String> = removed
+                                .iter()
+                                .filter_map(|n| n.to_str().map(String::from))
+                                .collect();
+                            Message::HotplugDeviceRemoved(removed_names)
+                        } else {
+                            // Only additions → camera plugged in. Wait briefly
+                            // for the device to finish initializing before
+                            // querying V4L2 capabilities.
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                            let new_devices =
+                                crate::backends::camera::v4l2_utils::discover_v4l2_capture_devices(
+                                    &added,
                                 );
-                                break;
-                            }
-                        }
-                    } else {
-                        // No cameras available - treat as empty list
-                        if !last_cameras.is_empty() {
-                            info!("All cameras disconnected");
-                            last_cameras = Vec::new();
-                            if output
-                                .send(Message::CameraListChanged(Vec::new()))
-                                .await
-                                .is_err()
-                            {
-                                warn!(
-                                    "Failed to send camera list changed message - channel closed"
+
+                            if new_devices.is_empty() {
+                                // Device not ready for VIDIOC_QUERYCAP yet.
+                                // Don't update last_video_nodes so the next
+                                // poll detects the same added nodes and retries.
+                                info!(
+                                    "V4L2 query returned no capture devices — will retry next poll"
                                 );
-                                break;
+                                continue;
                             }
+
+                            last_video_nodes = current_nodes;
+                            Message::HotplugDeviceAdded(new_devices)
+                        };
+
+                        if output.send(msg).await.is_err() {
+                            warn!("Failed to send hotplug message - channel closed");
+                            break;
                         }
                     }
                 }
@@ -1113,9 +1150,9 @@ impl cosmic::Application for AppModel {
 
         // Audio device hotplug monitoring subscription
         let current_audio_devices = self.available_audio_devices.clone();
-        let audio_hotplug_sub = Subscription::run_with_id(
+        let audio_hotplug_sub = subscription_with_id(
             "audio_hotplug",
-            cosmic::iced::stream::channel(10, move |mut output| async move {
+            cosmic::iced::stream::channel(10, async move |mut output| {
                 info!("Audio device hotplug monitoring started");
 
                 let mut last_devices = current_audio_devices;
@@ -1167,9 +1204,9 @@ impl cosmic::Application for AppModel {
             (true, Some(frame)) => {
                 // Copy frame for background task - mapped buffers become invalid when pipeline stops
                 let frame = Arc::new(frame.to_copied());
-                Subscription::run_with_id(
+                subscription_with_id(
                     ("qr_detection", frame.captured_at),
-                    cosmic::iced::stream::channel(1, move |mut output| async move {
+                    cosmic::iced::stream::channel(1, async move |mut output| {
                         let detector = frame_processor::tasks::QrDetector::new();
                         let detections = detector.detect(frame).await;
                         let _ = output.send(Message::QrDetectionsUpdated(detections)).await;
@@ -1183,9 +1220,9 @@ impl cosmic::Application for AppModel {
         let file_source_preview_sub = if let Some(ref receiver) = self.file_source_preview_receiver
         {
             let receiver = receiver.clone();
-            Subscription::run_with_id(
+            subscription_with_id(
                 "file_source_preview",
-                cosmic::iced::stream::channel(10, move |mut output| async move {
+                cosmic::iced::stream::channel(10, async move |mut output| {
                     loop {
                         // Try to lock and receive a frame
                         let frame = {
@@ -1239,9 +1276,9 @@ impl cosmic::Application for AppModel {
             let device_path = self.get_v4l2_device_path();
             if let Some(path) = device_path {
                 let path = path.clone();
-                Subscription::run_with_id(
+                subscription_with_id(
                     ("privacy_polling", path.clone()),
-                    cosmic::iced::stream::channel(1, move |mut output| async move {
+                    cosmic::iced::stream::channel(1, async move |mut output| {
                         use crate::backends::camera::v4l2_controls;
                         loop {
                             // Poll privacy control status
@@ -1297,6 +1334,51 @@ impl cosmic::Application for AppModel {
                 Subscription::none()
             };
 
+        // On non-COSMIC desktops, subscribe to XDG portal color-scheme changes
+        // so theme updates when user changes their desktop appearance
+        let portal_theme_sub = if !crate::config::is_cosmic_desktop()
+            && self.config.app_theme == crate::config::AppTheme::System
+        {
+            subscription_with_id(
+                "portal-color-scheme",
+                cosmic::iced::stream::channel(10, async move |mut output| {
+                    use ashpd::desktop::settings::{ColorScheme, Settings};
+
+                    let Ok(settings) = Settings::new().await else {
+                        tracing::warn!("Failed to create XDG Settings portal proxy");
+                        std::future::pending::<()>().await;
+                        return;
+                    };
+
+                    let send_scheme =
+                        |output: &mut cosmic::iced::futures::channel::mpsc::Sender<Message>,
+                         scheme: ColorScheme| {
+                            let is_dark = !matches!(scheme, ColorScheme::PreferLight);
+                            output
+                                .try_send(Message::PortalColorSchemeChanged(is_dark))
+                                .ok();
+                        };
+
+                    // Send initial color scheme
+                    if let Ok(scheme) = settings.color_scheme().await {
+                        send_scheme(&mut output, scheme);
+                    }
+
+                    // Subscribe to live changes via ashpd's D-Bus signal stream
+                    if let Ok(mut stream) = settings.receive_color_scheme_changed().await {
+                        while let Some(scheme) = StreamExt::next(&mut stream).await {
+                            send_scheme(&mut output, scheme);
+                        }
+                    }
+
+                    tracing::warn!("Portal color-scheme stream ended");
+                    std::future::pending::<()>().await;
+                }),
+            )
+        } else {
+            Subscription::none()
+        };
+
         Subscription::batch([
             config_sub,
             camera_sub,
@@ -1308,6 +1390,7 @@ impl cosmic::Application for AppModel {
             privacy_polling_sub,
             brightness_eval_sub,
             insights_update_sub,
+            portal_theme_sub,
         ])
     }
 

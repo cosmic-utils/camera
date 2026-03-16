@@ -7,7 +7,7 @@ use std::sync::Arc;
 use cosmic::iced::Rectangle;
 use cosmic::iced_core::image::Id as ImageId;
 use cosmic::iced_wgpu::graphics::Viewport;
-use cosmic::iced_wgpu::primitive::{self, Primitive as PrimitiveTrait};
+use cosmic::iced_wgpu::primitive::{Pipeline as PipelineTrait, Primitive as PrimitiveTrait};
 use cosmic::iced_wgpu::wgpu;
 
 /// Custom primitive for gallery thumbnail with rounded corners
@@ -54,53 +54,56 @@ struct GalleryTexture {
     viewport_buffer: wgpu::Buffer,
 }
 
+impl PipelineTrait for GalleryPipeline {
+    fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        GalleryPipeline::new(device, format)
+    }
+
+    fn trim(&mut self) {
+        // No-op: we manage texture cache lifecycle ourselves.
+        // Clearing here would destroy live textures and cause flickering.
+    }
+}
+
 impl PrimitiveTrait for GalleryPrimitive {
+    type Pipeline = GalleryPipeline;
+
     fn prepare(
         &self,
-        device: &wgpu::Device,
+        pipeline: &mut Self::Pipeline,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        storage: &mut primitive::Storage,
         bounds: &Rectangle,
         _viewport: &Viewport,
     ) {
-        // Get or create pipeline
-        if !storage.has::<GalleryPipeline>() {
-            storage.store(GalleryPipeline::new(device, format));
-        }
-
         // Upload image texture if needed and update viewport buffer
-        if let Some(pipeline) = storage.get_mut::<GalleryPipeline>() {
-            pipeline.upload_image(
-                device,
-                queue,
-                &self.image_handle,
-                &self.rgba_data,
-                self.width,
-                self.height,
-            );
+        pipeline.upload_image(
+            _device,
+            queue,
+            &self.image_handle,
+            &self.rgba_data,
+            self.width,
+            self.height,
+        );
 
-            // Update viewport size and corner radius for this image
-            pipeline.update_viewport(
-                queue,
-                &self.image_handle,
-                bounds.width,
-                bounds.height,
-                self.corner_radius,
-            );
-        }
+        // Update viewport size and corner radius for this image
+        pipeline.update_viewport(
+            queue,
+            &self.image_handle,
+            bounds.width,
+            bounds.height,
+            self.corner_radius,
+        );
     }
 
     fn render(
         &self,
+        _pipeline: &Self::Pipeline,
         encoder: &mut wgpu::CommandEncoder,
-        storage: &primitive::Storage,
         target: &wgpu::TextureView,
         clip_bounds: &Rectangle<u32>,
     ) {
-        if let Some(pipeline) = storage.get::<GalleryPipeline>() {
-            pipeline.render(encoder, target, clip_bounds, &self.image_handle);
-        }
+        _pipeline.render(encoder, target, clip_bounds, &self.image_handle);
     }
 }
 
@@ -160,7 +163,7 @@ impl GalleryPipeline {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
@@ -173,7 +176,7 @@ impl GalleryPipeline {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -264,14 +267,14 @@ impl GalleryPipeline {
 
         // Upload the image data
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &texture_data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width),
                 rows_per_image: None,
@@ -370,6 +373,7 @@ impl GalleryPipeline {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -393,7 +397,7 @@ impl GalleryPipeline {
             );
 
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(0, &gallery_texture.bind_group, &[]);
+            render_pass.set_bind_group(0, Some(&gallery_texture.bind_group), &[]);
             render_pass.draw(0..6, 0..1);
         }
     }

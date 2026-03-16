@@ -74,7 +74,11 @@ impl AppModel {
 
         // Position picker in top-right corner
         let picker_positioned = widget::row()
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .push(picker_panel)
             .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
 
@@ -518,7 +522,11 @@ impl AppModel {
         .on_press(Message::Noop);
 
         let picker_positioned = widget::row()
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .push(picker_panel)
             .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
 

@@ -90,18 +90,22 @@ impl AppModel {
             } else {
                 // Fallback: colored placeholder when no camera frame
                 let color = Self::filter_placeholder_color(filter_type);
-                widget::container(widget::Space::new(Length::Fill, Length::Fill))
-                    .style(move |theme: &cosmic::Theme| widget::container::Style {
-                        background: Some(Background::Color(color)),
-                        border: Border {
-                            radius: theme.cosmic().corner_radii.radius_s.into(),
-                            ..Default::default()
-                        },
+                widget::container(
+                    widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .style(move |theme: &cosmic::Theme| widget::container::Style {
+                    background: Some(Background::Color(color)),
+                    border: Border {
+                        radius: theme.cosmic().corner_radii.radius_s.into(),
                         ..Default::default()
-                    })
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
+                    },
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
             };
 
             // Wrap thumbnail in square container to enforce 1:1 aspect ratio
@@ -123,7 +127,7 @@ impl AppModel {
             // Column with button (thumbnail only) and name below
             let filter_item = widget::column()
                 .push(thumbnail_button)
-                .push(widget::vertical_space().height(Length::Fixed(LABEL_SPACING)))
+                .push(widget::space::vertical().height(Length::Fixed(LABEL_SPACING)))
                 .push(name_label)
                 .align_x(Alignment::Center);
 
@@ -144,8 +148,11 @@ impl AppModel {
         // Push remaining items in last row, padding with empty space for even distribution
         if items_in_row > 0 {
             while items_in_row < FILTER_GRID_COLUMNS {
-                current_row =
-                    current_row.push(widget::Space::new(Length::FillPortion(1), Length::Shrink));
+                current_row = current_row.push(
+                    widget::Space::new()
+                        .width(Length::FillPortion(1))
+                        .height(Length::Shrink),
+                );
                 items_in_row += 1;
             }
             grid_column = grid_column.push(current_row);

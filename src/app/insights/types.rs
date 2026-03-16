@@ -15,7 +15,7 @@ static H265_AVAILABILITY: OnceLock<Vec<bool>> = OnceLock::new();
 #[derive(Debug, Clone, Default)]
 pub struct InsightsState {
     // Pipeline info
-    /// Full GStreamer pipeline string
+    /// Full pipeline string
     pub full_pipeline_string: Option<String>,
     /// Decoder fallback chain status
     pub decoder_chain: Vec<DecoderStatus>,
@@ -31,8 +31,6 @@ pub struct InsightsState {
     pub dropped_frames: u64,
     /// Frame size after decoding in bytes
     pub frame_size_decoded: usize,
-    /// GStreamer decode/conversion time in microseconds
-    pub gstreamer_decode_time_us: u64,
     /// GPU compute shader conversion time in microseconds
     pub gpu_conversion_time_us: u64,
     /// Copy time (source to GPU) in microseconds
@@ -45,8 +43,8 @@ pub struct InsightsState {
     pub copy_bandwidth_mbps: f64,
 
     // Backend info
-    /// Active backend type (e.g., "libcamera", "PipeWire")
-    pub backend_type: String,
+    /// Active backend type
+    pub backend_type: &'static str,
     /// libcamera pipeline handler (e.g., "RPiCFE", "simple")
     pub pipeline_handler: Option<String>,
     /// libcamera version string
@@ -80,12 +78,18 @@ pub struct InsightsState {
     /// Whether libcamera metadata is present at all
     pub has_libcamera_metadata: bool,
 
+    // Recording pipeline info (populated while recording)
+    /// Recording pipeline diagnostics (None when not recording)
+    pub recording_diag: Option<crate::pipelines::video::RecordingDiagnostics>,
+    /// Live recording pipeline stats (None when not recording)
+    pub recording_stats: Option<crate::pipelines::video::RecordingStatsSnapshot>,
+
     // Audio levels (snapshot from SharedAudioLevels)
     /// Last polled audio level data (updated by insights tick)
     pub audio_levels: Option<AudioLevels>,
 
     // Multi-stream info
-    /// Whether dual-stream mode is active via GStreamer
+    /// Whether dual-stream mode is active
     pub is_multistream: bool,
     /// Whether libcamera itself supports dual-stream (ViewFinder + Raw)
     /// even if GStreamer's Software ISP can't handle it
@@ -103,10 +107,16 @@ pub struct StreamInfo {
     pub role: String,
     /// Negotiated resolution (e.g., "1920x1080")
     pub resolution: String,
-    /// Negotiated pixel format (e.g., "NV12", "BayerRGGB")
+    /// Negotiated pixel format (e.g., "NV12", "SRGGB10_CSI2P")
     pub pixel_format: String,
     /// Total frames received on this stream
     pub frame_count: u64,
+    /// Source description (e.g., "libcamera (native)")
+    pub source: String,
+    /// GPU processing description (e.g., "Bayer unpack → demosaic")
+    pub gpu_processing: String,
+    /// Frame size in bytes (from stride * height or buffer size)
+    pub frame_size_bytes: usize,
 }
 
 /// Status of a decoder in the fallback chain
@@ -135,7 +145,7 @@ pub enum FallbackState {
 /// Current format pipeline chain
 #[derive(Debug, Clone, Default)]
 pub struct FormatChain {
-    /// Camera source type (e.g., "V4L2 via PipeWire", "libcamera via PipeWire")
+    /// Camera source type (e.g., "libcamera (native)")
     pub source: String,
     /// Current resolution
     pub resolution: String,
@@ -143,8 +153,6 @@ pub struct FormatChain {
     pub framerate: String,
     /// Native format from camera (e.g., "MJPG", "YUYV", "NV12")
     pub native_format: String,
-    /// GStreamer output format after decoding (if applicable, e.g., "I420", "NV12")
-    pub gstreamer_output: Option<String>,
     /// WGPU processing description (e.g., "I420 → RGBA", "Passthrough")
     pub wgpu_processing: String,
 }

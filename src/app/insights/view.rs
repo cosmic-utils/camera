@@ -3,7 +3,6 @@
 //! Insights drawer view for displaying diagnostic information
 
 use crate::app::state::{AppModel, ContextPage, Message};
-use crate::backends::camera::types::CameraBackendType;
 use crate::fl;
 use cosmic::Element;
 use cosmic::app::context_drawer;
@@ -17,7 +16,21 @@ impl AppModel {
     ///
     /// Shows pipeline information, performance metrics, and format capabilities.
     pub fn insights_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
-        let mut sections = vec![self.build_pipeline_section().into()];
+        // Capture buttons row at the top
+        let capture_buttons: Element<'_, Message> = widget::row()
+            .push(
+                widget::button::standard(fl!("insights-capture"))
+                    .on_press(Message::InsightsCaptureFrames),
+            )
+            .push(widget::space::horizontal().width(Length::Fixed(8.0)))
+            .push(
+                widget::button::standard(fl!("insights-capture-burst"))
+                    .on_press(Message::InsightsCaptureBurst),
+            )
+            .padding(8)
+            .into();
+
+        let mut sections = vec![capture_buttons, self.build_pipeline_section().into()];
 
         // Show backend/multistream sections when libcamera backend is active
         if !self.insights.backend_type.is_empty() {
@@ -33,6 +46,11 @@ impl AppModel {
         } else {
             // Single-stream: combined section
             sections.push(self.build_combined_stream_section().into());
+        }
+
+        // Recording section (shown when recording is active)
+        if self.insights.recording_diag.is_some() {
+            sections.push(self.build_recording_section().into());
         }
 
         // Audio section
@@ -75,11 +93,7 @@ impl AppModel {
                 .extra_small()
                 .on_press(Message::CopyPipelineString);
 
-        let pipeline_label = if self.config.backend == CameraBackendType::Libcamera {
-            fl!("insights-pipeline-full-libcamera")
-        } else {
-            fl!("insights-pipeline-full")
-        };
+        let pipeline_label = fl!("insights-pipeline-full-libcamera");
         section = section.add(widget::settings::item::builder(pipeline_label).control(copy_button));
 
         section = section.add(widget::settings::item_row(vec![pipeline_content.into()]));
@@ -88,7 +102,7 @@ impl AppModel {
         if !self.insights.decoder_chain.is_empty() {
             section = section.add(
                 widget::settings::item::builder(fl!("insights-decoder-chain"))
-                    .control(widget::Space::new(0, 0)),
+                    .control(widget::Space::new().width(0).height(0)),
             );
 
             for decoder in &self.insights.decoder_chain {
@@ -104,7 +118,7 @@ impl AppModel {
 
                 let row = widget::row()
                     .push(widget::icon::from_name(icon_name).symbolic(true).size(16))
-                    .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                    .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                     .push(
                         widget::column()
                             .push(widget::text::body(decoder.name).font(cosmic::font::mono()))
@@ -160,13 +174,6 @@ impl AppModel {
                     .control(widget::text::body(format!("{:.2} ms", cpu_decode_ms))),
             );
         }
-
-        // Buffer processing time
-        let gst_decode_ms = self.insights.gstreamer_decode_time_us as f64 / 1000.0;
-        section = section.add(
-            widget::settings::item::builder(fl!("insights-decode-time-gst"))
-                .control(widget::text::body(format!("{:.2} ms", gst_decode_ms))),
-        );
 
         // Frame wrap time
         let copy_ms = self.insights.copy_time_us as f64 / 1000.0;
@@ -234,12 +241,6 @@ impl AppModel {
             section = section.add(
                 widget::settings::item::builder(fl!("insights-cpu-processing"))
                     .control(widget::text::body(cpu_proc)),
-            );
-        }
-        if let Some(gst_output) = &chain.gstreamer_output {
-            section = section.add(
-                widget::settings::item::builder(fl!("insights-format-gstreamer"))
-                    .control(widget::text::body(gst_output)),
             );
         }
         section = section.add(
@@ -319,7 +320,138 @@ impl AppModel {
 
         if let Some(stream) = &self.insights.capture_stream {
             section = self.add_stream_items(section, stream);
+
+            // Source
+            if !stream.source.is_empty() {
+                section = section.add(
+                    widget::settings::item::builder(fl!("insights-format-source"))
+                        .control(widget::text::body(&stream.source)),
+                );
+            }
+
+            // GPU processing
+            if !stream.gpu_processing.is_empty() {
+                section = section.add(
+                    widget::settings::item::builder(fl!("insights-format-wgpu"))
+                        .control(widget::text::body(&stream.gpu_processing)),
+                );
+            }
+
+            // Frame size
+            if stream.frame_size_bytes > 0 {
+                let mb = stream.frame_size_bytes as f64 / (1024.0 * 1024.0);
+                section = section.add(
+                    widget::settings::item::builder(fl!("insights-frame-size-decoded"))
+                        .control(widget::text::body(format!("{:.2} MB", mb))),
+                );
+            }
         }
+
+        section
+    }
+
+    /// Build the Recording section (active recording pipeline info + live stats)
+    fn build_recording_section(&self) -> widget::settings::Section<'_, Message> {
+        let mut section = widget::settings::section().title(fl!("insights-recording"));
+
+        let diag = self.insights.recording_diag.as_ref().unwrap();
+
+        // Recording mode
+        section = section.add(
+            widget::settings::item::builder(fl!("insights-recording-mode"))
+                .control(widget::text::body(&diag.mode)),
+        );
+
+        // Encoder
+        section = section.add(
+            widget::settings::item::builder(fl!("insights-recording-encoder"))
+                .control(widget::text::body(&diag.encoder).font(cosmic::font::mono())),
+        );
+
+        // Resolution + Framerate on one line
+        section = section.add(
+            widget::settings::item::builder(fl!("insights-recording-resolution")).control(
+                widget::text::body(format!("{} @ {} fps", diag.resolution, diag.framerate)),
+            ),
+        );
+
+        // Live stats (if available)
+        if let Some(stats) = &self.insights.recording_stats {
+            // Capture → Channel
+            section = section.add(
+                widget::settings::item::builder(fl!("insights-recording-capture")).control(
+                    widget::text::body(format!(
+                        "{} sent, {} dropped",
+                        stats.capture_sent, stats.capture_dropped
+                    )),
+                ),
+            );
+
+            // Channel backlog
+            section = section.add(
+                widget::settings::item::builder(fl!("insights-recording-channel")).control(
+                    widget::text::body(format!("{} queued", stats.channel_backlog)),
+                ),
+            );
+
+            // Pusher → Appsrc
+            section = section.add(
+                widget::settings::item::builder(fl!("insights-recording-pusher")).control(
+                    widget::text::body(format!(
+                        "{} pushed, {} skipped",
+                        stats.pusher_pushed, stats.pusher_skipped
+                    )),
+                ),
+            );
+
+            // Effective FPS
+            section = section.add(
+                widget::settings::item::builder(fl!("insights-recording-fps")).control(
+                    widget::text::body(format!("{:.1} fps", stats.effective_fps)),
+                ),
+            );
+
+            // Processing delay
+            if stats.last_processing_delay_us > 0 {
+                let delay_ms = stats.last_processing_delay_us as f64 / 1000.0;
+                section = section.add(
+                    widget::settings::item::builder(fl!("insights-recording-delay"))
+                        .control(widget::text::body(format!("{:.1} ms", delay_ms))),
+                );
+            }
+
+            // NV12 conversion time (only shown for pusher NV12 path)
+            if stats.last_convert_time_us > 0 {
+                let convert_ms = stats.last_convert_time_us as f64 / 1000.0;
+                section = section.add(
+                    widget::settings::item::builder(fl!("insights-recording-convert"))
+                        .control(widget::text::body(format!("{:.2} ms", convert_ms))),
+                );
+            }
+
+            // Current PTS
+            section = section.add(
+                widget::settings::item::builder(fl!("insights-recording-pts")).control(
+                    widget::text::body(format!("{:.1} s", stats.last_pts_ms as f64 / 1000.0)),
+                ),
+            );
+        }
+
+        // Full pipeline string
+        let pipeline_content = widget::container(
+            widget::text::body(&diag.pipeline_string)
+                .font(cosmic::font::mono())
+                .size(10),
+        )
+        .padding(8)
+        .class(cosmic::style::Container::Card)
+        .width(Length::Fill);
+
+        section = section.add(
+            widget::settings::item::builder(fl!("insights-recording-pipeline"))
+                .control(widget::Space::new().width(0).height(0)),
+        );
+        section = section.add(widget::settings::item_row(vec![pipeline_content.into()]));
 
         section
     }
@@ -474,7 +606,7 @@ impl AppModel {
                     .control(widget::text::body(name)),
             );
 
-            // PipeWire node name (monospace)
+            // Audio device node name (monospace)
             let node_content = widget::container(
                 widget::text::body(&dev.node_name)
                     .font(cosmic::font::mono())
@@ -547,17 +679,17 @@ impl AppModel {
         .width(Length::Fill);
         section = section.add(
             widget::settings::item::builder(fl!("insights-audio-pipeline"))
-                .control(widget::Space::new(0, 0)),
+                .control(widget::Space::new().width(0).height(0)),
         );
         section = section.add(widget::settings::item_row(vec![pipeline_content.into()]));
 
-        // Per-channel input details from PipeWire device info
+        // Per-channel input details from audio device info
         if let Some(dev) = dev
             && !dev.channels.is_empty()
         {
             section = section.add(
                 widget::settings::item::builder(fl!("insights-audio-inputs"))
-                    .control(widget::Space::new(0, 0)),
+                    .control(widget::Space::new().width(0).height(0)),
             );
 
             let levels = &self.insights.audio_levels;
@@ -575,7 +707,7 @@ impl AppModel {
                             .size(12)
                             .width(Length::Fixed(48.0)),
                     )
-                    .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                    .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                     .push(
                         widget::text::caption(vol_text)
                             .size(11)
@@ -585,9 +717,9 @@ impl AppModel {
                 // Live dB level bar (when recording)
                 if let Some(rms_db) = live_rms {
                     row = row
-                        .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                        .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                         .push(Self::build_level_bar(rms_db))
-                        .push(widget::horizontal_space().width(Length::Fixed(4.0)))
+                        .push(widget::space::horizontal().width(Length::Fixed(4.0)))
                         .push(
                             widget::text::caption(format!("{:.0} dB", rms_db))
                                 .size(10)
@@ -611,9 +743,9 @@ impl AppModel {
                         .size(12)
                         .width(Length::Fixed(48.0)),
                 )
-                .push(widget::horizontal_space().width(Length::Fixed(8.0)))
+                .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                 .push(Self::build_level_bar(levels.output_rms_db))
-                .push(widget::horizontal_space().width(Length::Fixed(4.0)))
+                .push(widget::space::horizontal().width(Length::Fixed(4.0)))
                 .push(
                     widget::text::caption(rms_text)
                         .size(10)
@@ -624,7 +756,7 @@ impl AppModel {
 
             section = section.add(
                 widget::settings::item::builder(fl!("insights-audio-output-level"))
-                    .control(widget::Space::new(0, 0)),
+                    .control(widget::Space::new().width(0).height(0)),
             );
             section = section.add(widget::settings::item_row(vec![output_row.into()]));
         } else if self.recording.is_recording() && self.config.record_audio {
@@ -655,7 +787,7 @@ impl AppModel {
             cosmic::iced::Color::from_rgb(0.9, 0.2, 0.2) // red
         };
 
-        widget::container(widget::Space::new(bar_width, 8))
+        widget::container(widget::Space::new().width(bar_width).height(8))
             .class(cosmic::style::Container::custom(move |_theme| {
                 cosmic::widget::container::Style {
                     background: Some(cosmic::iced::Background::Color(color)),
@@ -677,7 +809,7 @@ impl AppModel {
         // Backend type
         section = section.add(
             widget::settings::item::builder(fl!("insights-backend-type"))
-                .control(widget::text::body(&self.insights.backend_type)),
+                .control(widget::text::body(self.insights.backend_type)),
         );
 
         // Pipeline handler

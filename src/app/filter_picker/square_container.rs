@@ -33,7 +33,7 @@ impl<'a, Message> Widget<Message, Theme, Renderer> for SquareContainer<'a, Messa
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -48,7 +48,7 @@ impl<'a, Message> Widget<Message, Theme, Renderer> for SquareContainer<'a, Messa
         // Layout child within square bounds
         let mut child_node =
             self.content
-                .as_widget()
+                .as_widget_mut()
                 .layout(&mut tree.children[0], renderer, &square_limits);
 
         // Center the child within the square if it's smaller
@@ -90,13 +90,13 @@ impl<'a, Message> Widget<Message, Theme, Renderer> for SquareContainer<'a, Messa
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: layout::Layout<'_>,
         renderer: &Renderer,
         operation: &mut dyn cosmic::iced::advanced::widget::Operation,
     ) {
-        self.content.as_widget().operate(
+        self.content.as_widget_mut().operate(
             &mut tree.children[0],
             layout.children().next().unwrap(),
             renderer,
@@ -104,18 +104,18 @@ impl<'a, Message> Widget<Message, Theme, Renderer> for SquareContainer<'a, Messa
         );
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: cosmic::iced::Event,
+        event: &cosmic::iced::Event,
         layout: layout::Layout<'_>,
         cursor: cosmic::iced::mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn cosmic::iced::advanced::Clipboard,
         shell: &mut cosmic::iced::advanced::Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> cosmic::iced::event::Status {
-        self.content.as_widget_mut().on_event(
+    ) {
+        self.content.as_widget_mut().update(
             &mut tree.children[0],
             event,
             layout.children().next().unwrap(),
@@ -124,7 +124,7 @@ impl<'a, Message> Widget<Message, Theme, Renderer> for SquareContainer<'a, Messa
             clipboard,
             shell,
             viewport,
-        )
+        );
     }
 
     fn mouse_interaction(

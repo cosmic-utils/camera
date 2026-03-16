@@ -140,11 +140,14 @@ impl AppModel {
             }
             Message::BrokenEncodersDetected(broken) => self.handle_broken_encoders_detected(broken),
             Message::CameraListChanged(cameras) => self.handle_camera_list_changed(cameras),
+            Message::HotplugDeviceRemoved(removed) => self.handle_hotplug_device_removed(removed),
+            Message::HotplugDeviceAdded(new_devices) => {
+                self.handle_hotplug_device_added(new_devices)
+            }
             Message::AudioListChanged(devices) => self.handle_audio_list_changed(devices),
             Message::StartCameraTransition => self.handle_start_camera_transition(),
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
-            Message::SelectBackend(index) => self.handle_select_backend(index),
             Message::ToggleVirtualCameraEnabled => self.handle_toggle_virtual_camera_enabled(),
 
             // ===== Format Selection =====
@@ -166,6 +169,9 @@ impl AppModel {
             Message::SetBurstModeFrameCount(index) => self.handle_set_burst_mode_frame_count(index),
             Message::BurstModeProgress(progress) => self.handle_burst_mode_progress(progress),
             Message::BurstModeFramesCollected => self.handle_burst_mode_frames_collected(),
+            Message::BurstModeRawFramesCaptured(result) => {
+                self.handle_burst_mode_raw_frames_captured(result)
+            }
             Message::BurstModeComplete(result) => self.handle_burst_mode_complete(result),
             Message::PollBurstModeProgress => self.handle_poll_burst_mode_progress(),
             Message::ResetBurstModeState => {
@@ -231,6 +237,9 @@ impl AppModel {
             // ===== Settings =====
             Message::UpdateConfig(config) => self.handle_update_config(config),
             Message::SetAppTheme(index) => self.handle_set_app_theme(index),
+            Message::PortalColorSchemeChanged(is_dark) => {
+                self.handle_portal_color_scheme_changed(is_dark)
+            }
             Message::SelectAudioDevice(index) => self.handle_select_audio_device(index),
             Message::SelectVideoEncoder(index) => self.handle_select_video_encoder(index),
             Message::SelectPhotoOutputFormat(index) => {
@@ -280,6 +289,22 @@ impl AppModel {
             // ===== Insights Drawer =====
             Message::UpdateInsightsMetrics => self.handle_update_insights_metrics(),
             Message::CopyPipelineString => self.handle_copy_pipeline_string(),
+            Message::InsightsCaptureFrames => self.handle_insights_capture(1),
+            Message::InsightsCaptureBurst => self.handle_insights_capture(6),
+            Message::InsightsCaptureComplete(result) => {
+                match &result {
+                    Ok(paths) => info!(count = paths.len(), "Insights capture saved"),
+                    Err(e) => warn!(error = %e, "Insights capture failed"),
+                }
+                Task::none()
+            }
+
+            Message::GpuPipelinesWarmed(result) => {
+                if let Err(e) = result {
+                    warn!("GPU pipeline warmup failed: {e}");
+                }
+                Task::none()
+            }
 
             Message::Noop => Task::none(),
         }

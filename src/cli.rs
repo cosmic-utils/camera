@@ -7,16 +7,14 @@
 //! - Taking photos
 //! - Recording videos
 
-use camera::backends::camera::pipewire::{
-    PipeWirePipeline, enumerate_pipewire_cameras, get_pipewire_formats,
-};
+use camera::backends::camera::CameraBackend;
+use camera::backends::camera::libcamera::{LibcameraBackend, create_pipeline};
 use camera::backends::camera::types::{CameraFormat, CameraFrame};
 use camera::pipelines::photo::PhotoPipeline;
 use camera::pipelines::video::{
-    EncoderConfig, PipeWireRecorderConfig, RecorderConfig, VideoRecorder,
+    AppsrcRecorderConfig, EncoderConfig, RecorderConfig, VideoRecorder,
 };
 use chrono::Local;
-use futures::channel::mpsc;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,7 +24,8 @@ pub fn list_cameras() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize GStreamer
     gstreamer::init()?;
 
-    let cameras = enumerate_pipewire_cameras().unwrap_or_default();
+    let backend = LibcameraBackend::new();
+    let cameras = backend.enumerate_cameras();
 
     if cameras.is_empty() {
         println!("No cameras found.");
@@ -39,7 +38,7 @@ pub fn list_cameras() -> Result<(), Box<dyn std::error::Error>> {
         println!("  [{}] {}", index, camera.name);
 
         // Get formats for this camera
-        let formats = get_pipewire_formats(&camera.path, camera.metadata_path.as_deref());
+        let formats = backend.get_formats(camera, false);
         if !formats.is_empty() {
             // Group formats by resolution and show best framerate (as integer for display)
             let mut resolutions: Vec<(u32, u32, u32)> = Vec::new();
@@ -85,7 +84,8 @@ pub fn take_photo(
     gstreamer::init()?;
 
     // Enumerate cameras
-    let cameras = enumerate_pipewire_cameras().unwrap_or_default();
+    let backend = LibcameraBackend::new();
+    let cameras = backend.enumerate_cameras();
     if cameras.is_empty() {
         return Err("No cameras found".into());
     }
@@ -103,7 +103,7 @@ pub fn take_photo(
     println!("Using camera: {}", camera.name);
 
     // Get formats and select best one for photos (highest resolution)
-    let formats = get_pipewire_formats(&camera.path, camera.metadata_path.as_deref());
+    let formats = backend.get_formats(camera, false);
     if formats.is_empty() {
         return Err("No formats available for camera".into());
     }
@@ -129,8 +129,8 @@ pub fn take_photo(
 
     // Start camera pipeline
     println!("Capturing...");
-    let (sender, mut receiver) = mpsc::channel(10);
-    let _pipeline = PipeWirePipeline::new(camera, &format, sender)?;
+    let (_handle, mut receiver) =
+        create_pipeline(camera, &format).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     // Wait for frames to stabilize (camera warm-up)
     let start = Instant::now();
@@ -147,7 +147,7 @@ pub fn take_photo(
                     break;
                 }
             }
-            Err(_) => {
+            _ => {
                 // No frame available yet, wait a bit
                 std::thread::sleep(Duration::from_millis(16));
             }
@@ -191,7 +191,8 @@ pub fn record_video(
     gstreamer::init()?;
 
     // Enumerate cameras
-    let cameras = enumerate_pipewire_cameras().unwrap_or_default();
+    let backend = LibcameraBackend::new();
+    let cameras = backend.enumerate_cameras();
     if cameras.is_empty() {
         return Err("No cameras found".into());
     }
@@ -209,7 +210,7 @@ pub fn record_video(
     println!("Using camera: {}", camera.name);
 
     // Get formats and select best one for video
-    let formats = get_pipewire_formats(&camera.path, camera.metadata_path.as_deref());
+    let formats = backend.get_formats(camera, true);
     if formats.is_empty() {
         return Err("No formats available for camera".into());
     }
@@ -241,27 +242,64 @@ pub fn record_video(
         println!("Audio: enabled");
     }
 
-    // Create encoder config
-    let encoder_config = EncoderConfig::default();
+    // Start camera pipeline
+    let (handle, mut receiver) =
+        create_pipeline(camera, &format).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
-    // Create video recorder
-    let recorder = VideoRecorder::new(PipeWireRecorderConfig {
-        base: RecorderConfig {
-            width: format.width,
-            height: format.height,
-            framerate,
-            output_path: output_path.clone(),
-            encoder_config,
-            enable_audio,
-            audio_device: None,
-            encoder_info: None,
-            rotation: camera.rotation,
-            audio_levels: Default::default(),
-        },
-        device_path: &camera.path,
-        metadata_path: camera.metadata_path.as_deref(),
-        pixel_format: &format.pixel_format,
-        preview_sender: None,
+    // Wait for first frame to determine pixel format
+    let start = Instant::now();
+    let timeout = Duration::from_secs(5);
+    let first_frame = loop {
+        if start.elapsed() > timeout {
+            return Err("Timeout waiting for camera frame".into());
+        }
+        match receiver.try_recv() {
+            Ok(f) => break f,
+            _ => std::thread::sleep(Duration::from_millis(16)),
+        }
+    };
+
+    let pixel_format = first_frame.format;
+    let width = first_frame.width;
+    let height = first_frame.height;
+
+    // Create frame channel for appsrc recording
+    let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(15);
+
+    // Set recording sender on the pipeline handle
+    handle.set_recording_sender(Some(frame_tx));
+
+    // Create encoder config and video recorder
+    let encoder_config = EncoderConfig::default();
+    let rotation = camera.rotation;
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let recorder = rt.block_on(async {
+        let rt_handle = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let _guard = rt_handle.enter();
+            VideoRecorder::new_from_appsrc(
+                AppsrcRecorderConfig {
+                    base: RecorderConfig {
+                        width,
+                        height,
+                        framerate,
+                        output_path: output_path.clone(),
+                        encoder_config,
+                        enable_audio,
+                        audio_device: None,
+                        encoder_info: None,
+                        rotation,
+                        audio_levels: Default::default(),
+                    },
+                    pixel_format,
+                    live_filter_code: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                },
+                frame_rx,
+            )
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))
     })?;
 
     // Start recording
@@ -296,7 +334,10 @@ pub fn record_video(
     }
     println!();
 
-    // Stop recording
+    // Stop recording: clear recording sender to trigger EOS
+    handle.set_recording_sender(None);
+    std::thread::sleep(Duration::from_millis(300)); // Let EOS propagate
+
     let final_path = recorder.stop()?;
     println!("Video saved: {}", final_path.display());
 

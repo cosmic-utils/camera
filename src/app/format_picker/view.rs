@@ -161,7 +161,7 @@ impl AppModel {
         let picker_panel = widget::container(
             widget::column()
                 .push(res_row)
-                .push(widget::vertical_space().height(spacing.space_s))
+                .push(widget::space::vertical().height(spacing.space_s))
                 .push(fps_row)
                 .padding(spacing.space_xs),
         )
@@ -170,7 +170,11 @@ impl AppModel {
         // Position picker and add click-outside-to-close
         let picker_positioned = widget::row()
             .push(picker_panel)
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
 
         widget::mouse_area(

@@ -25,10 +25,11 @@ impl AppModel {
         // White circle with smaller inner circle for photo capture
         let inner_circle_size = size * 0.85;
         let inner_corner_radius = base_corner_radius * scale_factor * 0.85;
-        let button_inner = widget::container(widget::Space::new(
-            Length::Fixed(inner_circle_size),
-            Length::Fixed(inner_circle_size),
-        ))
+        let button_inner = widget::container(
+            widget::Space::new()
+                .width(Length::Fixed(inner_circle_size))
+                .height(Length::Fixed(inner_circle_size)),
+        )
         .style(move |_theme| widget::container::Style {
             background: Some(Background::Color(Color::WHITE)),
             border: cosmic::iced::Border {

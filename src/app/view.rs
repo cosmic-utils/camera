@@ -175,13 +175,17 @@ impl AppModel {
         // Flash mode - show only preview with white overlay, no UI
         // Only show screen flash overlay for front cameras (back cameras use hardware LED)
         if self.flash_active && !self.use_hardware_flash() {
-            let flash_overlay = widget::container(widget::Space::new(Length::Fill, Length::Fill))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_theme| widget::container::Style {
-                    background: Some(Background::Color(Color::WHITE)),
-                    ..Default::default()
-                });
+            let flash_overlay = widget::container(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_theme| widget::container::Style {
+                background: Some(Background::Color(Color::WHITE)),
+                ..Default::default()
+            });
 
             return widget::container(
                 cosmic::iced::widget::stack![camera_preview, flash_overlay]
@@ -279,23 +283,32 @@ impl AppModel {
                 // Layout depends on whether we have a play/pause button
                 // With play/pause: [Fill] [Play/Pause] [Stop] [Photo] [Fill]
                 // Without: [Fill] [Spacer] [Stop] [Photo] [Fill]
-                let mut row = widget::row().push(widget::Space::new(Length::Fill, Length::Shrink));
+                let mut row = widget::row().push(
+                    widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Shrink),
+                );
 
                 if let Some(pp_button) = play_pause_button {
                     // Add play/pause button to the left of stop button
                     row = row.push(pp_button);
                 } else {
                     // Add spacer to balance the photo button on the right
-                    row = row.push(widget::Space::new(
-                        Length::Fixed(button_width),
-                        Length::Shrink,
-                    ));
+                    row = row.push(
+                        widget::Space::new()
+                            .width(Length::Fixed(button_width))
+                            .height(Length::Shrink),
+                    );
                 }
 
                 row = row
                     .push(stop_button)
                     .push(photo_button)
-                    .push(widget::Space::new(Length::Fill, Length::Shrink))
+                    .push(
+                        widget::Space::new()
+                            .width(Length::Fill)
+                            .height(Length::Shrink),
+                    )
                     .align_y(Alignment::Center)
                     .width(Length::Fill);
 
@@ -308,7 +321,11 @@ impl AppModel {
 
                 // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
                 // Use fixed-width container for play button to ensure centering
-                let mut row = widget::row().push(widget::Space::new(Length::Fill, Length::Shrink));
+                let mut row = widget::row().push(
+                    widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Shrink),
+                );
 
                 if let Some(pp_button) = play_pause_button {
                     // Wrap play/pause button in fixed-width container for consistent centering
@@ -322,11 +339,16 @@ impl AppModel {
                 row = row
                     .push(capture_button)
                     // Spacer matches play/pause button width for centering
-                    .push(widget::Space::new(
-                        Length::Fixed(icon_button_width),
-                        Length::Shrink,
-                    ))
-                    .push(widget::Space::new(Length::Fill, Length::Shrink))
+                    .push(
+                        widget::Space::new()
+                            .width(Length::Fixed(icon_button_width))
+                            .height(Length::Shrink),
+                    )
+                    .push(
+                        widget::Space::new()
+                            .width(Length::Fill)
+                            .height(Length::Shrink),
+                    )
                     .align_y(Alignment::Center)
                     .width(Length::Fill);
 
@@ -476,9 +498,8 @@ impl AppModel {
 
         // Add iOS-style format picker overlay if visible
         // Hide with libcamera backend in photo/video modes (resolution is handled automatically)
-        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Video)
-            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
+        let is_libcamera_no_picker =
+            self.mode == CameraMode::Photo || self.mode == CameraMode::Video;
         if self.format_picker_visible && !is_libcamera_no_picker {
             main_stack = main_stack.push(self.build_format_picker());
         }
@@ -526,13 +547,13 @@ impl AppModel {
         // Show recording indicator when recording (from controls module)
         if let Some(indicator) = self.build_recording_indicator() {
             row = row.push(indicator);
-            row = row.push(widget::horizontal_space().width(spacing.space_s));
+            row = row.push(widget::space::horizontal().width(spacing.space_s));
         }
 
         // Show streaming indicator when streaming virtual camera
         if let Some(indicator) = self.build_streaming_indicator() {
             row = row.push(indicator);
-            row = row.push(widget::horizontal_space().width(spacing.space_s));
+            row = row.push(widget::space::horizontal().width(spacing.space_s));
         }
 
         // Show format/resolution button in both photo and video modes
@@ -543,9 +564,8 @@ impl AppModel {
         // - File source is set in Virtual mode (show file resolution instead)
         let has_file_source =
             self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
-        let is_libcamera_no_picker = (self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Video)
-            && self.config.backend == crate::backends::camera::CameraBackendType::Libcamera;
+        let is_libcamera_no_picker =
+            self.mode == CameraMode::Photo || self.mode == CameraMode::Video;
         let show_format_button = !self.format_picker_visible
             && (self.mode == CameraMode::Photo || !self.recording.is_recording())
             && !self.virtual_camera.is_streaming()
@@ -560,7 +580,11 @@ impl AppModel {
         }
 
         // Right side buttons
-        row = row.push(widget::Space::new(Length::Fill, Length::Shrink));
+        row = row.push(
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Shrink),
+        );
 
         // Hide flash and tools buttons when any picker/menu is open
         let hide_top_bar_buttons = self.tools_menu_visible
@@ -569,8 +593,10 @@ impl AppModel {
             || self.motor_picker_visible;
 
         if !hide_top_bar_buttons {
-            // Flash toggle button (only in Photo mode)
-            if self.mode == CameraMode::Photo {
+            // Flash toggle button (Photo mode, or Video mode with hardware flash for torch)
+            if self.mode == CameraMode::Photo
+                || (self.mode == CameraMode::Video && self.use_hardware_flash())
+            {
                 let flash_icon_bytes = if self.flash_enabled {
                     FLASH_ICON
                 } else {
@@ -596,7 +622,11 @@ impl AppModel {
                 }
 
                 // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+                row = row.push(
+                    widget::Space::new()
+                        .width(Length::Fixed(5.0))
+                        .height(Length::Shrink),
+                );
 
                 // HDR+ / Burst mode toggle button visibility and behavior:
                 // - Off setting → button completely hidden
@@ -641,7 +671,11 @@ impl AppModel {
                     }
 
                     // 5px spacing
-                    row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+                    row = row.push(
+                        widget::Space::new()
+                            .width(Length::Fixed(5.0))
+                            .height(Length::Shrink),
+                    );
                 }
             }
 
@@ -672,7 +706,11 @@ impl AppModel {
                 }
 
                 // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+                row = row.push(
+                    widget::Space::new()
+                        .width(Length::Fixed(5.0))
+                        .height(Length::Shrink),
+                );
             }
 
             // Motor/PTZ control button (shows when camera has motor controls)
@@ -697,7 +735,11 @@ impl AppModel {
                 }
 
                 // 5px spacing
-                row = row.push(widget::Space::new(Length::Fixed(5.0), Length::Shrink));
+                row = row.push(
+                    widget::Space::new()
+                        .width(Length::Fixed(5.0))
+                        .height(Length::Shrink),
+                );
             }
 
             // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, theatre)
@@ -771,7 +813,7 @@ impl AppModel {
         let button_content = widget::row()
             .push(widget::text(res_label).size(ui::RES_LABEL_TEXT_SIZE))
             .push(res_superscript)
-            .push(widget::horizontal_space().width(spacing.space_xxs))
+            .push(widget::space::horizontal().width(spacing.space_xxs))
             .push(widget::text(fps_label).size(ui::RES_LABEL_TEXT_SIZE))
             .push(fps_superscript)
             .spacing(ui::RES_LABEL_SPACING)
@@ -862,12 +904,18 @@ impl AppModel {
     fn build_qr_overlay(&self) -> Element<'_, Message> {
         // Only show overlay if QR detection is enabled and we have detections
         if !self.qr_detection_enabled || self.qr_detections.is_empty() {
-            return widget::Space::new(Length::Fill, Length::Fill).into();
+            return widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         }
 
         // Get frame dimensions
         let Some(frame) = &self.current_frame else {
-            return widget::Space::new(Length::Fill, Length::Fill).into();
+            return widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         };
 
         // Determine content fit mode based on theatre state
@@ -971,8 +1019,8 @@ impl AppModel {
             ));
         }
 
-        // Filter button (only in photo mode)
-        if self.mode == CameraMode::Photo {
+        // Filter button (photo and video modes)
+        if self.mode == CameraMode::Photo || self.mode == CameraMode::Video {
             let filter_active = self.selected_filter != FilterType::Standard;
             buttons.push(self.build_tools_grid_button(
                 icon::from_name("image-filter-symbolic").symbolic(true),
@@ -1042,7 +1090,11 @@ impl AppModel {
 
         // Position in top-right corner (space first pushes panel to right)
         let positioned = widget::row()
-            .push(widget::Space::new(Length::Fill, Length::Shrink))
+            .push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            )
             .push(panel)
             .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
 
@@ -1193,7 +1245,10 @@ impl AppModel {
     /// Shows a centered warning when the camera's privacy cover is closed.
     fn build_privacy_warning(&self) -> Element<'_, Message> {
         if !self.privacy_cover_closed {
-            return widget::Space::new(Length::Fill, Length::Fill).into();
+            return widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         }
 
         build_overlay_popup(
@@ -1232,10 +1287,11 @@ impl AppModel {
         let progress_bar = widget::container(
             widget::row()
                 .push(
-                    widget::container(widget::Space::new(
-                        Length::Fixed(filled_width),
-                        Length::Fixed(progress_height),
-                    ))
+                    widget::container(
+                        widget::Space::new()
+                            .width(Length::Fixed(filled_width))
+                            .height(Length::Fixed(progress_height)),
+                    )
                     .style(|theme: &cosmic::Theme| {
                         let accent = theme.cosmic().accent_color();
                         widget::container::Style {
@@ -1249,10 +1305,11 @@ impl AppModel {
                     }),
                 )
                 .push(
-                    widget::container(widget::Space::new(
-                        Length::Fixed(progress_width - filled_width),
-                        Length::Fixed(progress_height),
-                    ))
+                    widget::container(
+                        widget::Space::new()
+                            .width(Length::Fixed(progress_width - filled_width))
+                            .height(Length::Fixed(progress_height)),
+                    )
                     .style(|_theme| widget::container::Style {
                         background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.3))),
                         ..Default::default()
@@ -1274,11 +1331,23 @@ impl AppModel {
                     .size(32)
                     .font(cosmic::font::bold()),
             )
-            .push(widget::Space::new(Length::Shrink, Length::Fixed(8.0)))
+            .push(
+                widget::Space::new()
+                    .width(Length::Shrink)
+                    .height(Length::Fixed(8.0)),
+            )
             .push(widget::text(detail_text).size(18))
-            .push(widget::Space::new(Length::Shrink, Length::Fixed(16.0)))
+            .push(
+                widget::Space::new()
+                    .width(Length::Shrink)
+                    .height(Length::Fixed(16.0)),
+            )
             .push(progress_bar)
-            .push(widget::Space::new(Length::Shrink, Length::Fixed(8.0)))
+            .push(
+                widget::Space::new()
+                    .width(Length::Shrink)
+                    .height(Length::Fixed(8.0)),
+            )
             .push(widget::text(format!("{}%", progress_percent)).size(14))
             .align_x(Alignment::Center);
 

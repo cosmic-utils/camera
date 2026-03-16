@@ -7,8 +7,8 @@
 //! pointers.
 
 use super::diagnostics::{
-    CAPTURE_ACTIVE, DIAGNOSTICS, DiagnosticParams, MJPEG_DECODE_TIME_US, PREVIEW_FRAME_COUNT,
-    STILL_FRAME_COUNT, StreamDiag, publish_diagnostics,
+    CAPTURE_ACTIVE, CAPTURE_RELEASED, DIAGNOSTICS, DiagnosticParams, MJPEG_DECODE_TIME_US,
+    PREVIEW_FRAME_COUNT, STILL_FRAME_COUNT, StreamDiag, publish_diagnostics,
 };
 use super::pixel_formats::{map_pixel_format, pixel_format_name};
 use crate::backends::camera::types::*;
@@ -31,7 +31,8 @@ pub(crate) struct CaptureThreadParams {
     pub(crate) preview_frame_count: Arc<AtomicU64>,
     pub(crate) still_frame_count: Arc<AtomicU64>,
     pub(crate) frame_sender: FrameSender,
-    pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<Arc<CameraFrame>>>>>,
+    pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
+    pub(crate) jpeg_recording_mode: Arc<AtomicBool>,
 }
 
 /// Result of capture thread initialization (sent back to main thread)
@@ -104,19 +105,44 @@ fn requeue_request(
 
 /// Read back format info from a configured stream at the given index.
 /// Returns (format_name, size, mapped_pixel_format, stride).
+///
+/// `config_repr` is the string from `config.to_string_repr()` which contains
+/// the actual negotiated format names (e.g. "SRGGB10_CSI2P") that the Rust
+/// binding's `get_pixel_format()` fourcc may not preserve (it returns the
+/// unpacked fourcc "RG10" for CSI2P packed Bayer formats).
 fn read_stream_config(
     config: &libcamera::camera::CameraConfiguration,
     index: usize,
+    config_repr: &str,
 ) -> (String, libcamera::geometry::Size, Option<PixelFormat>, u32) {
     let pf = config.get(index).map(|c| c.get_pixel_format());
-    let name = pf.map(pixel_format_name).unwrap_or_default();
+    let mut name = pf.map(pixel_format_name).unwrap_or_default();
     let size = config
         .get(index)
         .map(|c| c.get_size())
         .unwrap_or(libcamera::geometry::Size::new(0, 0));
     let stride = config.get(index).map(|c| c.get_stride()).unwrap_or(0);
     let mapped = pf.and_then(map_pixel_format);
+
+    // Fix format name from config string when the Rust binding loses CSI2P info.
+    // Config repr format: "WxH-FORMAT/CS WxH-FORMAT/CS ..."
+    if let Some(actual_name) = parse_format_from_config_repr(config_repr, index)
+        && actual_name != name
+    {
+        name = actual_name;
+    }
+
     (name, size, mapped, stride)
+}
+
+/// Extract the format name for stream `index` from the config string representation.
+/// Format: "1436x1080-ABGR8888/sRGB 3280x2464-SRGGB10_CSI2P/RAW"
+fn parse_format_from_config_repr(config_repr: &str, index: usize) -> Option<String> {
+    let stream_desc = config_repr.split_whitespace().nth(index)?;
+    // "WxH-FORMAT/COLORSPACE" → extract FORMAT
+    let after_dash = stream_desc.split_once('-')?.1;
+    let format_name = after_dash.split_once('/')?.0;
+    Some(format_name.to_string())
 }
 
 /// Spatial layout of a camera frame buffer.
@@ -209,6 +235,16 @@ pub(crate) fn capture_thread_main(
         Ok(()) => info!("Capture thread exiting normally"),
         Err(e) => {
             error!(error = %e, "Capture thread failed");
+            // Clear CAPTURE_ACTIVE so the camera can be retried after failure.
+            // The success path clears this at the end of capture_thread_setup_and_run,
+            // but error paths via `?` skip that cleanup.
+            {
+                let _lock = super::super::CAMERA_MANAGER_LOCK
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                CAPTURE_ACTIVE.store(false, Ordering::Release);
+                CAPTURE_RELEASED.1.notify_all();
+            }
             // If init_tx hasn't been used yet, report the error
             let _ = init_tx.try_send(Err(e));
         }
@@ -255,22 +291,36 @@ fn capture_thread_setup_and_run(
 ) -> Result<(), BackendError> {
     use libcamera::camera_manager::CameraManager;
 
-    // Acquire global lock to prevent concurrent CameraManager creation with
-    // enumerate_cameras()/get_formats(). Mark capture active BEFORE creating the
-    // manager so other threads know not to try.
-    let _mgr_lock = super::super::CAMERA_MANAGER_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    CAPTURE_ACTIVE.store(true, Ordering::Release);
+    // Wait for any previous CameraManager to be fully dropped.
+    // libcamera enforces a singleton — creating a second instance is fatal.
+    // The old capture thread signals CAPTURE_RELEASED after dropping its manager.
+    {
+        let _mgr_lock = super::super::CAMERA_MANAGER_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if CAPTURE_ACTIVE.load(Ordering::Acquire) {
+            drop(_mgr_lock);
+            info!("Waiting for previous CameraManager to be released...");
+            let (lock, cvar) = &CAPTURE_RELEASED;
+            let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+            // Wait until CAPTURE_ACTIVE is cleared (with timeout to avoid deadlock)
+            let _guard = cvar
+                .wait_timeout_while(guard, std::time::Duration::from_secs(5), |_| {
+                    CAPTURE_ACTIVE.load(Ordering::Acquire)
+                })
+                .unwrap_or_else(|e| e.into_inner());
+        }
 
-    // Create camera manager (we hold the lock, so no other code will try concurrently)
-    let mgr = CameraManager::new().map_err(|e| {
-        CAPTURE_ACTIVE.store(false, Ordering::Release);
-        BackendError::InitializationFailed(format!("CameraManager::new: {}", e))
-    })?;
+        // Delay for hardware release — the "simple" pipeline handler needs time
+        // to fully release V4L2 resources before a new CameraManager can start.
+        // This runs on the capture thread (not the UI thread) to avoid stutter.
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
-    // Release the lock - CAPTURE_ACTIVE flag now guards against concurrent creation
-    drop(_mgr_lock);
+        CAPTURE_ACTIVE.store(true, Ordering::Release);
+    }
+
+    let mgr = CameraManager::new()
+        .map_err(|e| BackendError::InitializationFailed(format!("CameraManager::new: {}", e)))?;
 
     info!(version = mgr.version(), "libcamera version");
 
@@ -365,28 +415,22 @@ fn capture_thread_setup_and_run(
         vf: StreamDiag {
             size: formats.vf_size,
             format_name: formats.vf_format_name.clone(),
+            stride: formats.vf_stride,
         },
         raw: StreamDiag {
             size: formats.raw_size,
             format_name: formats.raw_format_name.clone(),
+            stride: formats.raw_stride,
         },
         video: StreamDiag {
             size: formats.video_size,
             format_name: formats.video_format_name.clone(),
+            stride: formats.video_stride,
         },
     });
 
-    // Report successful initialization
-    init_tx
-        .send(Ok(CaptureThreadInitResult {
-            is_multistream,
-            has_video_stream,
-        }))
-        .map_err(|_| {
-            BackendError::InitializationFailed("Main thread dropped init receiver".to_string())
-        })?;
-
-    // Create MJPEG decompressor if needed
+    // Create MJPEG decompressor if needed — BEFORE reporting success so that
+    // init failures are propagated to the caller via init_tx.
     let mut jpeg_decompressor = if formats.vf_is_mjpeg {
         let decompressor = turbojpeg::Decompressor::new()
             .map_err(|e| BackendError::Other(format!("turbojpeg init: {e}")))?;
@@ -397,6 +441,16 @@ fn capture_thread_setup_and_run(
     } else {
         None
     };
+
+    // Report successful initialization (after all fallible init steps)
+    init_tx
+        .send(Ok(CaptureThreadInitResult {
+            is_multistream,
+            has_video_stream,
+        }))
+        .map_err(|_| {
+            BackendError::InitializationFailed("Main thread dropped init receiver".to_string())
+        })?;
 
     run_capture_loop(
         &mut active_cam,
@@ -427,11 +481,13 @@ fn capture_thread_setup_and_run(
 
     // Now clear the flag under the lock so that any enumerate_cameras()/get_formats()
     // call that was waiting will see CAPTURE_ACTIVE=false and proceed normally.
+    // Clear the flag and wake any waiting capture thread immediately.
     {
         let _lock = super::super::CAMERA_MANAGER_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         CAPTURE_ACTIVE.store(false, Ordering::Release);
+        CAPTURE_RELEASED.1.notify_all();
     }
     info!("CameraManager released");
 
@@ -583,10 +639,12 @@ fn read_stream_formats(
     has_video_stream: bool,
     actual_second_stream: SecondStream,
 ) -> StreamFormats {
-    let (vf_format_name, vf_size, vf_mapped, vf_stride) = read_stream_config(config, 0);
+    let config_repr = config.to_string_repr();
+    let (vf_format_name, vf_size, vf_mapped, vf_stride) =
+        read_stream_config(config, 0, &config_repr);
     let vf_is_mjpeg = config
         .get(0)
-        .map(|c| c.get_pixel_format().fourcc() == libcamera::formats::MJPEG.fourcc())
+        .map(|c| c.get_pixel_format().fourcc() == u32::from_le_bytes(*b"MJPG"))
         .unwrap_or(false);
     let vf_pixel_format = if vf_is_mjpeg {
         info!("Viewfinder using MJPEG — will decode to native YUV via turbojpeg");
@@ -600,7 +658,7 @@ fn read_stream_formats(
 
     let (raw_format_name, raw_size, raw_pixel_format, raw_stride) =
         if is_multistream && actual_second_stream == SecondStream::Raw {
-            let (name, size, mapped, stride) = read_stream_config(config, 1);
+            let (name, size, mapped, stride) = read_stream_config(config, 1, &config_repr);
             (name, size, mapped, stride)
         } else {
             (
@@ -612,7 +670,7 @@ fn read_stream_formats(
         };
 
     let (video_format_name, video_size, video_pixel_format, video_stride) = if has_video_stream {
-        read_stream_config(config, 1)
+        read_stream_config(config, 1, &config_repr)
     } else {
         (
             String::new(),
@@ -819,6 +877,47 @@ fn run_capture_loop(
 
                 let data_slice = &plane_data[..bytes_used.min(plane_data.len())];
 
+                // If JPEG recording mode is active and this is an MJPEG stream,
+                // send raw JPEG bytes to the recorder BEFORE the CPU decode.
+                // The recorder's VA-API pipeline will decode on GPU.
+                let jpeg_sent_to_recorder = if formats.vf_is_mjpeg
+                    && params.jpeg_recording_mode.load(Ordering::Relaxed)
+                {
+                    if let Ok(guard) = params.recording_sender.lock()
+                        && let Some(ref tx) = *guard
+                    {
+                        let seq = metadata.sequence;
+                        let send_result = tx.try_send(RecordingFrame::Jpeg {
+                            data: Arc::from(data_slice),
+                            width: formats.vf_size.width,
+                            height: formats.vf_size.height,
+                            sensor_timestamp_ns,
+                            sequence: seq,
+                        });
+                        if send_result.is_err() {
+                            crate::pipelines::video::recorder::rec_stats_capture_dropped();
+                            if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
+                                warn!(frame = frame_num, seq = ?seq, "JPEG recording frame dropped (channel full)");
+                            }
+                        } else {
+                            crate::pipelines::video::recorder::rec_stats_capture_sent();
+                        }
+                        if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
+                            warn!(
+                                frame = frame_num,
+                                seq = ?seq,
+                                sensor_ts_ms = ?sensor_timestamp_ns.map(|t| t / 1_000_000),
+                                "Sent JPEG to recorder"
+                            );
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
                 // Decode MJPEG or copy raw data from mmap BEFORE req.reuse()
                 let frame = if let Some(decompressor) = jpeg_decompressor {
                     let decode_start = Instant::now();
@@ -876,6 +975,7 @@ fn run_capture_loop(
                     params,
                     is_multistream,
                     has_video_stream,
+                    jpeg_sent_to_recorder,
                 );
             }
         } else if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
@@ -905,7 +1005,20 @@ fn run_capture_loop(
                 ) && let Ok(guard) = params.recording_sender.lock()
                     && let Some(ref tx) = *guard
                 {
-                    let _ = tx.try_send(Arc::new(video_frame));
+                    let send_result = tx.try_send(RecordingFrame::Decoded(Arc::new(video_frame)));
+                    if send_result.is_err() {
+                        crate::pipelines::video::recorder::rec_stats_capture_dropped();
+                    } else {
+                        crate::pipelines::video::recorder::rec_stats_capture_sent();
+                    }
+                    if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
+                        warn!(
+                            frame = frame_num,
+                            seq = ?metadata.sequence,
+                            dropped = send_result.is_err(),
+                            "Sent video-stream frame to recorder"
+                        );
+                    }
                 }
             }
         }
@@ -969,6 +1082,7 @@ fn dispatch_viewfinder_frame(
     params: &mut CaptureThreadParams,
     is_multistream: bool,
     has_video_stream: bool,
+    skip_recording: bool,
 ) {
     // Store latest preview frame
     if let Ok(mut latest) = params.latest_preview.lock() {
@@ -991,11 +1105,28 @@ fn dispatch_viewfinder_frame(
 
     // Option A: ViewFinder → recording (when no dedicated video stream).
     // Send to recording FIRST for lowest encoder latency, then preview.
+    // Skip if raw JPEG was already sent to the recorder in JPEG mode.
     if !has_video_stream
+        && !skip_recording
         && let Ok(guard) = params.recording_sender.lock()
         && let Some(ref tx) = *guard
     {
-        let _ = tx.try_send(Arc::new(frame.clone()));
+        let seq = frame.libcamera_metadata.as_ref().and_then(|m| m.sequence);
+        let send_result = tx.try_send(RecordingFrame::Decoded(Arc::new(frame.clone())));
+        if send_result.is_err() {
+            crate::pipelines::video::recorder::rec_stats_capture_dropped();
+        } else {
+            crate::pipelines::video::recorder::rec_stats_capture_sent();
+        }
+        if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
+            warn!(
+                frame = frame_num,
+                seq = ?seq,
+                sensor_ts_ms = ?frame.sensor_timestamp_ns.map(|t| t / 1_000_000),
+                dropped = send_result.is_err(),
+                "Sent decoded frame to recorder"
+            );
+        }
     }
 
     // Send to UI (preview)

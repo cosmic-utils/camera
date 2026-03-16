@@ -93,7 +93,7 @@ impl FftMergePipeline {
             label: Some(label),
             layout: Some(layout),
             module,
-            entry_point,
+            entry_point: Some(entry_point),
             compilation_options: Default::default(),
             cache: None,
         })
@@ -341,7 +341,7 @@ impl FftMergePipeline {
             timestamp_writes: None,
         });
         pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, bind_group, &[]);
+        pass.set_bind_group(0, Some(bind_group), &[]);
         pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
         drop(pass);
 
@@ -482,7 +482,10 @@ impl FftMergePipeline {
     /// work for higher-priority compositor rendering.
     async fn yield_to_compositor(&self) {
         // Poll to submit pending work - the low-priority queue handles preemption
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
     }
 
     /// Create a storage buffer for RGBA f32 pixel data
@@ -1169,7 +1172,10 @@ impl FftMergePipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?

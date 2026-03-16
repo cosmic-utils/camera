@@ -98,56 +98,66 @@ impl PostProcessor {
         let frame_width = frame.width;
         let frame_height = frame.height;
 
-        // Step 0: Convert YUV/Bayer to RGBA if needed
-        let rgba_data: Vec<u8> = if frame.format.is_yuv() {
-            debug!(format = ?frame.format, "Converting YUV frame to RGBA for photo processing");
-            match Self::convert_yuv_to_rgba(&frame).await {
+        // Step 0: Convert to RGBA (with optional integrated filter for Bayer)
+        let filtered_rgba: Vec<u8> = if frame.format.is_bayer()
+            && config.filter_type != FilterType::Standard
+        {
+            // Bayer + filter: use integrated debayer+filter pipeline (no GPU round trip)
+            debug!(
+                format = ?frame.format,
+                filter = ?config.filter_type,
+                "Converting Bayer + filter in single GPU submission"
+            );
+            match Self::convert_bayer_and_filter(&frame, config.filter_type).await {
                 Ok(rgba) => rgba,
                 Err(e) => {
-                    return Err(format!("Failed to convert YUV to RGBA: {}", e));
+                    warn!(error = %e, "Integrated debayer+filter failed, falling back");
+                    // Fallback: separate debayer then filter (both optional enhancements)
+                    let rgba = Self::convert_yuv_to_rgba(&frame).await.unwrap_or_else(|e| {
+                        warn!(error = %e, "Bayer→RGBA fallback also failed, using raw data");
+                        frame.data.to_vec()
+                    });
+                    apply_filter_gpu_rgba(&rgba, frame_width, frame_height, config.filter_type)
+                        .await
+                        .unwrap_or(rgba)
                 }
             }
-        } else if frame.format.is_bayer() {
-            debug!(format = ?frame.format, "Converting Bayer frame to RGBA for photo processing");
-            match Self::convert_yuv_to_rgba(&frame).await {
-                Ok(mut rgba) => {
-                    // Only apply gray-world AWB when ISP colour gains are unavailable.
-                    // The shader applies BLS + gains when colour_gains is present.
-                    if frame
-                        .libcamera_metadata
-                        .as_ref()
-                        .and_then(|m| m.colour_gains.as_ref())
-                        .is_none()
-                    {
-                        Self::apply_auto_white_balance(&mut rgba, frame_width, frame_height);
-                    }
-                    rgba
-                }
-                Err(e) => {
-                    return Err(format!("Failed to convert Bayer to RGBA: {}", e));
-                }
-            }
-        } else {
-            // Already RGBA
-            frame.data.to_vec()
-        };
-
-        // Step 1: Apply filter on RGBA data directly (more efficient - avoids RGB↔RGBA conversions)
-        let filtered_rgba = if config.filter_type != FilterType::Standard {
-            match apply_filter_gpu_rgba(&rgba_data, frame_width, frame_height, config.filter_type)
+        } else if frame.format.is_yuv() || frame.format.is_bayer() {
+            debug!(format = ?frame.format, "Converting frame to RGBA for photo processing");
+            let rgba = Self::convert_yuv_to_rgba(&frame)
                 .await
-            {
-                Ok(filtered_data) => {
-                    debug!("Filter applied via GPU pipeline (RGBA-native)");
-                    filtered_data
+                .map_err(|e| format!("Failed to convert to RGBA: {}", e))?;
+            // Apply filter for non-Bayer formats (YUV)
+            if config.filter_type != FilterType::Standard {
+                match apply_filter_gpu_rgba(&rgba, frame_width, frame_height, config.filter_type)
+                    .await
+                {
+                    Ok(filtered) => {
+                        debug!("Filter applied via GPU pipeline (RGBA-native)");
+                        filtered
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "GPU filter failed, using unfiltered frame");
+                        rgba
+                    }
                 }
+            } else {
+                rgba
+            }
+        } else if config.filter_type != FilterType::Standard {
+            // Already RGBA, just apply filter
+            let rgba = frame.data.to_vec();
+            match apply_filter_gpu_rgba(&rgba, frame_width, frame_height, config.filter_type).await
+            {
+                Ok(filtered) => filtered,
                 Err(e) => {
                     warn!(error = %e, "GPU filter failed, using unfiltered frame");
-                    rgba_data
+                    rgba
                 }
             }
         } else {
-            rgba_data
+            // Already RGBA, no filter
+            frame.data.to_vec()
         };
 
         // Step 2: Apply aspect ratio cropping if configured
@@ -218,124 +228,65 @@ impl PostProcessor {
         })
     }
 
+    /// Convert Bayer frame to RGBA with integrated filter in a single GPU submission.
+    ///
+    /// This avoids the GPU→CPU→GPU round trip that would occur with separate
+    /// debayer and filter pipelines. Pre-computes AWB when ISP gains are absent.
+    async fn convert_bayer_and_filter(
+        frame: &CameraFrame,
+        filter: FilterType,
+    ) -> Result<Vec<u8>, String> {
+        let buffer_data = frame.data.as_ref();
+
+        // Extract ISP metadata if available; GPU AWB handles the no-gains case
+        let (colour_gains, ccm, black_level) = frame
+            .libcamera_metadata
+            .as_ref()
+            .map(|m| (m.colour_gains, m.colour_correction_matrix, m.black_level))
+            .unwrap_or((None, None, None));
+
+        let input = GpuFrameInput {
+            format: frame.format,
+            width: frame.width,
+            height: frame.height,
+            y_data: buffer_data,
+            y_stride: frame.stride,
+            uv_data: None,
+            uv_stride: 0,
+            v_data: None,
+            v_stride: 0,
+            colour_gains,
+            colour_correction_matrix: ccm,
+            black_level,
+        };
+
+        let mut pipeline_guard = get_gpu_convert_pipeline()
+            .await
+            .map_err(|e| format!("Failed to get convert pipeline: {}", e))?;
+        let pipeline = pipeline_guard
+            .as_mut()
+            .ok_or("Convert pipeline not initialized")?;
+
+        pipeline
+            .convert_and_filter(&input, filter)
+            .map_err(|e| format!("Debayer+filter failed: {}", e))?;
+
+        pipeline
+            .read_filtered_to_cpu(frame.width, frame.height)
+            .await
+            .map_err(|e| format!("Failed to read filtered data from GPU: {}", e))
+    }
+
     /// Convert YUV frame to RGBA using GPU compute shader
     ///
     /// Uses the same compute shader as the preview pipeline for consistency.
     async fn convert_yuv_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
-        let buffer_data = frame.data.as_ref();
-        let yuv_planes = frame.yuv_planes.as_ref();
+        // RGBA doesn't need conversion
+        if frame.format == PixelFormat::RGBA {
+            return Ok(frame.data.as_ref().to_vec());
+        }
 
-        // Build GpuFrameInput from the frame
-        let input = match frame.format {
-            PixelFormat::NV12 | PixelFormat::NV21 => {
-                let planes = yuv_planes.ok_or("NV12/NV21 frame missing yuv_planes")?;
-                let y_end = planes.y_offset + planes.y_size;
-                let uv_end = planes.uv_offset + planes.uv_size;
-
-                GpuFrameInput {
-                    format: frame.format,
-                    width: frame.width,
-                    height: frame.height,
-                    y_data: &buffer_data[planes.y_offset..y_end],
-                    y_stride: frame.stride,
-                    uv_data: Some(&buffer_data[planes.uv_offset..uv_end]),
-                    uv_stride: planes.uv_stride,
-                    v_data: None,
-                    v_stride: 0,
-                    colour_gains: None,
-                    colour_correction_matrix: None,
-                    black_level: None,
-                }
-            }
-            PixelFormat::I420 => {
-                let planes = yuv_planes.ok_or("I420 frame missing yuv_planes")?;
-                let y_end = planes.y_offset + planes.y_size;
-                let u_end = planes.uv_offset + planes.uv_size;
-                let v_end = planes.v_offset + planes.v_size;
-
-                GpuFrameInput {
-                    format: frame.format,
-                    width: frame.width,
-                    height: frame.height,
-                    y_data: &buffer_data[planes.y_offset..y_end],
-                    y_stride: frame.stride,
-                    uv_data: Some(&buffer_data[planes.uv_offset..u_end]),
-                    uv_stride: planes.uv_stride,
-                    v_data: if planes.v_size > 0 {
-                        Some(&buffer_data[planes.v_offset..v_end])
-                    } else {
-                        None
-                    },
-                    v_stride: planes.v_stride,
-                    colour_gains: None,
-                    colour_correction_matrix: None,
-                    black_level: None,
-                }
-            }
-            // Packed 4:2:2 formats - all have same structure, just different byte order
-            PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
-                GpuFrameInput {
-                    format: frame.format,
-                    width: frame.width,
-                    height: frame.height,
-                    y_data: buffer_data,
-                    y_stride: frame.stride,
-                    uv_data: None,
-                    uv_stride: 0,
-                    v_data: None,
-                    v_stride: 0,
-                    colour_gains: None,
-                    colour_correction_matrix: None,
-                    black_level: None,
-                }
-            }
-            // Single-plane formats: Gray8, RGB24, ABGR, BGRA
-            PixelFormat::Gray8 | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
-                GpuFrameInput {
-                    format: frame.format,
-                    width: frame.width,
-                    height: frame.height,
-                    y_data: buffer_data,
-                    y_stride: frame.stride,
-                    uv_data: None,
-                    uv_stride: 0,
-                    v_data: None,
-                    v_stride: 0,
-                    colour_gains: None,
-                    colour_correction_matrix: None,
-                    black_level: None,
-                }
-            }
-            // Bayer patterns - single-plane raw data, handled by debayer shader
-            PixelFormat::BayerRGGB
-            | PixelFormat::BayerBGGR
-            | PixelFormat::BayerGRBG
-            | PixelFormat::BayerGBRG => {
-                let (colour_gains, ccm, black_level) = frame
-                    .libcamera_metadata
-                    .as_ref()
-                    .map(|m| (m.colour_gains, m.colour_correction_matrix, m.black_level))
-                    .unwrap_or((None, None, None));
-                GpuFrameInput {
-                    format: frame.format,
-                    width: frame.width,
-                    height: frame.height,
-                    y_data: buffer_data,
-                    y_stride: frame.stride,
-                    uv_data: None,
-                    uv_stride: 0,
-                    v_data: None,
-                    v_stride: 0,
-                    colour_gains,
-                    colour_correction_matrix: ccm,
-                    black_level,
-                }
-            }
-            PixelFormat::RGBA => {
-                // Should not reach here - already RGBA
-                return Ok(buffer_data.to_vec());
-            }
-        };
+        let input = GpuFrameInput::from_camera_frame(frame)?;
 
         // Use GPU compute shader pipeline for conversion
         let mut pipeline_guard = get_gpu_convert_pipeline()
@@ -356,53 +307,6 @@ impl PostProcessor {
             .read_rgba_to_cpu(frame.width, frame.height)
             .await
             .map_err(|e| format!("Failed to read RGBA from GPU: {}", e))
-    }
-
-    /// Apply simple gray-world auto white balance on RGBA data.
-    ///
-    /// Calculates the average of each channel and scales them so all channel
-    /// averages match the green channel (which has the best SNR in Bayer sensors).
-    fn apply_auto_white_balance(rgba: &mut [u8], width: u32, height: u32) {
-        let num_pixels = (width * height) as usize;
-        if num_pixels == 0 {
-            return;
-        }
-
-        // Calculate channel averages
-        let (mut sum_r, mut sum_g, mut sum_b) = (0u64, 0u64, 0u64);
-        for pixel in rgba.chunks(4).take(num_pixels) {
-            sum_r += pixel[0] as u64;
-            sum_g += pixel[1] as u64;
-            sum_b += pixel[2] as u64;
-        }
-
-        let avg_r = sum_r as f32 / num_pixels as f32;
-        let avg_g = sum_g as f32 / num_pixels as f32;
-        let avg_b = sum_b as f32 / num_pixels as f32;
-
-        // Avoid division by zero; skip WB if any channel is too dark
-        if avg_r < 1.0 || avg_g < 1.0 || avg_b < 1.0 {
-            return;
-        }
-
-        // Scale R and B to match G average (gray world assumption)
-        let gain_r = avg_g / avg_r;
-        let gain_b = avg_g / avg_b;
-
-        debug!(
-            avg_r = format!("{:.1}", avg_r),
-            avg_g = format!("{:.1}", avg_g),
-            avg_b = format!("{:.1}", avg_b),
-            gain_r = format!("{:.2}", gain_r),
-            gain_b = format!("{:.2}", gain_b),
-            "Auto white balance"
-        );
-
-        for pixel in rgba.chunks_mut(4).take(num_pixels) {
-            pixel[0] = ((pixel[0] as f32 * gain_r).round() as u32).min(255) as u8;
-            // pixel[1] unchanged (green reference)
-            pixel[2] = ((pixel[2] as f32 * gain_b).round() as u32).min(255) as u8;
-        }
     }
 
     /// Crop RGBA data to a rectangular region

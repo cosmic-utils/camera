@@ -224,6 +224,21 @@ insights-stream-resolution = Resolution
 insights-stream-pixel-format = Pixel Format
 insights-stream-frame-count = Frames
 
+# Insights - Recording
+insights-recording = Recording Pipeline
+insights-recording-mode = Mode
+insights-recording-encoder = Encoder
+insights-recording-resolution = Resolution
+insights-recording-framerate = Framerate
+insights-recording-capture = Capture Thread
+insights-recording-channel = Channel
+insights-recording-pusher = Appsrc Pusher
+insights-recording-fps = Effective FPS
+insights-recording-delay = Processing Delay
+insights-recording-convert = NV12 Convert
+insights-recording-pts = Current PTS
+insights-recording-pipeline = Pipeline
+
 # Insights - Audio
 insights-audio = Audio
 insights-audio-recording = Recording
@@ -254,3 +269,7 @@ insights-meta-lens-position = Lens Position
 insights-meta-lux = Illuminance
 insights-meta-focus-fom = Focus FoM
 insights-meta-na = N/A
+
+# Insights - Capture
+insights-capture = Capture
+insights-capture-burst = Capture Burst

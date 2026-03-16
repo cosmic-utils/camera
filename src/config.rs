@@ -128,22 +128,44 @@ pub enum AppTheme {
 }
 
 impl AppTheme {
-    /// Get the COSMIC theme for this app theme preference
+    /// Get the COSMIC theme for this app theme preference.
+    ///
+    /// On non-COSMIC desktops, `system_dark()`/`system_light()`/`system_preference()`
+    /// read broken defaults from cosmic_config, so we use built-in themes instead.
+    /// For `System` mode, the initial theme defaults to dark; the portal subscription
+    /// in `mod.rs` sends the correct value asynchronously once connected.
     pub fn theme(&self) -> Theme {
-        match self {
-            Self::Dark => {
-                let mut theme = theme::system_dark();
-                theme.theme_type.prefer_dark(Some(true));
-                theme
+        if is_cosmic_desktop() {
+            match self {
+                Self::Dark => {
+                    let mut t = theme::system_dark();
+                    t.theme_type.prefer_dark(Some(true));
+                    t
+                }
+                Self::Light => {
+                    let mut t = theme::system_light();
+                    t.theme_type.prefer_dark(Some(false));
+                    t
+                }
+                Self::System => theme::system_preference(),
             }
-            Self::Light => {
-                let mut theme = theme::system_light();
-                theme.theme_type.prefer_dark(Some(false));
-                theme
+        } else {
+            match self {
+                Self::Dark | Self::System => Theme::dark(),
+                Self::Light => Theme::light(),
             }
-            Self::System => theme::system_preference(),
         }
     }
+}
+
+/// Whether we're running on the COSMIC desktop (cached for process lifetime).
+pub fn is_cosmic_desktop() -> bool {
+    static IS_COSMIC: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_ascii_uppercase().contains("COSMIC"))
+            .unwrap_or(false)
+    });
+    *IS_COSMIC
 }
 
 /// Camera format settings for a specific camera (used for both photo and video modes)
@@ -163,7 +185,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 12]
+#[version = 13]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -175,8 +197,6 @@ pub struct Config {
     pub video_settings: HashMap<String, FormatSettings>,
     /// Photo mode settings per camera (key = camera device path)
     pub photo_settings: HashMap<String, FormatSettings>,
-    /// Camera backend to use (PipeWire or V4L2)
-    pub backend: crate::backends::camera::CameraBackendType,
     /// Last selected video encoder index
     pub last_video_encoder_index: Option<usize>,
     /// Bug report submission URL (GitHub issues URL)
@@ -207,8 +227,6 @@ impl Default for Config {
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),
-            // Auto-detect: prefer libcamera if libcamerasrc available (multi-stream capture)
-            backend: crate::backends::camera::get_default_backend(),
             last_video_encoder_index: None,
             bug_report_url:
                 "https://github.com/cosmic-utils/camera/issues/new?template=bug_report_from_app.yml"

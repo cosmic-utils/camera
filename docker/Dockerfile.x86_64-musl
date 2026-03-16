@@ -1,45 +1,50 @@
-# Cross-compilation image for x86_64-unknown-linux-musl
+# Native compilation image for x86_64-unknown-linux-musl
 FROM alpine:edge
 
 # Install build tools and development libraries
 # Using Alpine (musl-native) ensures all libraries link against musl
-# meson/ninja/python3 modules are needed for the vendored libcamera build
+# clang-dev provides libclang.so needed by bindgen (used by libcamera-sys)
 RUN apk add --no-cache \
-    curl \
-    gcc \
-    g++ \
-    make \
-    musl-dev \
-    pkgconf \
-    glib-dev \
-    gstreamer-dev \
-    gst-plugins-base-dev \
-    gst-plugins-bad-dev \
-    wayland-dev \
-    libxkbcommon-dev \
-    libinput-dev \
-    eudev-dev \
-    libseat-dev \
+    alpine-keys \
+    build-base \
+    clang-dev \
     cmake \
+    curl \
+    eudev-dev \
+    glib-dev \
+    gst-plugins-bad-dev \
+    gst-plugins-base-dev \
+    gstreamer-dev \
+    libcamera-dev \
+    libinput-dev \
+    libseat-dev \
+    libxkbcommon-dev \
     nasm \
-    meson \
-    ninja \
-    py3-jinja2 \
-    py3-yaml \
-    py3-ply \
-    yaml-dev
+    pkgconf \
+    wayland-dev
 
-# Install Rust natively (musl-linked) so cargo runs without glibc.
-# RUST_VERSION is passed as a build arg to keep the image in sync with the host
-# toolchain and to bust Docker's layer cache when the version changes.
+# Install Rust via rustup rather than Alpine's native packages. Alpine edge
+# patches rustc with a different ABI fingerprint that causes compilation
+# failures with crates.io packages (e.g. serde_core prelude errors).
 ARG RUST_VERSION=stable
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --default-toolchain "${RUST_VERSION}" --target x86_64-unknown-linux-musl
 
+# Wrap rustc to add -C target-feature=-crt-static for host (build script) compilations.
+# Rustup installs statically-linked musl binaries, and build scripts compiled as static
+# can't dlopen libclang.so (needed by bindgen/libcamera-sys). This wrapper detects host
+# compilations (no --target flag) and makes them dynamic. Uses $0.real so the wrapper
+# is path-independent and survives moves.
+RUN REAL_RUSTC=$(/root/.cargo/bin/rustup which rustc) && \
+    mv "$REAL_RUSTC" "${REAL_RUSTC}.real" && \
+    printf '#!/bin/sh\nIS_HOST=true\nSKIP=false\nfor arg in "$@"; do\n  if $SKIP; then IS_HOST=false; break; fi\n  case "$arg" in\n    --target=*) IS_HOST=false; break ;;\n    --target) SKIP=true ;;\n  esac\ndone\nif $IS_HOST; then\n  exec "$0.real" -C target-feature=-crt-static "$@"\nelse\n  exec "$0.real" "$@"\nfi\n' \
+        > "$REAL_RUSTC" && \
+    chmod +x "$REAL_RUSTC"
+
 # Set up environment for musl compilation
-# Put native cargo first in PATH so it's found before cross-mounted /rust/bin
 # Disable crt-static so the target binary can dynamically link system libraries
 ENV PATH="/root/.cargo/bin:${PATH}" \
+    LIBCLANG_PATH=/usr/lib \
     CC_x86_64_unknown_linux_musl=gcc \
     CXX_x86_64_unknown_linux_musl=g++ \
     PKG_CONFIG_ALLOW_CROSS=1 \

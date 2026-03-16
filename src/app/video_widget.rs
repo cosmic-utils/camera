@@ -14,7 +14,6 @@ use crate::backends::camera::types::{CameraFrame, PixelFormat};
 use cosmic::iced::advanced::widget::Tree;
 use cosmic::iced::advanced::widget::tree;
 use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout};
-use cosmic::iced::event::Status;
 use cosmic::iced::mouse;
 use cosmic::iced::touch;
 use cosmic::iced::{Element, Event, Length, Point, Rectangle, Size};
@@ -182,7 +181,7 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         limits: &layout::Limits,
@@ -216,20 +215,20 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
         layout::Node::new(final_size)
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: layout::Layout<'_>,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
-    ) -> Status {
+    ) {
         // Only handle zoom gestures if enabled (photo mode main preview)
         if !self.scroll_zoom_enabled {
-            return Status::Ignored;
+            return;
         }
 
         let bounds = layout.bounds();
@@ -240,8 +239,8 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
 
             match touch_event {
                 touch::Event::FingerPressed { id, position } => {
-                    if bounds.contains(position) {
-                        pinch.fingers.insert(id, position);
+                    if bounds.contains(*position) {
+                        pinch.fingers.insert(*id, *position);
 
                         // When second finger lands, start tracking the pinch
                         if pinch.fingers.len() == 2 {
@@ -251,14 +250,14 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
                             pinch.initial_distance = Some((dx * dx + dy * dy).sqrt());
                             pinch.zoom_at_pinch_start = self.zoom_level;
                         }
-                        return Status::Captured;
+                        return;
                     }
                 }
                 touch::Event::FingerMoved { id, position } => {
                     if let std::collections::hash_map::Entry::Occupied(mut e) =
-                        pinch.fingers.entry(id)
+                        pinch.fingers.entry(*id)
                     {
-                        e.insert(position);
+                        e.insert(*position);
 
                         if pinch.fingers.len() == 2
                             && let Some(initial_dist) = pinch.initial_distance
@@ -272,13 +271,13 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
                             let new_zoom = (pinch.zoom_at_pinch_start * scale).clamp(1.0, 10.0);
                             shell.publish(Message::PinchZoom(new_zoom));
                         }
-                        return Status::Captured;
+                        return;
                     }
                 }
                 touch::Event::FingerLifted { id, .. } | touch::Event::FingerLost { id, .. } => {
-                    if pinch.fingers.remove(&id).is_some() {
+                    if pinch.fingers.remove(id).is_some() {
                         pinch.initial_distance = None;
-                        return Status::Captured;
+                        return;
                     }
                 }
             }
@@ -286,28 +285,24 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
 
         // Check if cursor is over the widget bounds (for mouse scroll zoom)
         if !cursor.is_over(bounds) {
-            return Status::Ignored;
+            return;
         }
 
         // Handle mouse wheel scroll for zoom
         if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event {
             let scroll_delta = match delta {
-                mouse::ScrollDelta::Lines { y, .. } => y,
-                mouse::ScrollDelta::Pixels { y, .. } => y / 50.0, // Normalize pixel scrolling
+                mouse::ScrollDelta::Lines { y, .. } => *y,
+                mouse::ScrollDelta::Pixels { y, .. } => *y / 50.0, // Normalize pixel scrolling
             };
 
             if scroll_delta > 0.0 {
                 // Scroll up = zoom in
                 shell.publish(Message::ZoomIn);
-                return Status::Captured;
             } else if scroll_delta < 0.0 {
                 // Scroll down = zoom out
                 shell.publish(Message::ZoomOut);
-                return Status::Captured;
             }
         }
-
-        Status::Ignored
     }
 
     fn draw(

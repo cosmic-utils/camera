@@ -51,16 +51,15 @@ impl AppModel {
 
         let would_change_format = self.would_format_change_for_mode(mode);
 
+        // Skip blur transition and camera restart when a file source is active
+        // (no camera stream to restart, blur would never resolve)
+        let file_source_active = self.virtual_camera_file_source.is_some();
+
         // For libcamera with multistream cameras, always restart the pipeline on mode switch
         // because different modes use different stream roles (Raw vs VideoRecording),
         // even if the preview format stays the same.
-        let current_camera = self.available_cameras.get(self.current_camera_index);
-        let need_restart = would_change_format
-            || (self.config.backend
-                == crate::backends::camera::types::CameraBackendType::Libcamera
-                && current_camera
-                    .map(|c| c.supports_multistream)
-                    .unwrap_or(false));
+        let need_restart =
+            !file_source_active && (would_change_format || self.is_current_camera_multistream());
 
         if need_restart {
             if would_change_format {
@@ -73,21 +72,23 @@ impl AppModel {
             self.start_blur_transition();
             self.camera_cancel_flag
                 .store(true, std::sync::atomic::Ordering::Release);
-            self.camera_cancel_flag =
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         } else {
             info!("Mode switch won't change format - keeping same preview");
         }
 
-        // Reset filter when leaving photo mode
-        if self.mode == CameraMode::Photo && mode != CameraMode::Photo {
+        // Reset filter when switching to Virtual mode (filters supported in Photo and Video)
+        if mode == CameraMode::Virtual
+            && self.selected_filter != crate::app::state::FilterType::Standard
+        {
             self.selected_filter = crate::app::state::FilterType::Standard;
-            // Close the filter drawer if it's open
-            if self.context_page == crate::app::state::ContextPage::Filters
-                && self.core.window.show_context
-            {
-                self.core.window.show_context = false;
-            }
+        }
+        // Close the filter drawer if switching to a mode that doesn't support it
+        if mode == CameraMode::Virtual
+            && self.context_page == crate::app::state::ContextPage::Filters
+            && self.core.window.show_context
+        {
+            self.core.window.show_context = false;
         }
 
         self.mode = mode;

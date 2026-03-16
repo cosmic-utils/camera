@@ -107,24 +107,3 @@ pub const H265_DECODERS: &[DecoderDef] = &[
         "max-threads=0",
     ),
 ];
-
-/// Find the first available decoder from a list
-///
-/// Returns the GStreamer element string for the first decoder that's available
-/// on the system, or "decodebin" as a last resort fallback.
-pub fn find_available_decoder(decoders: &[DecoderDef]) -> String {
-    for decoder in decoders {
-        if gstreamer::ElementFactory::find(decoder.name).is_some() {
-            let kind = if decoder.is_hardware {
-                "hardware"
-            } else {
-                "software"
-            };
-            tracing::info!(decoder = %decoder.name, kind, "Using {} decoder", decoder.description);
-            return decoder.as_gst_element();
-        }
-    }
-
-    tracing::warn!("No specific decoder found, using decodebin");
-    "decodebin".to_string()
-}

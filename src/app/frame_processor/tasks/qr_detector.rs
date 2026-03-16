@@ -30,9 +30,9 @@ impl QrDetector {
     /// Create a new QR detector with default settings
     pub fn new() -> Self {
         Self {
-            // Process at 640px max for better performance
-            // QR codes are typically large enough to be detected at this resolution
-            max_dimension: 640,
+            // Process at 1024px max for better performance while maintaining detection accuracy
+            // Higher resolution improves detection of smaller or distant QR codes
+            max_dimension: 1024,
         }
     }
 

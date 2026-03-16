@@ -43,7 +43,6 @@ use super::v4l2_utils;
 use libcamera::camera_manager::CameraManager;
 use libcamera::stream::StreamRole;
 use native::pixel_formats::{is_bayer_format, pixel_format_name};
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
@@ -436,7 +435,6 @@ impl CameraBackend for LibcameraBackend {
             devices.push(CameraDevice {
                 name: pretty_name,
                 path: camera_id,
-                metadata_path: None,
                 device_info,
                 rotation,
                 pipeline_handler,
@@ -586,6 +584,7 @@ impl CameraBackend for LibcameraBackend {
                 still_requested,
                 still_frame,
                 recording_sender: Arc::new(Mutex::new(None)),
+                jpeg_recording_mode: Arc::new(AtomicBool::new(false)),
             },
         )?;
 
@@ -691,27 +690,8 @@ impl CameraBackend for LibcameraBackend {
             .ok_or_else(|| BackendError::Other("No frame available".to_string()))
     }
 
-    fn start_recording(&mut self, output_path: PathBuf) -> BackendResult<()> {
-        info!(path = %output_path.display(), "Recording via VideoRecorder (not backend)");
-        Err(BackendError::Other(
-            "Use VideoRecorder for recording".to_string(),
-        ))
-    }
-
-    fn stop_recording(&mut self) -> BackendResult<PathBuf> {
-        Err(BackendError::NoRecordingInProgress)
-    }
-
-    fn is_recording(&self) -> bool {
-        false
-    }
-
     fn get_preview_receiver(&self) -> Option<FrameReceiver> {
         self.frame_receiver.lock().unwrap().take()
-    }
-
-    fn backend_type(&self) -> CameraBackendType {
-        CameraBackendType::Libcamera
     }
 
     fn is_available(&self) -> bool {
@@ -725,4 +705,57 @@ impl CameraBackend for LibcameraBackend {
     fn current_format(&self) -> Option<&CameraFormat> {
         self.current_format.as_ref()
     }
+}
+
+// =========================================================================
+// Public convenience API for CLI/terminal use
+// =========================================================================
+
+/// Opaque handle that keeps a camera pipeline alive. Drop to stop.
+pub struct CameraPipelineHandle {
+    _pipeline: NativeLibcameraPipeline,
+    recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
+}
+
+impl CameraPipelineHandle {
+    /// Set or clear the recording frame sender for video capture.
+    pub fn set_recording_sender(&self, sender: Option<tokio::sync::mpsc::Sender<RecordingFrame>>) {
+        if let Ok(mut guard) = self.recording_sender.lock() {
+            *guard = sender;
+        }
+    }
+}
+
+/// Create a camera preview pipeline.
+///
+/// Returns an opaque handle (drop to stop) and a frame receiver.
+/// Used by CLI and terminal tools that don't use the full app framework.
+pub fn create_pipeline(
+    device: &CameraDevice,
+    format: &CameraFormat,
+) -> Result<(CameraPipelineHandle, FrameReceiver), String> {
+    let (sender, receiver) = futures::channel::mpsc::channel(10);
+    let recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>> =
+        Arc::new(Mutex::new(None));
+    let pipeline = NativeLibcameraPipeline::new(
+        &device.path,
+        format,
+        device.supports_multistream,
+        false,
+        PipelineSharedState {
+            frame_sender: sender,
+            still_requested: Arc::new(AtomicBool::new(false)),
+            still_frame: Arc::new(Mutex::new(None)),
+            recording_sender: Arc::clone(&recording_sender),
+            jpeg_recording_mode: Arc::new(AtomicBool::new(false)),
+        },
+    )
+    .map_err(|e| format!("{}", e))?;
+    Ok((
+        CameraPipelineHandle {
+            _pipeline: pipeline,
+            recording_sender,
+        },
+        receiver,
+    ))
 }

@@ -141,7 +141,7 @@ impl HistogramPipeline {
             label: Some("histogram_pass_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "histogram_pass",
+            entry_point: Some("histogram_pass"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -151,7 +151,7 @@ impl HistogramPipeline {
             label: Some("reduce_pass_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "reduce_pass",
+            entry_point: Some("reduce_pass"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -255,14 +255,14 @@ impl HistogramPipeline {
 
         // Upload texture
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: input_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
@@ -328,7 +328,7 @@ impl HistogramPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.histogram_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             // Dispatch 16x16 workgroups
             let workgroups_x = width.div_ceil(16);
             let workgroups_y = height.div_ceil(16);
@@ -342,7 +342,7 @@ impl HistogramPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.reduce_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             // Single workgroup with 256 threads
             pass.dispatch_workgroups(1, 1, 1);
         }
@@ -361,7 +361,10 @@ impl HistogramPipeline {
         // Map staging buffer and read results
         let buffer_slice = staging_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
 
         let metrics: BrightnessMetrics = {
             let data = buffer_slice.get_mapped_range();

@@ -85,27 +85,32 @@ impl AppModel {
                 VideoContentFit::Contain
             };
 
-            // Apply filters in Photo and Virtual modes (not in Video mode)
-            let filter_mode = match self.mode {
-                crate::app::state::CameraMode::Photo | crate::app::state::CameraMode::Virtual => {
-                    self.selected_filter
-                }
-                crate::app::state::CameraMode::Video => crate::app::state::FilterType::Standard,
-            };
-            let should_mirror = self.should_mirror_preview();
+            let filter_mode = self.selected_filter;
 
-            // Use the rotation stored with the current frame
-            // This ensures correct rotation during camera switch blur transitions
-            let sensor_rotation = self.current_frame_rotation;
+            // During blur transitions, use the rotation and mirror state captured
+            // at transition start (from the old camera) since the blur frame is
+            // from the old camera.
+            let (sensor_rotation, should_mirror) = if should_blur {
+                (self.blur_frame_rotation, self.blur_frame_mirror)
+            } else {
+                (self.current_frame_rotation, self.should_mirror_preview())
+            };
             let rotation = sensor_rotation.gpu_rotation_code();
 
             // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)
             // Theatre mode always uses native resolution for full-screen display
+            // File sources should always use native aspect ratio (no camera-based cropping)
             // Use rotation-aware crop since GPU shader rotates after sampling
             let crop_uv = match self.mode {
-                crate::app::state::CameraMode::Photo if !self.theatre.enabled => self
-                    .photo_aspect_ratio
-                    .crop_uv_with_rotation(frame.width, frame.height, sensor_rotation),
+                crate::app::state::CameraMode::Photo
+                    if !self.theatre.enabled && !self.current_frame_is_file_source =>
+                {
+                    self.photo_aspect_ratio.crop_uv_with_rotation(
+                        frame.width,
+                        frame.height,
+                        sensor_rotation,
+                    )
+                }
                 _ => None,
             };
 
@@ -145,14 +150,18 @@ impl AppModel {
             }
 
             // Themed canvas placeholder when no camera frame
-            widget::container(widget::Space::new(Length::Fill, Length::Fill))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|theme: &cosmic::Theme| widget::container::Style {
-                    background: Some(Background::Color(theme.cosmic().bg_color().into())),
-                    ..Default::default()
-                })
-                .into()
+            widget::container(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(Background::Color(theme.cosmic().bg_color().into())),
+                ..Default::default()
+            })
+            .into()
         }
     }
 }

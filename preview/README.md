@@ -15,8 +15,8 @@
 ## QR code detection
 ![QR code detection](preview-005.png)
 
-## Format/resolution picker
-![Format/resolution picker](preview-006.png)
+## Advanced settings
+![Advanced settings](preview-006.png)
 
 ## Virtual camera streaming
 ![Virtual camera streaming](preview-007.png)
@@ -26,6 +26,3 @@
 
 ## Theatre/fullscreen mode
 ![Theatre/fullscreen mode](preview-009.png)
-
-## Theatre/fullscreen mode
-![Theatre/fullscreen mode](preview-010.png)

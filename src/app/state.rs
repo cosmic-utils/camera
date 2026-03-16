@@ -383,6 +383,12 @@ impl BurstModeState {
         self.target_frame_count = target_frame_count;
     }
 
+    /// Set frames directly (used when frames are captured via capture_photo() in multistream mode)
+    pub fn set_frames(&mut self, frames: Vec<Arc<CameraFrame>>) {
+        self.target_frame_count = frames.len();
+        self.frame_buffer = frames;
+    }
+
     /// Start processing
     pub fn start_processing(&mut self) {
         self.stage = BurstModeStage::Processing;
@@ -519,6 +525,8 @@ pub struct AppModel {
     /// Rotation of the camera that produced the blur frame
     /// (captured at start of blur transition to maintain correct rotation during transition)
     pub blur_frame_rotation: crate::backends::camera::types::SensorRotation,
+    /// Whether the blur frame was mirrored (captured at start of blur transition)
+    pub blur_frame_mirror: bool,
     /// Video file playback progress (position_secs, duration_secs, progress 0.0-1.0)
     pub video_file_progress: Option<(f64, f64, f64)>,
     /// Video preview seek position (used when not streaming to store desired start position)
@@ -573,6 +581,9 @@ pub struct AppModel {
     pub hdr_override_disabled: bool,
     /// Currently selected filter
     pub selected_filter: FilterType,
+    /// Live filter code shared with the recording pusher (AtomicU32).
+    /// Updated on every filter change so the recorder sees it in real-time.
+    pub recording_filter_code: std::sync::Arc<std::sync::atomic::AtomicU32>,
     /// Flash enabled for photo capture
     pub flash_enabled: bool,
     /// Flash is currently active (showing white overlay)
@@ -601,7 +612,10 @@ pub struct AppModel {
     pub gallery_thumbnail_rgba: Option<(Arc<Vec<u8>>, u32, u32)>,
     /// Currently selected resolution in the picker (width for grouping)
     pub picker_selected_resolution: Option<u32>,
-    /// Camera backend manager (PipeWire)
+    /// V4L2 device path the user is trying to switch to (set when switching
+    /// to a hotplugged camera that needs full re-enumeration).
+    pub pending_hotplug_switch: Option<String>,
+    /// Camera backend manager
     pub backend_manager: Option<CameraBackendManager>,
     /// Flag to cancel camera subscription (used when switching backends/cameras)
     pub camera_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -652,8 +666,6 @@ pub struct AppModel {
     pub photo_output_format_dropdown_options: Vec<String>,
     /// Audio encoder dropdown options (Opus, AAC)
     pub audio_encoder_dropdown_options: Vec<String>,
-    /// Backend dropdown options (e.g., "libcamera", "PipeWire")
-    pub backend_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -709,7 +721,7 @@ impl Default for TransitionState {
 pub enum CameraMode {
     Photo,
     Video,
-    /// Virtual camera mode - streams filtered video to a PipeWire virtual camera
+    /// Virtual camera mode - streams filtered video to a virtual camera
     Virtual,
 }
 
@@ -1040,6 +1052,30 @@ impl FilterType {
             FilterType::Pencil => 14,
         }
     }
+
+    /// Reconstruct a FilterType from a GPU shader filter code.
+    ///
+    /// Returns `Standard` for unknown codes.
+    #[inline]
+    pub fn from_gpu_filter_code(code: u32) -> Self {
+        match code {
+            1 => FilterType::Mono,
+            2 => FilterType::Sepia,
+            3 => FilterType::Noir,
+            4 => FilterType::Vivid,
+            5 => FilterType::Cool,
+            6 => FilterType::Warm,
+            7 => FilterType::Fade,
+            8 => FilterType::Duotone,
+            9 => FilterType::Vignette,
+            10 => FilterType::Negative,
+            11 => FilterType::Posterize,
+            12 => FilterType::Solarize,
+            13 => FilterType::ChromaticAberration,
+            14 => FilterType::Pencil,
+            _ => FilterType::Standard,
+        }
+    }
 }
 
 /// The context page to display in the context drawer.
@@ -1172,6 +1208,14 @@ pub enum Message {
     BrokenEncodersDetected(Vec<String>),
     /// Camera list changed (hotplug event)
     CameraListChanged(Vec<crate::backends::camera::types::CameraDevice>),
+    /// Device nodes in /dev/video* were removed — a camera was unplugged.
+    /// Contains the removed node names (e.g. `["video8", "video9"]`).
+    /// Only stops capture if the current camera was affected.
+    HotplugDeviceRemoved(Vec<String>),
+    /// New /dev/video* device nodes appeared — a camera was plugged in.
+    /// Contains lightweight V4L2 device info (path, card name) for the new nodes.
+    /// Does NOT stop the current capture stream.
+    HotplugDeviceAdded(Vec<(String, String)>),
     /// Audio device list changed (hotplug event)
     AudioListChanged(Vec<crate::backends::audio::AudioDevice>),
     /// Start camera transition (capture last frame and show blur)
@@ -1180,8 +1224,6 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
-    /// Select camera backend (0 = libcamera, 1 = PipeWire)
-    SelectBackend(usize),
 
     // ===== Motor/PTZ Controls =====
     /// Toggle motor controls picker visibility
@@ -1232,6 +1274,8 @@ pub enum Message {
     BurstModeProgress(f32),
     /// Burst mode frames collected, ready to process
     BurstModeFramesCollected,
+    /// Burst mode raw frames captured via capture_photo() (multistream mode)
+    BurstModeRawFramesCaptured(Result<Vec<std::sync::Arc<CameraFrame>>, String>),
     /// Burst mode capture complete (path or error)
     BurstModeComplete(Result<String, String>),
     /// Poll burst mode processing progress (timer-based)
@@ -1326,6 +1370,8 @@ pub enum Message {
     UpdateConfig(Config),
     /// Set application theme (System, Dark, Light)
     SetAppTheme(usize),
+    /// XDG portal color scheme changed (true = dark, false = light)
+    PortalColorSchemeChanged(bool),
     /// Select audio input device
     SelectAudioDevice(usize),
     /// Select video encoder
@@ -1389,6 +1435,15 @@ pub enum Message {
     UpdateInsightsMetrics,
     /// Copy pipeline string to clipboard
     CopyPipelineString,
+    /// Capture single frame from all running streams (raw .bin + metadata JSON)
+    InsightsCaptureFrames,
+    /// Capture burst (6 frames) from all running streams (raw .bin + metadata JSON)
+    InsightsCaptureBurst,
+    /// Insights capture complete (list of saved file paths, or error)
+    InsightsCaptureComplete(Result<Vec<String>, String>),
+
+    /// GPU shader pipelines precompiled at startup
+    GpuPipelinesWarmed(Result<(), String>),
 
     /// No-op message for async tasks that don't need a response
     Noop,
@@ -1417,15 +1472,19 @@ impl TransitionState {
         cosmic::Task::none()
     }
 
-    /// Called when a new frame arrives during transition
-    /// Returns a task to clear blur after the configured duration if this is the first frame
-    pub fn on_frame_received(&mut self) -> Option<cosmic::Task<Message>> {
+    /// Called when a new frame arrives during transition.
+    /// Only starts the blur countdown when the frame is from the NEW camera
+    /// (captured after the transition started), so stale queued frames from the
+    /// old camera don't prematurely trigger the countdown.
+    pub fn on_frame_received(&mut self, captured_at: Instant) -> Option<cosmic::Task<Message>> {
         if !self.in_transition {
             return None;
         }
 
-        // If this is the first frame since transition started
-        if self.first_frame_time.is_none() {
+        // Only start the blur countdown for frames from the new camera
+        let is_new_frame = self.transition_start_time.is_none_or(|t| captured_at >= t);
+
+        if self.first_frame_time.is_none() && is_new_frame {
             self.first_frame_time = Some(Instant::now());
 
             // Schedule blur removal after configured duration from NOW
@@ -1457,11 +1516,12 @@ impl TransitionState {
         first_frame_time.elapsed() < std::time::Duration::from_millis(self.blur_duration_ms)
     }
 
-    /// Clear the blur and end transition
+    /// Clear the blur and end transition.
+    /// Preserves `transition_start_time` so post-transition stale frames can still be filtered.
     pub fn clear(&mut self) {
         self.in_transition = false;
         self.ui_disabled = false; // Re-enable UI
-        self.transition_start_time = None;
+        // Keep transition_start_time — used by handle_camera_frame to drop stale frames
         self.first_frame_time = None;
     }
 }

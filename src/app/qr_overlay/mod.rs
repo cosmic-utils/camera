@@ -48,7 +48,10 @@ pub fn build_qr_overlay<'a>(
     mirrored: bool,
 ) -> Element<'a, Message> {
     if detections.is_empty() {
-        return cosmic::widget::Space::new(Length::Fill, Length::Fill).into();
+        return cosmic::widget::Space::new()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
     }
 
     // Use the custom overlay widget that handles positioning at render time

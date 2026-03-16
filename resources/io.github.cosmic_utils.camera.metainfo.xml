@@ -112,9 +112,9 @@
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
     </screenshot>
     <screenshot>
-      <caption>Format/resolution picker</caption>
-      <caption xml:lang="cs">Výběr formátu/rozlišení</caption>
-      <caption xml:lang="uk">Вибір формату/роздільної здатності</caption>
+      <caption>Advanced settings</caption>
+      <caption xml:lang="cs">Pokročilá nastavení</caption>
+      <caption xml:lang="uk">Розширені налаштування</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
     </screenshot>
     <screenshot>
@@ -135,14 +135,88 @@
       <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-009.png</image>
     </screenshot>
-    <screenshot>
-      <caption>Theatre/fullscreen mode</caption>
-      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
-      <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-010.png</image>
-    </screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.0" date="2026-03-15">
+      <description>
+        <p>Release 0.2.0 includes the following changes:</p>
+        <ul>
+          <li>deps(cargo): bump clap from 4.5.55 to 4.5.56 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libcosmic from `cf19ac6` to `fdcba7d`</li>
+          <li>feat: save videos to XDG Videos directory</li>
+          <li>Mark HDR+ as experimental and default to off</li>
+          <li>Add cargo config for dynamic linking on musl targets</li>
+          <li>Implement camera sensor rotation detection and correction</li>
+          <li>Zero copy frame capture</li>
+          <li>Add GPU-accelerated YUV to RGBA conversion</li>
+          <li>Add View menu with Settings and About entries</li>
+          <li>deps(cargo): bump bytemuck from 1.24.0 to 1.25.0 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libcosmic from `fdcba7d` to `3e78eb2`</li>
+          <li>Add Insights drawer with pipeline diagnostics</li>
+          <li>Fix gallery button to show latest photo or video</li>
+          <li>Add audio recording toggle and encoder selection to settings</li>
+          <li>Change frequent frame/enumeration logs from info to debug</li>
+          <li>Fix HDR+ and QR detection regression for YUV frames</li>
+          <li>Add clippy check to CI and fix all warnings</li>
+          <li>Remove unnecessary V4L2 control reset on filter selection</li>
+          <li>Optimize frame pipeline latency</li>
+          <li>deps(cargo): bump clap from 4.5.56 to 4.5.57 in the rust-dependencies group</li>
+          <li>Add VFR support and fix preview rotation for libcamera devices</li>
+          <li>Use libcosmic wgpu for all GPU operations</li>
+          <li>deps(cargo): bump libcosmic from `3e78eb2` to `30a02ec`</li>
+          <li>deps(cargo): bump libc from 0.2.180 to 0.2.181 in the rust-dependencies group</li>
+          <li>deps(cargo): bump clap from 4.5.57 to 4.5.58 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libc from 0.2.181 to 0.2.182 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libcosmic from `30a02ec` to `ae1f15f`</li>
+          <li>deps(cargo): bump the rust-dependencies group with 2 updates</li>
+          <li>Replace deprecated try_next() with try_recv()</li>
+          <li>deps(cargo): bump clap from 4.5.58 to 4.5.59 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libcosmic from `ae1f15f` to `cb28807`</li>
+          <li>Fix terminal preview for YUV pixel formats</li>
+          <li>i18n(uk): add Ukrainian translation</li>
+          <li>add Ukrainian translation</li>
+          <li>Improve terminal status bar and add photo capture</li>
+          <li>Fix unnecessary cast clippy warning</li>
+          <li>deps(cargo): bump libcosmic from `cb28807` to `dc3c194`</li>
+          <li>Add musl cross-compilation targets for x86_64 and aarch64</li>
+          <li>Add native libcamera backend with direct camera access</li>
+          <li>deps(cargo): bump zbus from 5.13.2 to 5.14.0 in the rust-dependencies group across 1 directory</li>
+          <li>Add pinch-to-zoom for touch screens</li>
+          <li>Add flash hardware support</li>
+          <li>Open gallery with latest file pre-selected</li>
+          <li>Unify privacy warning and flash error popup styles</li>
+          <li>Hotplug improvements</li>
+          <li>Restrict filters to photo mode only</li>
+          <li>Fix video recording on mobile: strip stride padding, guard audio hotplug</li>
+          <li>deps(cargo): bump chrono from 0.4.43 to 0.4.44 in the rust-dependencies group</li>
+          <li>deps(actions): bump actions/upload-artifact from 6 to 7</li>
+          <li>deps(actions): bump actions/download-artifact from 7 to 8</li>
+          <li>deps(cargo): bump ctrlc from 3.5.1 to 3.5.2 in the rust-dependencies group</li>
+          <li>deps(cargo): bump tokio from 1.49.0 to 1.50.0 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libcosmic from `384e8f6` to `85c27a9`</li>
+          <li>deps(actions): bump docker/setup-qemu-action from 3 to 4</li>
+          <li>deps(cargo): bump uuid from 1.21.0 to 1.22.0 in the rust-dependencies group</li>
+          <li>deps(cargo): bump libc from 0.2.182 to 0.2.183 in the rust-dependencies group</li>
+          <li>deps(cargo): bump image from 0.25.9 to 0.25.10 in the rust-dependencies group</li>
+          <li>Add libcamera backend with Bayer HDR+ pipeline and frame pacing</li>
+          <li>deps(cargo): bump clap from 4.5.60 to 4.6.0 in the rust-dependencies group</li>
+          <li>deps(cargo): bump tracing-subscriber from 0.3.22 to 0.3.23 in the rust-dependencies group</li>
+          <li>deps(cargo): bump gstreamer crates from 0.24 to 0.25</li>
+          <li>deps(cargo): bump libcosmic and fix breaking API changes</li>
+          <li>fix: add videoconvert to JPEG recording pipeline for format negotiation</li>
+          <li>feat: show flash button in video mode for hardware torch</li>
+          <li>Fix stale frames showing after camera/mode switch</li>
+          <li>feat: support filters in video mode with live switching during recording</li>
+          <li>fix: correct blur rotation, mirror and filter during camera switch transition</li>
+          <li>fix: check SDK extensions in flatpak-install</li>
+          <li>fix: use dynamic flathub badge to show correct version</li>
+          <li>fix: support light/dark theme on non-COSMIC desktops (KDE, GNOME)</li>
+          <li>chore: update previews and metainfo</li>
+          <li>update preview image</li>
+          <li>update preview images</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.23" date="2026-01-29">
       <description>
         <p>Release 0.1.23 includes the following changes:</p>

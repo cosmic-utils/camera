@@ -11,16 +11,20 @@ use cosmic::widget;
 
 /// Create a colored indicator dot (12x12 circle)
 fn indicator_dot<'a>(color: Color) -> Element<'a, Message> {
-    widget::container(widget::Space::new(Length::Fixed(12.0), Length::Fixed(12.0)))
-        .style(move |_theme| widget::container::Style {
-            background: Some(Background::Color(color)),
-            border: cosmic::iced::Border {
-                radius: [6.0; 4].into(),
-                ..Default::default()
-            },
+    widget::container(
+        widget::Space::new()
+            .width(Length::Fixed(12.0))
+            .height(Length::Fixed(12.0)),
+    )
+    .style(move |_theme| widget::container::Style {
+        background: Some(Background::Color(color)),
+        border: cosmic::iced::Border {
+            radius: [6.0; 4].into(),
             ..Default::default()
-        })
-        .into()
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
 /// Format duration as MM:SS
@@ -51,7 +55,7 @@ impl AppModel {
 
         let row = widget::row()
             .push(indicator_dot(Color::from_rgb(1.0, 0.0, 0.0)))
-            .push(widget::horizontal_space().width(spacing.space_xxs))
+            .push(widget::space::horizontal().width(spacing.space_xxs))
             .push(widget::text(duration_text).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
@@ -77,7 +81,7 @@ impl AppModel {
 
         let row = widget::row()
             .push(indicator_dot(Color::from_rgb(0.1, 0.7, 0.2)))
-            .push(widget::horizontal_space().width(spacing.space_xxs))
+            .push(widget::space::horizontal().width(spacing.space_xxs))
             .push(widget::text(fl!("streaming-live")).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
@@ -110,12 +114,12 @@ impl AppModel {
 
         let progress_row = widget::row()
             .push(widget::text(format_duration(position as u64)).size(12))
-            .push(widget::horizontal_space().width(spacing.space_xs))
+            .push(widget::space::horizontal().width(spacing.space_xs))
             .push(
                 widget::slider(0.0..=slider_max, position, Message::VideoFileSeek)
                     .width(Length::Fill),
             )
-            .push(widget::horizontal_space().width(spacing.space_xs))
+            .push(widget::space::horizontal().width(spacing.space_xs))
             .push(widget::text(format_duration(duration as u64)).size(12))
             .align_y(Alignment::Center)
             .padding([spacing.space_xxs, spacing.space_s])

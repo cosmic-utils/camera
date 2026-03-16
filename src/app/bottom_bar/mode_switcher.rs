@@ -76,7 +76,7 @@ impl AppModel {
 
         let mut row = widget::row()
             .push(styled_mode_button(video_button, is_disabled))
-            .push(widget::horizontal_space().width(spacing.space_xs))
+            .push(widget::space::horizontal().width(spacing.space_xs))
             .push(styled_mode_button(photo_button, is_disabled))
             .spacing(spacing.space_xxs);
 
@@ -100,7 +100,7 @@ impl AppModel {
             };
 
             row = row
-                .push(widget::horizontal_space().width(spacing.space_xs))
+                .push(widget::space::horizontal().width(spacing.space_xs))
                 .push(styled_mode_button(virtual_button, is_disabled));
         }
 

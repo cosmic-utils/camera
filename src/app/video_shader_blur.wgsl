@@ -10,7 +10,7 @@ var sampler_blur: sampler;
 struct ViewportUniform {
     viewport_size: vec2<f32>,   // Full widget size
     content_fit_mode: u32,      // 0 = Contain, 1 = Cover
-    filter_mode: u32,           // Unused in blur, but kept for struct compatibility
+    filter_mode: u32,           // Filter index (applied in Pass 1, 0 = none in later passes)
     corner_radius: f32,         // Unused in blur
     mirror_horizontal: u32,     // 0 = normal, 1 = mirrored horizontally
     uv_offset: vec2<f32>,       // UV offset for scroll clipping (0-1)
@@ -160,7 +160,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     weight_sum += center_weight;
 
     // Normalize by total weight
-    let rgb_val = rgb_sum / weight_sum;
+    var rgb_val = rgb_sum / weight_sum;
+
+    // Apply filter if enabled (Pass 1 only — later passes have filter_mode=0)
+    if (viewport.filter_mode > 0u && viewport.filter_mode <= 12u) {
+        rgb_val = apply_filter(rgb_val, viewport.filter_mode, tex_coords);
+    }
 
     // Apply slight darkening for subtle transition indication
     return vec4<f32>(

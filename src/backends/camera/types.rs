@@ -4,7 +4,7 @@
 //! Shared types for camera backends
 
 use gstreamer::buffer::{MappedBuffer, Readable};
-use serde::{Deserialize, Serialize};
+
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -67,25 +67,6 @@ impl std::ops::Deref for FrameData {
     }
 }
 
-/// Camera backend type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub enum CameraBackendType {
-    /// PipeWire backend (modern Linux standard)
-    #[default]
-    PipeWire,
-    /// libcamera backend via native libcamera-rs bindings (multi-stream capture)
-    Libcamera,
-}
-
-impl std::fmt::Display for CameraBackendType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CameraBackendType::PipeWire => write!(f, "PipeWire"),
-            CameraBackendType::Libcamera => write!(f, "libcamera"),
-        }
-    }
-}
-
 /// Device information from V4L2 capability
 #[derive(Debug, Clone, Default)]
 pub struct DeviceInfo {
@@ -106,7 +87,7 @@ pub struct DeviceInfo {
 /// to the display orientation.
 ///
 /// The rotation value comes from:
-/// - libcamera's `api.libcamera.rotation` property in PipeWire
+/// - libcamera's `Rotation` property
 /// - Device tree sensor rotation values
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SensorRotation {
@@ -182,11 +163,10 @@ impl std::fmt::Display for SensorRotation {
 }
 
 /// Represents a camera device
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CameraDevice {
     pub name: String,
-    pub path: String,                    // Path to capture device (pipewire node ID)
-    pub metadata_path: Option<String>,   // Path to metadata/control device or node ID
+    pub path: String,                       // libcamera camera ID
     pub device_info: Option<DeviceInfo>, // V4L2 device information (card, driver, path, real_path)
     pub rotation: SensorRotation,        // Sensor rotation from libcamera/device tree
     pub pipeline_handler: Option<String>, // libcamera pipeline handler (e.g., "simple", "vc4", "ipu3")
@@ -195,6 +175,13 @@ pub struct CameraDevice {
     pub camera_location: Option<String>, // Camera location: "front", "back", or "external"
     pub libcamera_version: Option<String>, // libcamera version from GStreamer plugin
     pub lens_actuator_path: Option<String>, // V4L2 subdevice for lens focus control
+}
+
+impl CameraDevice {
+    /// Get the V4L2 device path (e.g. `/dev/video0`), if known.
+    pub fn v4l2_path(&self) -> Option<&str> {
+        self.device_info.as_ref().map(|di| di.path.as_str())
+    }
 }
 
 /// Framerate as a fraction (numerator/denominator)
@@ -661,6 +648,24 @@ impl CameraFrame {
     }
 }
 
+/// Frame sent to the recording pipeline.
+///
+/// The recording path can receive either:
+/// - `Decoded`: a CPU-decoded `CameraFrame` (legacy path, all pixel formats)
+/// - `Jpeg`: raw MJPEG bytes for GPU-accelerated decode via VA-API (`vajpegdec`)
+#[derive(Clone)]
+pub enum RecordingFrame {
+    Decoded(Arc<CameraFrame>),
+    Jpeg {
+        data: Arc<[u8]>,
+        width: u32,
+        height: u32,
+        sensor_timestamp_ns: Option<u64>,
+        /// libcamera frame sequence number (for debug tracing)
+        sequence: Option<u32>,
+    },
+}
+
 /// Frame receiver type for preview streams
 pub type FrameReceiver = cosmic::iced::futures::channel::mpsc::Receiver<CameraFrame>;
 
@@ -683,10 +688,6 @@ pub enum BackendError {
     FormatNotSupported(String),
     /// Backend crashed or became unresponsive
     Crashed(String),
-    /// Recording already in progress
-    RecordingInProgress,
-    /// No recording in progress
-    NoRecordingInProgress,
     /// General I/O error
     IoError(String),
     /// Other errors
@@ -701,8 +702,6 @@ impl std::fmt::Display for BackendError {
             BackendError::DeviceNotFound(msg) => write!(f, "Device not found: {}", msg),
             BackendError::FormatNotSupported(msg) => write!(f, "Format not supported: {}", msg),
             BackendError::Crashed(msg) => write!(f, "Backend crashed: {}", msg),
-            BackendError::RecordingInProgress => write!(f, "Recording already in progress"),
-            BackendError::NoRecordingInProgress => write!(f, "No recording in progress"),
             BackendError::IoError(msg) => write!(f, "I/O error: {}", msg),
             BackendError::Other(msg) => write!(f, "Error: {}", msg),
         }

@@ -42,6 +42,7 @@ mod gpu_helpers;
 pub mod params;
 
 use crate::backends::camera::types::{CameraFrame, PixelFormat, SensorRotation};
+use crate::backends::camera::v4l2_utils::detect_csi2_bit_depth;
 use crate::gpu::{self, wgpu};
 use crate::shaders::{GpuFrameInput, get_gpu_convert_pipeline};
 use std::sync::{Arc, RwLock};
@@ -75,13 +76,17 @@ const TONEMAP_SHADER: &str = include_str!("../../../shaders/burst_mode/tonemap.w
 const NOISE_ESTIMATE_SHADER: &str = include_str!("../../../shaders/burst_mode/noise_estimate.wgsl");
 pub(crate) const CA_ESTIMATE_SHADER: &str =
     include_str!("../../../shaders/burst_mode/ca_estimate.wgsl");
+const BAYER_FINISH_SHADER: &str = include_str!("../../../shaders/burst_mode/bayer_finish.wgsl");
 
 // Common utilities reference (see common.wgsl for documentation)
 #[cfg(test)]
 const COMMON_SHADER_REF: &str = include_str!("../../../shaders/burst_mode/common.wgsl");
 
 // GPU parameter structs imported from params module
-use params::{AlignParams, CAEstimateParams, LuminanceParams, PyramidParams, WarpParams};
+use params::{
+    AlignParams, BayerFinishParams, CAEstimateParams, LocalLumParams, LuminanceParams, NoiseParams,
+    PyramidParams, SharpnessParams, WarpParams,
+};
 
 // Pipeline configuration constants
 /// Number of pyramid levels for hierarchical alignment (L0=full, L1=1/2, L2=1/4, L3=1/8)
@@ -97,115 +102,382 @@ pub(crate) fn u8_to_f32_normalized(data: &[u8]) -> Vec<f32> {
     data.iter().map(|&x| x as f32 / 255.0).collect()
 }
 
+/// Bayer pattern sub-pixel offsets within a 2×2 quad.
+///
+/// Each field is `(dx, dy)` giving the column and row offset of that colour
+/// channel inside the repeating 2×2 Bayer tile.
+struct BayerOffsets {
+    r: (usize, usize),
+    gr: (usize, usize),
+    gb: (usize, usize),
+    b: (usize, usize),
+}
+
+/// Result of extracting Bayer color planes from raw sensor data.
+///
+/// Per the HDR+ paper (Section 5), the merge operates on each Bayer color plane
+/// independently. We extract R, Gr, Gb, B planes at half resolution and pack them
+/// as RGBA f32 for efficient GPU processing with existing vec4 shader infrastructure.
+pub(crate) struct BayerPlanes {
+    /// RGBA f32 data where R=red, G=green_r, B=blue, A=green_b
+    /// Dimensions: (width/2) × (height/2) × 4 floats
+    pub data: Vec<f32>,
+    /// Width of each plane (half of full Bayer width)
+    pub width: u32,
+    /// Height of each plane (half of full Bayer height)
+    pub height: u32,
+    /// ISP white balance gains [R, B] from camera metadata
+    pub colour_gains: Option<[f32; 2]>,
+    /// 3x3 colour correction matrix from camera metadata
+    pub colour_correction_matrix: Option<[[f32; 3]; 3]>,
+    /// Bit depth of the raw data (8, 10, 12, or 14)
+    pub bit_depth: u32,
+}
+
+/// Extract Bayer color planes from a raw camera frame.
+///
+/// HDR+ paper Section 5: "We merge each Bayer color channel independently."
+/// This function extracts the 4 Bayer color planes (R, Gr, Gb, B) from raw sensor
+/// data and packs them as RGBA at half resolution for GPU processing.
+///
+/// Handles:
+/// - CSI-2 packed formats (10/12/14-bit)
+/// - Standard 8-bit Bayer
+/// - 16-bit Bayer
+///
+/// Black level is subtracted during extraction so all downstream processing
+/// operates on linear data above the noise floor (HDR+ Section 6 Step 1).
+pub(crate) fn extract_bayer_planes(frame: &CameraFrame) -> Result<BayerPlanes, String> {
+    if !frame.format.is_bayer() {
+        return Err(format!(
+            "extract_bayer_planes: expected Bayer format, got {:?}",
+            frame.format
+        ));
+    }
+
+    let width = frame.width;
+    let height = frame.height;
+    let stride = frame.stride as usize;
+    let data = frame.data.as_ref();
+    let meta = frame.libcamera_metadata.as_ref();
+
+    // Determine bit depth and whether data is CSI-2 packed
+    let bytes_per_pixel_u16 = width as usize * 2;
+    let (bit_depth, is_packed) = if stride > bytes_per_pixel_u16 {
+        // stride > width*2: check for CSI-2 packed, otherwise padded 16-bit
+        match detect_csi2_bit_depth(width, stride as u32) {
+            Some(bd) => (bd, true),
+            None => (16, false),
+        }
+    } else if stride == width as usize {
+        (8, false)
+    } else if stride >= bytes_per_pixel_u16 {
+        (16, false)
+    } else {
+        // stride < width: CSI-2 packed
+        match detect_csi2_bit_depth(width, stride as u32) {
+            Some(bd) => (bd, true),
+            None => (8, false), // fallback
+        }
+    };
+
+    let half_w = width / 2;
+    let half_h = height / 2;
+    let plane_pixels = (half_w * half_h) as usize;
+    let mut planes = vec![0.0f32; plane_pixels * 4]; // RGBA packed
+
+    // Get black level from metadata (normalized 0..1 for the bit depth range)
+    let black_level_raw = meta.and_then(|m| m.black_level);
+    let max_val = ((1u32 << bit_depth) - 1) as f32;
+    // black_level from metadata is normalized 0..1, convert to raw counts
+    let black_counts = black_level_raw.unwrap_or(0.0) * max_val;
+    let scale = 1.0 / (max_val - black_counts).max(1.0);
+
+    // Get Bayer pattern offsets: (r_dx, r_dy) tells where R is in the 2×2 quad
+    let pattern = frame.format.bayer_pattern_code().unwrap_or(0);
+    // Pattern layout (dx, dy offsets within 2×2 quad):
+    // RGGB (0): R=(0,0) Gr=(1,0) Gb=(0,1) B=(1,1)
+    // BGGR (1): B=(0,0) Gb=(1,0) Gr=(0,1) R=(1,1)
+    // GRBG (2): Gr=(0,0) R=(1,0) B=(0,1) Gb=(1,1)
+    // GBRG (3): Gb=(0,0) B=(1,0) R=(0,1) Gr=(1,1)
+    let offsets = match pattern {
+        0 => BayerOffsets {
+            r: (0, 0),
+            gr: (1, 0),
+            gb: (0, 1),
+            b: (1, 1),
+        }, // RGGB
+        1 => BayerOffsets {
+            r: (1, 1),
+            gr: (0, 1),
+            gb: (1, 0),
+            b: (0, 0),
+        }, // BGGR
+        2 => BayerOffsets {
+            r: (1, 0),
+            gr: (0, 0),
+            gb: (1, 1),
+            b: (0, 1),
+        }, // GRBG
+        3 => BayerOffsets {
+            r: (0, 1),
+            gr: (1, 1),
+            gb: (0, 0),
+            b: (1, 0),
+        }, // GBRG
+        _ => BayerOffsets {
+            r: (0, 0),
+            gr: (1, 0),
+            gb: (0, 1),
+            b: (1, 1),
+        }, // default RGGB
+    };
+
+    if is_packed {
+        extract_planes_csi2_packed(
+            data,
+            stride,
+            bit_depth,
+            half_w,
+            half_h,
+            black_counts,
+            scale,
+            &offsets,
+            &mut planes,
+        );
+    } else if bit_depth == 8 {
+        extract_planes_8bit(
+            data,
+            stride,
+            half_w,
+            half_h,
+            black_counts,
+            scale,
+            &offsets,
+            &mut planes,
+        );
+    } else {
+        extract_planes_16bit(
+            data,
+            stride,
+            half_w,
+            half_h,
+            black_counts,
+            scale,
+            &offsets,
+            &mut planes,
+        );
+    }
+
+    debug!(
+        half_w,
+        half_h,
+        bit_depth,
+        is_packed,
+        pattern,
+        black_level = ?black_counts,
+        "Extracted Bayer planes"
+    );
+
+    Ok(BayerPlanes {
+        data: planes,
+        width: half_w,
+        height: half_h,
+        colour_gains: meta.and_then(|m| m.colour_gains),
+        colour_correction_matrix: meta.and_then(|m| m.colour_correction_matrix),
+        bit_depth,
+    })
+}
+
+/// Extract Bayer planes using a generic pixel-reading closure.
+///
+/// All Bayer extraction (8-bit, 16-bit, CSI-2 packed) shares the same loop structure
+/// and normalization logic. Only the pixel-reading differs, provided by the closure.
+fn extract_planes_generic(
+    half_w: u32,
+    half_h: u32,
+    black_counts: f32,
+    scale: f32,
+    off: &BayerOffsets,
+    planes: &mut [f32],
+    read_pixel: impl Fn(usize, usize) -> f32,
+) {
+    let (r_dx, r_dy) = off.r;
+    let (gr_dx, gr_dy) = off.gr;
+    let (gb_dx, gb_dy) = off.gb;
+    let (b_dx, b_dy) = off.b;
+    for y in 0..half_h as usize {
+        let by = y * 2;
+        for x in 0..half_w as usize {
+            let bx = x * 2;
+            let r_val = read_pixel(by + r_dy, bx + r_dx);
+            let gr_val = read_pixel(by + gr_dy, bx + gr_dx);
+            let gb_val = read_pixel(by + gb_dy, bx + gb_dx);
+            let b_val = read_pixel(by + b_dy, bx + b_dx);
+
+            let idx = (y * half_w as usize + x) * 4;
+            planes[idx] = ((r_val - black_counts).max(0.0)) * scale;
+            planes[idx + 1] = ((gr_val - black_counts).max(0.0)) * scale;
+            planes[idx + 2] = ((b_val - black_counts).max(0.0)) * scale;
+            planes[idx + 3] = ((gb_val - black_counts).max(0.0)) * scale;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Extract Bayer planes from 8-bit data
+fn extract_planes_8bit(
+    data: &[u8],
+    stride: usize,
+    half_w: u32,
+    half_h: u32,
+    black_counts: f32,
+    scale: f32,
+    off: &BayerOffsets,
+    planes: &mut [f32],
+) {
+    extract_planes_generic(
+        half_w,
+        half_h,
+        black_counts,
+        scale,
+        off,
+        planes,
+        |row, col| data[row * stride + col] as f32,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Extract Bayer planes from 16-bit data (little-endian u16)
+fn extract_planes_16bit(
+    data: &[u8],
+    stride: usize,
+    half_w: u32,
+    half_h: u32,
+    black_counts: f32,
+    scale: f32,
+    off: &BayerOffsets,
+    planes: &mut [f32],
+) {
+    extract_planes_generic(
+        half_w,
+        half_h,
+        black_counts,
+        scale,
+        off,
+        planes,
+        |row, col| {
+            let offset = row * stride + col * 2;
+            if offset + 1 < data.len() {
+                u16::from_le_bytes([data[offset], data[offset + 1]]) as f32
+            } else {
+                0.0
+            }
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Extract Bayer planes from CSI-2 packed data (10/12/14-bit)
+fn extract_planes_csi2_packed(
+    data: &[u8],
+    stride: usize,
+    bit_depth: u32,
+    half_w: u32,
+    half_h: u32,
+    black_counts: f32,
+    scale: f32,
+    off: &BayerOffsets,
+    planes: &mut [f32],
+) {
+    // Read a pixel value from CSI-2 packed row data
+    let read_packed_pixel = |row_data: &[u8], pixel_x: usize| -> f32 {
+        match bit_depth {
+            10 => {
+                // 10-bit: 4 pixels packed in 5 bytes
+                // Bytes 0-3: MSBs of pixels 0-3 (bits 9..2)
+                // Byte 4: LSBs of pixels 0-3 (bits 1..0), 2 bits each
+                let group = pixel_x / 4;
+                let pos = pixel_x % 4;
+                let base = group * 5;
+                if base + 4 >= row_data.len() {
+                    return 0.0;
+                }
+                let msb = row_data[base + pos] as u16;
+                let lsb = ((row_data[base + 4] >> (pos * 2)) & 0x03) as u16;
+                ((msb << 2) | lsb) as f32
+            }
+            12 => {
+                // 12-bit: 2 pixels packed in 3 bytes
+                let group = pixel_x / 2;
+                let pos = pixel_x % 2;
+                let base = group * 3;
+                if base + 2 >= row_data.len() {
+                    return 0.0;
+                }
+                let msb = row_data[base + pos] as u16;
+                let lsb = if pos == 0 {
+                    (row_data[base + 2] & 0x0F) as u16
+                } else {
+                    ((row_data[base + 2] >> 4) & 0x0F) as u16
+                };
+                ((msb << 4) | lsb) as f32
+            }
+            14 => {
+                // 14-bit: 4 pixels packed in 7 bytes
+                let group = pixel_x / 4;
+                let pos = pixel_x % 4;
+                let base = group * 7;
+                if base + 6 >= row_data.len() {
+                    return 0.0;
+                }
+                let msb = row_data[base + pos] as u16;
+                let lsb_byte_offset = 4 + pos / 2;
+                let lsb = if pos.is_multiple_of(2) {
+                    (row_data[base + lsb_byte_offset] & 0x3F) as u16
+                } else {
+                    ((row_data[base + lsb_byte_offset] >> 2) & 0x3F) as u16
+                };
+                ((msb << 6) | lsb) as f32
+            }
+            _ => 0.0,
+        }
+    };
+
+    extract_planes_generic(
+        half_w,
+        half_h,
+        black_counts,
+        scale,
+        off,
+        planes,
+        |row, col| {
+            let row_data = &data[row * stride..];
+            read_packed_pixel(row_data, col)
+        },
+    );
+}
+
 /// Convert a camera frame to RGBA format using GPU compute shader
 ///
 /// If the frame is already RGBA, returns a copy of the data.
 /// For YUV and other formats, uses GPU compute shader for conversion.
 async fn convert_frame_to_rgba(frame: &CameraFrame) -> Result<Vec<u8>, String> {
-    // Fast path: already RGBA
+    // Fast path: already RGBA — strip stride padding if present
     if frame.format == PixelFormat::RGBA {
-        return Ok(frame.data.to_vec());
+        let row_bytes = (frame.width * 4) as usize;
+        let stride = frame.stride as usize;
+        if stride <= row_bytes {
+            return Ok(frame.data.to_vec());
+        }
+        let mut out = Vec::with_capacity(row_bytes * frame.height as usize);
+        for y in 0..frame.height as usize {
+            out.extend_from_slice(&frame.data[y * stride..y * stride + row_bytes]);
+        }
+        return Ok(out);
     }
 
-    let buffer_data = frame.data.as_ref();
-    let yuv_planes = frame.yuv_planes.as_ref();
-
-    // Build GpuFrameInput from the frame
-    let input = match frame.format {
-        PixelFormat::NV12 | PixelFormat::NV21 => {
-            let planes = yuv_planes.ok_or("NV12/NV21 frame missing yuv_planes")?;
-            let y_end = planes.y_offset + planes.y_size;
-            let uv_end = planes.uv_offset + planes.uv_size;
-
-            GpuFrameInput {
-                format: frame.format,
-                width: frame.width,
-                height: frame.height,
-                y_data: &buffer_data[planes.y_offset..y_end],
-                y_stride: frame.stride,
-                uv_data: Some(&buffer_data[planes.uv_offset..uv_end]),
-                uv_stride: planes.uv_stride,
-                v_data: None,
-                v_stride: 0,
-                colour_gains: None,
-                colour_correction_matrix: None,
-                black_level: None,
-            }
-        }
-        PixelFormat::I420 => {
-            let planes = yuv_planes.ok_or("I420 frame missing yuv_planes")?;
-            let y_end = planes.y_offset + planes.y_size;
-            let u_end = planes.uv_offset + planes.uv_size;
-            let v_end = planes.v_offset + planes.v_size;
-
-            GpuFrameInput {
-                format: frame.format,
-                width: frame.width,
-                height: frame.height,
-                y_data: &buffer_data[planes.y_offset..y_end],
-                y_stride: frame.stride,
-                uv_data: Some(&buffer_data[planes.uv_offset..u_end]),
-                uv_stride: planes.uv_stride,
-                v_data: if planes.v_size > 0 {
-                    Some(&buffer_data[planes.v_offset..v_end])
-                } else {
-                    None
-                },
-                v_stride: planes.v_stride,
-                colour_gains: None,
-                colour_correction_matrix: None,
-                black_level: None,
-            }
-        }
-        // Packed 4:2:2 formats - all have same structure, just different byte order
-        PixelFormat::YUYV | PixelFormat::UYVY | PixelFormat::YVYU | PixelFormat::VYUY => {
-            GpuFrameInput {
-                format: frame.format,
-                width: frame.width,
-                height: frame.height,
-                y_data: buffer_data,
-                y_stride: frame.stride,
-                uv_data: None,
-                uv_stride: 0,
-                v_data: None,
-                v_stride: 0,
-                colour_gains: None,
-                colour_correction_matrix: None,
-                black_level: None,
-            }
-        }
-        // Single-plane formats: Gray8, RGB24, ABGR, BGRA
-        PixelFormat::Gray8 | PixelFormat::RGB24 | PixelFormat::ABGR | PixelFormat::BGRA => {
-            GpuFrameInput {
-                format: frame.format,
-                width: frame.width,
-                height: frame.height,
-                y_data: buffer_data,
-                y_stride: frame.stride,
-                uv_data: None,
-                uv_stride: 0,
-                v_data: None,
-                v_stride: 0,
-                colour_gains: None,
-                colour_correction_matrix: None,
-                black_level: None,
-            }
-        }
-        // Bayer patterns require debayering - not yet supported in burst mode
-        PixelFormat::BayerRGGB
-        | PixelFormat::BayerBGGR
-        | PixelFormat::BayerGRBG
-        | PixelFormat::BayerGBRG => {
-            return Err(
-                "Bayer raw format not yet supported in burst mode - use single-frame raw capture"
-                    .to_string(),
-            );
-        }
-        PixelFormat::RGBA => {
-            // Should not reach here - handled at function start
-            return Ok(buffer_data.to_vec());
-        }
-    };
+    let input = GpuFrameInput::from_camera_frame(frame)?;
 
     // Use GPU compute shader pipeline for conversion
     let mut pipeline_guard = get_gpu_convert_pipeline()
@@ -310,8 +582,6 @@ pub struct GpuAlignedFrame {
     pub width: u32,
     /// Frame height
     pub height: u32,
-    /// Alignment quality (0.0 - 1.0, higher = better aligned)
-    pub alignment_quality: f32,
 }
 
 impl std::fmt::Debug for GpuAlignedFrame {
@@ -319,7 +589,6 @@ impl std::fmt::Debug for GpuAlignedFrame {
         f.debug_struct("GpuAlignedFrame")
             .field("width", &self.width)
             .field("height", &self.height)
-            .field("alignment_quality", &self.alignment_quality)
             .field(
                 "buffer_size_mb",
                 &(self.width as u64 * self.height as u64 * 16 / (1024 * 1024)),
@@ -444,11 +713,7 @@ pub struct BurstModeGpuPipeline {
     fft_pipeline: fft_gpu::FftMergePipeline,
 
     // Pyramid pipelines
-    #[allow(dead_code)] // TODO: used by upcoming guided filter
-    pyramid_downsample_rgba: wgpu::ComputePipeline,
     pyramid_downsample_gray: wgpu::ComputePipeline,
-    #[allow(dead_code)] // TODO: used by upcoming guided filter
-    pyramid_to_gray: wgpu::ComputePipeline,
 
     // Sharpness pipelines
     sharpness_tiles: wgpu::ComputePipeline,
@@ -477,6 +742,9 @@ pub struct BurstModeGpuPipeline {
     ca_estimate_offsets: wgpu::ComputePipeline,
     ca_fit_model: wgpu::ComputePipeline,
 
+    // Bayer finishing pipeline (HDR+ Section 6: demosaic merged planes + WB + CCM)
+    bayer_finish: wgpu::ComputePipeline,
+
     // Bind group layouts
     pyramid_layout: wgpu::BindGroupLayout,
     sharpness_layout: wgpu::BindGroupLayout,
@@ -487,10 +755,7 @@ pub struct BurstModeGpuPipeline {
     tonemap_layout: wgpu::BindGroupLayout,
     noise_layout: wgpu::BindGroupLayout,
     ca_layout: wgpu::BindGroupLayout,
-
-    // GPU limits
-    #[allow(dead_code)] // TODO: used by upcoming guided filter
-    max_buffer_size: u64,
+    bayer_finish_layout: wgpu::BindGroupLayout,
 
     /// Pooled staging buffers for GPU readback (reduces allocations)
     staging_pool: RwLock<StagingBufferPool>,
@@ -511,7 +776,7 @@ impl BurstModeGpuPipeline {
             label: Some(label),
             layout: Some(layout),
             module,
-            entry_point,
+            entry_point: Some(entry_point),
             compilation_options: Default::default(),
             cache: None,
         })
@@ -586,7 +851,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, bind_group, &[]);
+            pass.set_bind_group(0, Some(*bind_group), &[]);
             pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -600,20 +865,10 @@ impl BurstModeGpuPipeline {
     /// to ensure work is submitted; no explicit sleep needed.
     async fn yield_to_compositor(&self) {
         // Poll to submit pending work - the low-priority queue handles preemption
-        let _ = self.device.poll(wgpu::Maintain::Wait);
-    }
-
-    /// Copy data between GPU buffers
-    ///
-    /// This is more efficient than CPU round-trips when data needs to move
-    /// between pipeline stages that use different buffer layouts.
-    #[allow(dead_code)] // TODO: used by upcoming guided filter
-    fn copy_buffer(&self, label: &str, src: &wgpu::Buffer, dst: &wgpu::Buffer, size: u64) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        encoder.copy_buffer_to_buffer(src, 0, dst, 0, size);
-        self.queue.submit(std::iter::once(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
     }
 
     /// Read data back from GPU buffer to CPU
@@ -641,7 +896,10 @@ impl BurstModeGpuPipeline {
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = sender.send(result);
         });
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?
@@ -718,6 +976,7 @@ impl BurstModeGpuPipeline {
         let tonemap_layout = Self::create_tonemap_layout(&device);
         let noise_layout = Self::create_noise_layout(&device);
         let ca_layout = Self::create_ca_layout(&device);
+        let bayer_finish_layout = Self::create_bayer_finish_layout(&device);
 
         // Create pipeline layouts
         let pyramid_pipeline_layout =
@@ -782,26 +1041,12 @@ impl BurstModeGpuPipeline {
         });
 
         // Create compute pipelines
-        let pyramid_downsample_rgba = Self::create_pipeline(
-            &device,
-            "pyramid_downsample_rgba",
-            &pyramid_pipeline_layout,
-            &pyramid_module,
-            "downsample_fast_rgba",
-        );
         let pyramid_downsample_gray = Self::create_pipeline(
             &device,
             "pyramid_downsample_gray",
             &pyramid_pipeline_layout,
             &pyramid_module,
             "downsample_gray",
-        );
-        let pyramid_to_gray = Self::create_pipeline(
-            &device,
-            "pyramid_to_gray",
-            &pyramid_pipeline_layout,
-            &pyramid_module,
-            "rgba_to_gray",
         );
         let sharpness_tiles = Self::create_pipeline(
             &device,
@@ -915,6 +1160,25 @@ impl BurstModeGpuPipeline {
             "fit_ca_model",
         );
 
+        // Bayer finishing pipeline (HDR+ Section 6: demosaic + WB + CCM)
+        let bayer_finish_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("bayer_finish_shader"),
+            source: wgpu::ShaderSource::Wgsl(BAYER_FINISH_SHADER.into()),
+        });
+        let bayer_finish_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("bayer_finish_pipeline_layout"),
+                bind_group_layouts: &[&bayer_finish_layout],
+                push_constant_ranges: &[],
+            });
+        let bayer_finish = Self::create_pipeline(
+            &device,
+            "bayer_finish",
+            &bayer_finish_pipeline_layout,
+            &bayer_finish_module,
+            "demosaic_and_finish",
+        );
+
         // Initialize FFT pipeline (eagerly, for fail-fast behavior)
         let fft_pipeline =
             fft_gpu::FftMergePipeline::new(device.clone(), queue.clone(), max_buffer_size)?;
@@ -924,9 +1188,7 @@ impl BurstModeGpuPipeline {
         Ok(Self {
             device,
             queue,
-            pyramid_downsample_rgba,
             pyramid_downsample_gray,
-            pyramid_to_gray,
             sharpness_tiles,
             sharpness_reduce,
             align_tiles,
@@ -942,6 +1204,7 @@ impl BurstModeGpuPipeline {
             ca_init_bins,
             ca_estimate_offsets,
             ca_fit_model,
+            bayer_finish,
             pyramid_layout,
             sharpness_layout,
             align_layout,
@@ -951,7 +1214,7 @@ impl BurstModeGpuPipeline {
             tonemap_layout,
             noise_layout,
             ca_layout,
-            max_buffer_size,
+            bayer_finish_layout,
             fft_pipeline,
             staging_pool: RwLock::new(StagingBufferPool::new()),
         })
@@ -1099,19 +1362,33 @@ impl BurstModeGpuPipeline {
         )
     }
 
+    fn create_bayer_finish_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        use BindingKind::*;
+        // Bindings: bayer_planes(r), output(rw), params(u)
+        gpu_helpers::create_layout(
+            device,
+            "bayer_finish_layout",
+            &[StorageRead, StorageReadWrite, Uniform],
+        )
+    }
+
     /// Compute sharpness of a frame using GPU
     pub async fn compute_sharpness(&self, frame: &CameraFrame) -> Result<f32, String> {
-        let width = frame.width;
-        let height = frame.height;
+        let rgba_data = convert_frame_to_rgba(frame).await?;
+        let frame_f32 = u8_to_f32_normalized(&rgba_data);
+        self.compute_sharpness_from_f32_rgba(&frame_f32, frame.width, frame.height)
+            .await
+    }
+
+    /// Core sharpness computation on pre-prepared f32 RGBA data
+    async fn compute_sharpness_from_f32_rgba(
+        &self,
+        data: &[f32],
+        width: u32,
+        height: u32,
+    ) -> Result<f32, String> {
         let pixel_count = (width * height) as usize;
 
-        // Convert frame to RGBA if needed (handles YUV formats)
-        let rgba_data = convert_frame_to_rgba(frame).await?;
-
-        // Convert to f32
-        let frame_f32 = u8_to_f32_normalized(&rgba_data);
-
-        // Create buffers
         let frame_buffer = self.create_storage_buffer(
             "sharpness_frame",
             (pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
@@ -1129,17 +1406,6 @@ impl BurstModeGpuPipeline {
         let result_buffer =
             self.create_storage_buffer("sharpness_result", std::mem::size_of::<f32>() as u64);
 
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct SharpnessParams {
-            width: u32,
-            height: u32,
-            tile_size: u32,
-            n_tiles_x: u32,
-            n_tiles_y: u32,
-            _padding: [u32; 3],
-        }
-
         let params = SharpnessParams {
             width,
             height,
@@ -1155,7 +1421,7 @@ impl BurstModeGpuPipeline {
         );
 
         self.queue
-            .write_buffer(&frame_buffer, 0, bytemuck::cast_slice(&frame_f32));
+            .write_buffer(&frame_buffer, 0, bytemuck::cast_slice(data));
         self.queue
             .write_buffer(&params_buffer, 0, bytemuck::cast_slice(&[params]));
 
@@ -1183,7 +1449,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.sharpness_tiles);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             pass.dispatch_workgroups(n_tiles_x, n_tiles_y, 1);
         }
 
@@ -1194,7 +1460,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.sharpness_reduce);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
 
@@ -1217,7 +1483,10 @@ impl BurstModeGpuPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?
@@ -1299,19 +1568,6 @@ impl BurstModeGpuPipeline {
             "noise_output",
             (4 * std::mem::size_of::<f32>()) as u64, // [noise_sd, median, mad, count]
         );
-
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct NoiseParams {
-            width: u32,
-            height: u32,
-            num_bins: u32,
-            bin_scale: f32,
-            median_value: f32,
-            _padding0: u32,
-            _padding1: u32,
-            _padding2: u32,
-        }
 
         let params = NoiseParams {
             width,
@@ -1503,6 +1759,11 @@ impl BurstModeGpuPipeline {
     }
 
     /// Select reference frame (sharpest) from burst
+    ///
+    /// HDR+ paper Section 4: "To minimize perceived shutter lag, we choose the
+    /// reference frame from the first 3 frames in the burst." We limit the search
+    /// to the first 3 candidates for latency, as later frames are further from
+    /// the shutter press moment.
     pub async fn select_reference_frame(
         &self,
         frames: &[Arc<CameraFrame>],
@@ -1515,15 +1776,17 @@ impl BurstModeGpuPipeline {
             return Ok(0);
         }
 
+        // HDR+ paper: search only the first 3 frames to minimize perceived shutter lag
+        let search_count = frames.len().min(3);
         info!(
             frame_count = frames.len(),
-            "Selecting reference frame (GPU)"
+            search_count, "Selecting reference frame from first {} (GPU)", search_count
         );
 
         let mut max_sharpness = f32::MIN;
         let mut ref_idx = 0;
 
-        for (idx, frame) in frames.iter().enumerate() {
+        for (idx, frame) in frames[..search_count].iter().enumerate() {
             let sharpness = self.compute_sharpness(frame).await?;
             debug!(frame = idx, sharpness, "Frame sharpness");
 
@@ -1660,7 +1923,6 @@ impl BurstModeGpuPipeline {
         &self,
         frames: &[Arc<CameraFrame>],
         ref_idx: usize,
-        _config: &BurstModeConfig,
         progress: &Option<ProgressCallback>,
     ) -> Result<Vec<GpuAlignedFrame>, String> {
         let align_start = std::time::Instant::now();
@@ -1694,7 +1956,8 @@ impl BurstModeGpuPipeline {
         );
 
         // Upload reference frame to GPU once (stays for all alignments)
-        let ref_f32 = u8_to_f32_normalized(&reference.data);
+        let ref_rgba = convert_frame_to_rgba(reference).await?;
+        let ref_f32 = u8_to_f32_normalized(&ref_rgba);
         let ref_rgba_buffer = self.create_storage_buffer(
             "align_ref_rgba",
             (pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
@@ -1932,15 +2195,34 @@ impl BurstModeGpuPipeline {
         buffers: &AlignmentBuffers,
         ca_coefficients: (f32, f32),
     ) -> Result<GpuAlignedFrame, String> {
-        let (ca_r_coeff, ca_b_coeff) = ca_coefficients;
-        let pixel_count = (width * height) as usize;
-
         // Upload comparison frame to pooled buffer (overwrites previous)
-        let comp_f32 = u8_to_f32_normalized(&comparison.data);
+        let comp_rgba = convert_frame_to_rgba(comparison).await?;
+        let comp_f32 = u8_to_f32_normalized(&comp_rgba);
         self.queue
             .write_buffer(&buffers.comp_rgba, 0, bytemuck::cast_slice(&comp_f32));
-        // Free ~48MB CPU buffer immediately after GPU upload to reduce peak memory
+        // Free CPU buffers immediately after GPU upload to reduce peak memory
         drop(comp_f32);
+        drop(comp_rgba);
+
+        self.align_single_frame_from_buffer(ref_pyramids, width, height, buffers, ca_coefficients)
+            .await
+    }
+
+    /// Core alignment: pyramid align + warp using pre-uploaded comparison buffer
+    ///
+    /// The comparison RGBA f32 data must already be written to `buffers.comp_rgba`.
+    /// Shared by both the RGBA path (`align_single_frame_pooled`) and the Bayer
+    /// path (`align_bayer_frames_gpu`).
+    async fn align_single_frame_from_buffer(
+        &self,
+        ref_pyramids: &ReferencePyramids,
+        width: u32,
+        height: u32,
+        buffers: &AlignmentBuffers,
+        ca_coefficients: (f32, f32),
+    ) -> Result<GpuAlignedFrame, String> {
+        let (ca_r_coeff, ca_b_coeff) = ca_coefficients;
+        let pixel_count = (width * height) as usize;
 
         // Output buffer - unique per frame, stays on GPU
         let output_buffer = self.create_storage_buffer(
@@ -1980,8 +2262,8 @@ impl BurstModeGpuPipeline {
 
         // Hierarchical luminance-based alignment (4 pyramid levels, coarse-to-fine)
         // Uses chunked dispatch to allow GPU preemption for compositor responsiveness
-        // Smaller chunks = more responsive but slightly slower overall
         const ALIGN_ROWS_PER_CHUNK: u32 = 4;
+        const CHUNKS_PER_YIELD: u32 = 2;
 
         let mut prev_n_tiles_x: u32 = 0;
         let mut prev_n_tiles_y: u32 = 0;
@@ -1993,7 +2275,6 @@ impl BurstModeGpuPipeline {
             let tile_step = tile_size / 2;
             let (n_tiles_x, n_tiles_y) = level_tile_counts[level];
 
-            let align_buffer = &buffers.align[level];
             let prev_align = if level == PYRAMID_LEVELS - 1 {
                 &buffers.dummy_prev_align
             } else {
@@ -2001,21 +2282,18 @@ impl BurstModeGpuPipeline {
             };
 
             let align_bg = self.bind_group(
-                &format!("align_lum_bg_L{}", level),
+                &format!("align_L{}", level),
                 &self.align_layout,
                 &[
                     &ref_pyramids.lum[level],
                     &buffers.comp_lum[level],
-                    align_buffer,
+                    &buffers.align[level],
                     prev_align,
                     &buffers.align_params[level],
                     &buffers.prev_n_tiles_x[level],
                 ],
             );
 
-            // Process rows in chunks for GPU preemption
-            // Yield every N chunks to balance throughput vs responsiveness
-            const CHUNKS_PER_YIELD: u32 = 2;
             let mut row_offset = 0u32;
             let mut chunk_count = 0u32;
 
@@ -2030,7 +2308,7 @@ impl BurstModeGpuPipeline {
                     search_dist,
                     n_tiles_x,
                     n_tiles_y,
-                    use_l2: if use_l2 { 1 } else { 0 },
+                    use_l2: u32::from(use_l2),
                     prev_tile_step,
                     prev_n_tiles_y,
                     tile_row_offset: row_offset,
@@ -2048,9 +2326,9 @@ impl BurstModeGpuPipeline {
                 );
 
                 let workgroups = (n_tiles_x, rows_this_chunk, 1);
-                if level < 3 {
+                if level < PYRAMID_LEVELS - 1 {
                     self.dispatch_compute_batch(
-                        &format!("align_lum_L{}_{}", level, row_offset),
+                        &format!("align_L{}_{}", level, row_offset),
                         &[
                             (&self.align_tiles, &align_bg, workgroups),
                             (&self.align_correct_upsampling, &align_bg, workgroups),
@@ -2058,7 +2336,7 @@ impl BurstModeGpuPipeline {
                     );
                 } else {
                     self.dispatch_compute(
-                        &format!("align_lum_L{}_{}", level, row_offset),
+                        &format!("align_L{}_{}", level, row_offset),
                         &self.align_tiles,
                         &align_bg,
                         workgroups,
@@ -2068,13 +2346,11 @@ impl BurstModeGpuPipeline {
                 row_offset += rows_this_chunk;
                 chunk_count += 1;
 
-                // Yield every few chunks to allow compositor to render
                 if chunk_count.is_multiple_of(CHUNKS_PER_YIELD) {
                     self.yield_to_compositor().await;
                 }
             }
 
-            // Final yield after pyramid level
             self.yield_to_compositor().await;
 
             prev_n_tiles_x = n_tiles_x;
@@ -2083,11 +2359,9 @@ impl BurstModeGpuPipeline {
         }
 
         // Warp frame using final alignment (L0)
-        let final_tile_step = WARP_TILE_SIZE / 2;
         let (final_n_tiles_x, final_n_tiles_y) = level_tile_counts[0];
 
-        // Per-channel warp with CA correction
-        // Enable CA correction if coefficients are non-zero (estimated from reference frame)
+        // Enable CA correction if coefficients are non-zero
         let enable_ca = if ca_r_coeff.abs() > 0.0001 || ca_b_coeff.abs() > 0.0001 {
             1u32
         } else {
@@ -2099,10 +2373,9 @@ impl BurstModeGpuPipeline {
             n_tiles_x: final_n_tiles_x,
             n_tiles_y: final_n_tiles_y,
             tile_size: WARP_TILE_SIZE,
-            tile_step: final_tile_step,
+            tile_step: WARP_TILE_SIZE / 2,
             use_bilinear: 1,
             _padding0: 0,
-            // CA correction parameters (estimated from reference frame)
             center_x: width as f32 / 2.0,
             center_y: height as f32 / 2.0,
             ca_r_coeff,
@@ -2118,14 +2391,13 @@ impl BurstModeGpuPipeline {
             bytemuck::cast_slice(&[warp_params]),
         );
 
-        // Bind group using luminance-based alignment with CA correction
         let warp_bg = self.bind_group(
             "warp_bg",
             &self.warp_layout,
             &[
                 &buffers.comp_rgba,
                 &output_buffer,
-                &buffers.align[0], // Alignment offsets (L0)
+                &buffers.align[0],
                 &buffers.warp_params,
             ],
         );
@@ -2141,7 +2413,6 @@ impl BurstModeGpuPipeline {
             buffer: output_buffer,
             width,
             height,
-            alignment_quality: 0.9,
         })
     }
 
@@ -2231,25 +2502,11 @@ impl BurstModeGpuPipeline {
             (pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
         );
 
-        // Local luminance buffer for tone mapping
-        let local_lum_buffer = self.create_storage_buffer_readonly(
+        // Local luminance buffer for tone mapping (read_write: shader writes luminance values)
+        let local_lum_buffer = self.create_storage_buffer(
             "local_luminance",
             (lum_size * std::mem::size_of::<f32>()) as u64,
         );
-
-        // LocalLumParams for compute_local_luminance shader
-        #[repr(C)]
-        #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-        struct LocalLumParams {
-            width: u32,
-            height: u32,
-            block_size: u32,
-            lum_width: u32,
-            lum_height: u32,
-            _padding0: u32,
-            _padding1: u32,
-            _padding2: u32,
-        }
 
         let local_lum_params = LocalLumParams {
             width,
@@ -2351,7 +2608,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.tonemap_local_lum);
-            pass.set_bind_group(0, &local_lum_bind_group, &[]);
+            pass.set_bind_group(0, Some(&local_lum_bind_group), &[]);
             pass.dispatch_workgroups(lum_width.div_ceil(16), lum_height.div_ceil(16), 1);
         }
 
@@ -2372,7 +2629,10 @@ impl BurstModeGpuPipeline {
         brightness_slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         rx.await
             .map_err(|_| "Failed to receive brightness map result")?
             .map_err(|e| format!("Failed to map brightness buffer: {:?}", e))?;
@@ -2452,7 +2712,7 @@ impl BurstModeGpuPipeline {
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.tonemap_apply);
-            pass.set_bind_group(0, &tonemap_bind_group, &[]);
+            pass.set_bind_group(0, Some(&tonemap_bind_group), &[]);
             pass.dispatch_workgroups(width.div_ceil(16), height.div_ceil(16), 1);
         }
 
@@ -2474,7 +2734,10 @@ impl BurstModeGpuPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         receiver
             .await
             .map_err(|_| "Failed to receive map result")?
@@ -2501,6 +2764,340 @@ impl BurstModeGpuPipeline {
             height,
         })
     }
+
+    /// Demosaic merged Bayer planes and apply finishing pipeline (HDR+ Section 6)
+    ///
+    /// Takes merged Bayer planes (packed as RGBA at half resolution) and produces
+    /// full-resolution RGBA output with white balance and colour correction applied.
+    ///
+    /// This is the final step of Bayer-domain processing, where demosaic happens
+    /// only once on the merged result (not N times on individual frames).
+    pub async fn demosaic_bayer_planes(
+        &self,
+        merged_planes_buffer: &wgpu::Buffer,
+        half_width: u32,
+        half_height: u32,
+        colour_gains: Option<[f32; 2]>,
+        colour_correction_matrix: Option<[[f32; 3]; 3]>,
+    ) -> Result<MergedFrame, String> {
+        let full_width = half_width * 2;
+        let full_height = half_height * 2;
+        let full_pixel_count = (full_width * full_height) as usize;
+
+        info!(
+            half_width,
+            half_height,
+            full_width,
+            full_height,
+            has_wb = colour_gains.is_some(),
+            has_ccm = colour_correction_matrix.is_some(),
+            "Demosaicing merged Bayer planes (HDR+ Section 6 finishing)"
+        );
+
+        // Create output buffer at full resolution
+        let output_buffer = self.create_storage_buffer(
+            "bayer_finish_output",
+            (full_pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
+        );
+
+        // Build params
+        let (gain_r, gain_b) = colour_gains.map(|g| (g[0], g[1])).unwrap_or((1.0, 1.0));
+
+        let identity_ccm = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let ccm = colour_correction_matrix.unwrap_or(identity_ccm);
+
+        let params = BayerFinishParams {
+            half_width,
+            half_height,
+            full_width,
+            full_height,
+            gain_r,
+            gain_b,
+            _align_pad0: 0,
+            _align_pad1: 0,
+            ccm_row0: [ccm[0][0], ccm[0][1], ccm[0][2], 0.0],
+            ccm_row1: [ccm[1][0], ccm[1][1], ccm[1][2], 0.0],
+            ccm_row2: [ccm[2][0], ccm[2][1], ccm[2][2], 0.0],
+            use_colour: if colour_gains.is_some() { 1 } else { 0 },
+            _pad0: 0,
+            _pad1: 0,
+            _pad2: 0,
+        };
+
+        let params_buffer = self.create_uniform_buffer(
+            "bayer_finish_params",
+            std::mem::size_of::<BayerFinishParams>() as u64,
+        );
+        self.queue
+            .write_buffer(&params_buffer, 0, bytemuck::bytes_of(&params));
+
+        let bind_group = self.bind_group(
+            "bayer_finish_bind_group",
+            &self.bayer_finish_layout,
+            &[merged_planes_buffer, &output_buffer, &params_buffer],
+        );
+
+        // Dispatch demosaic + finishing
+        self.dispatch_compute(
+            "bayer_finish",
+            &self.bayer_finish,
+            &bind_group,
+            (full_width.div_ceil(16), full_height.div_ceil(16), 1),
+        );
+
+        // Yield to compositor
+        self.yield_to_compositor().await;
+
+        // Read back result
+        let staging_size = (full_pixel_count * 4 * std::mem::size_of::<f32>()) as u64;
+        let staging_buffer = self
+            .staging_pool
+            .write()
+            .unwrap()
+            .take_large(&self.device, staging_size);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("bayer_finish_readback"),
+            });
+        encoder.copy_buffer_to_buffer(&output_buffer, 0, &staging_buffer, 0, staging_size);
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        receiver
+            .await
+            .map_err(|_| "Failed to receive bayer finish map result")?
+            .map_err(|e| format!("Failed to map bayer finish buffer: {:?}", e))?;
+
+        let data = buffer_slice.get_mapped_range();
+        let result_f32: &[f32] = bytemuck::cast_slice(&data);
+        let result_u8: Vec<u8> = result_f32
+            .iter()
+            .map(|&x| (x.clamp(0.0, 1.0) * 255.0) as u8)
+            .collect();
+        drop(data);
+        staging_buffer.unmap();
+        self.staging_pool
+            .write()
+            .unwrap()
+            .return_large(staging_buffer);
+
+        Ok(MergedFrame {
+            data: result_u8,
+            width: full_width,
+            height: full_height,
+        })
+    }
+
+    /// Compute sharpness from pre-extracted Bayer planes
+    ///
+    /// Uses the averaged Bayer planes (all 4 channels → grayscale) for sharpness
+    /// computation, avoiding a full debayer just for reference selection.
+    async fn compute_sharpness_from_planes(&self, planes: &BayerPlanes) -> Result<f32, String> {
+        // Average the 4 Bayer channels to get grayscale, then expand to "RGBA" for
+        // the sharpness shader (which expects RGBA f32 input)
+        let gray_rgba: Vec<f32> = planes
+            .data
+            .chunks_exact(4)
+            .flat_map(|rgba| {
+                let gray = (rgba[0] + rgba[1] + rgba[2] + rgba[3]) * 0.25;
+                [gray, gray, gray, 1.0]
+            })
+            .collect();
+
+        self.compute_sharpness_from_f32_rgba(&gray_rgba, planes.width, planes.height)
+            .await
+    }
+
+    /// Align Bayer frames using grayscale derived from Bayer planes
+    ///
+    /// HDR+ paper Section 4: "We compute a single grayscale image by averaging
+    /// each 2×2 Bayer quad." We use the averaged RGBA Bayer planes as grayscale
+    /// for pyramid alignment. This avoids debayering for alignment and works at
+    /// half resolution, which is more efficient than full-res alignment.
+    async fn align_bayer_frames_gpu(
+        &self,
+        planes_list: &[BayerPlanes],
+        ref_idx: usize,
+        progress: &Option<ProgressCallback>,
+    ) -> Result<Vec<GpuAlignedFrame>, String> {
+        let align_start = std::time::Instant::now();
+        let ref_planes = &planes_list[ref_idx];
+        let width = ref_planes.width;
+        let height = ref_planes.height;
+        let pixel_count = (width * height) as usize;
+
+        debug!(
+            frame_count = planes_list.len(),
+            reference = ref_idx,
+            half_width = width,
+            half_height = height,
+            "Aligning Bayer frames (using averaged grayscale at half-res)"
+        );
+
+        let report = |frame_idx: usize, total_frames: usize| {
+            if let Some(cb) = progress {
+                let frame_progress = (frame_idx + 1) as f32 / total_frames as f32;
+                let overall = 0.10 + frame_progress * 0.50;
+                cb(overall);
+            }
+        };
+
+        // Pre-allocate alignment buffers at half-res dimensions
+        let buffers = self.create_alignment_buffers(width, height);
+
+        // Upload reference Bayer planes as RGBA f32
+        let ref_rgba_buffer = self.create_storage_buffer(
+            "align_ref_bayer",
+            (pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
+        );
+        self.queue
+            .write_buffer(&ref_rgba_buffer, 0, bytemuck::cast_slice(&ref_planes.data));
+
+        // Build reference luminance pyramid
+        // The RGBA data has Bayer planes as channels. The luminance shader (channel=3)
+        // uses BT.601 weights, but for Bayer planes we want simple averaging.
+        // We'll use channel=3 (luminance mode) which computes:
+        //   lum = 0.299*R + 0.587*G + 0.114*B
+        // This gives reasonable results since G≈Gr (the dominant component).
+        // For more accurate results, we could add a Bayer-specific luminance mode,
+        // but the alignment is robust to this approximation.
+        let ref_pyramids = self.build_reference_pyramid(&ref_rgba_buffer, width, height, &buffers);
+
+        self.yield_to_compositor().await;
+
+        // CA estimation on half-res reference (still useful for chromatic correction)
+        let (ca_r_coeff, ca_b_coeff) = self
+            .estimate_ca_coefficients(&ref_rgba_buffer, width, height)
+            .await?;
+        info!(ca_r_coeff, ca_b_coeff, "CA estimation (Bayer half-res)");
+
+        self.yield_to_compositor().await;
+
+        let ca_coefficients = (ca_r_coeff, ca_b_coeff);
+
+        let mut aligned_frames = Vec::with_capacity(planes_list.len() - 1);
+        let total_frames = planes_list.len() - 1;
+
+        for (idx, planes) in planes_list.iter().enumerate() {
+            if idx == ref_idx {
+                continue;
+            }
+
+            if planes.width != width || planes.height != height {
+                warn!(
+                    frame = idx,
+                    "Skipping Bayer frame with mismatched dimensions"
+                );
+                continue;
+            }
+
+            let frame_start = std::time::Instant::now();
+
+            // Upload comparison planes to pooled buffer
+            self.queue
+                .write_buffer(&buffers.comp_rgba, 0, bytemuck::cast_slice(&planes.data));
+
+            // Reuse the shared alignment core (pyramid align + warp)
+            let aligned = self
+                .align_single_frame_from_buffer(
+                    &ref_pyramids,
+                    width,
+                    height,
+                    &buffers,
+                    ca_coefficients,
+                )
+                .await?;
+
+            info!(
+                frame = idx,
+                elapsed_ms = frame_start.elapsed().as_millis(),
+                "Bayer frame aligned"
+            );
+
+            aligned_frames.push(aligned);
+            report(aligned_frames.len(), total_frames);
+            self.yield_to_compositor().await;
+        }
+
+        debug!(
+            aligned = aligned_frames.len(),
+            total_elapsed_ms = align_start.elapsed().as_millis(),
+            "All Bayer frames aligned"
+        );
+        Ok(aligned_frames)
+    }
+
+    /// Merge Bayer frames using FFT pipeline operating per-channel
+    ///
+    /// HDR+ paper Section 5: The Bayer planes are packed as RGBA, so the existing
+    /// vec4 FFT merge naturally operates per-channel. Each channel (R, Gr, B, Gb)
+    /// is independently merged with per-channel noise model.
+    async fn merge_bayer_frames_gpu(
+        &self,
+        ref_planes: &BayerPlanes,
+        aligned: &[GpuAlignedFrame],
+        config: &BurstModeConfig,
+    ) -> Result<(wgpu::Buffer, u32, u32), String> {
+        let width = ref_planes.width;
+        let height = ref_planes.height;
+
+        debug!(
+            frames = aligned.len() + 1,
+            half_width = width,
+            half_height = height,
+            "Merging Bayer frames (per-channel FFT, HDR+ Section 5)"
+        );
+
+        // Estimate noise from Bayer planes
+        // For Bayer planes packed as RGBA, we pack them as u8 for the noise estimator
+        let reference_u8: Vec<u8> = ref_planes
+            .data
+            .iter()
+            .map(|&x| (x.clamp(0.0, 1.0) * 255.0) as u8)
+            .collect();
+
+        let noise_sd = self
+            .estimate_noise_gpu(&reference_u8, width, height)
+            .await?;
+        info!(noise_sd, "Bayer noise estimation complete");
+
+        // merge_gpu returns u8 CPU data; we re-upload as f32 for the demosaic step
+        // TODO: add merge_gpu_to_buffer to avoid this GPU→CPU→GPU round-trip
+        let merged_u8 = self
+            .fft_pipeline
+            .merge_gpu(
+                &reference_u8,
+                aligned,
+                width,
+                height,
+                noise_sd,
+                config.robustness,
+            )
+            .await?;
+
+        // Re-upload merged result to GPU buffer for demosaic step
+        // (merge_gpu currently reads back to CPU; we re-upload the f32 version)
+        let pixel_count = (width * height) as usize;
+        let merged_f32 = u8_to_f32_normalized(&merged_u8);
+        let merged_buffer = self.create_storage_buffer(
+            "merged_bayer_planes",
+            (pixel_count * 4 * std::mem::size_of::<f32>()) as u64,
+        );
+        self.queue
+            .write_buffer(&merged_buffer, 0, bytemuck::cast_slice(&merged_f32));
+
+        Ok((merged_buffer, width, height))
+    }
 }
 
 /// Process burst mode capture (full GPU pipeline)
@@ -2519,13 +3116,171 @@ pub async fn process_burst_mode(
     config: BurstModeConfig,
     progress: Option<ProgressCallback>,
 ) -> Result<MergedFrame, String> {
+    // Detect Bayer input and route to appropriate pipeline
+    let is_bayer = frames.first().map(|f| f.format.is_bayer()).unwrap_or(false);
+
+    if is_bayer {
+        return process_burst_mode_bayer(frames, config, progress).await;
+    }
+
+    process_burst_mode_rgba(frames, config, progress).await
+}
+
+/// Bayer-domain burst processing pipeline (HDR+ paper-correct)
+///
+/// Operates entirely on raw Bayer data:
+/// 1. Extract Bayer planes (R, Gr, Gb, B) at half resolution
+/// 2. Select reference frame using sharpness on averaged grayscale
+/// 3. Align frames using pyramid alignment on grayscale (half-res)
+/// 4. Merge per-channel via FFT Wiener filter (per HDR+ Section 5)
+/// 5. Demosaic merged result (single demosaic, not N)
+/// 6. Apply finishing: white balance → CCM → tone mapping (HDR+ Section 6)
+async fn process_burst_mode_bayer(
+    frames: Vec<Arc<CameraFrame>>,
+    config: BurstModeConfig,
+    progress: Option<ProgressCallback>,
+) -> Result<MergedFrame, String> {
+    if frames.is_empty() {
+        return Err("Burst mode requires at least one frame".to_string());
+    }
     let total_start = std::time::Instant::now();
     info!(
         frames = frames.len(),
-        "Processing burst mode capture (GPU-only FFT pipeline)"
+        "Processing burst mode (Bayer-domain pipeline per HDR+ paper)"
     );
 
-    // Helper to report progress
+    let report = |value: f32| {
+        if let Some(cb) = &progress {
+            cb(value);
+        }
+    };
+
+    // Step 1: Extract Bayer planes from all frames (0% - 5%)
+    report(0.0);
+    let step_start = std::time::Instant::now();
+    let mut planes_list: Vec<BayerPlanes> = Vec::with_capacity(frames.len());
+    for (i, frame) in frames.iter().enumerate() {
+        let planes = extract_bayer_planes(frame)?;
+        debug!(
+            frame = i,
+            half_w = planes.width,
+            half_h = planes.height,
+            bit_depth = planes.bit_depth,
+            "Extracted Bayer planes"
+        );
+        planes_list.push(planes);
+    }
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        frames = planes_list.len(),
+        "Bayer plane extraction complete"
+    );
+    report(0.05);
+
+    // Step 2: Initialize GPU pipeline (5% - 8%)
+    let step_start = std::time::Instant::now();
+    let gpu = BurstModeGpuPipeline::new().await?;
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        "GPU pipeline initialized"
+    );
+    report(0.08);
+
+    // Step 3: Select reference frame from first 3 using sharpness (8% - 10%)
+    let step_start = std::time::Instant::now();
+    let search_count = planes_list.len().min(3);
+    let mut max_sharpness = f32::MIN;
+    let mut ref_idx = 0;
+    for (idx, planes) in planes_list[..search_count].iter().enumerate() {
+        let sharpness = gpu.compute_sharpness_from_planes(planes).await?;
+        debug!(frame = idx, sharpness, "Bayer frame sharpness");
+        if sharpness > max_sharpness {
+            max_sharpness = sharpness;
+            ref_idx = idx;
+        }
+    }
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        reference = ref_idx,
+        sharpness = max_sharpness,
+        "Reference frame selected (Bayer)"
+    );
+    report(0.10);
+
+    // Step 4: Align frames at half-res using Bayer grayscale (10% - 60%)
+    let step_start = std::time::Instant::now();
+    let aligned = gpu
+        .align_bayer_frames_gpu(&planes_list, ref_idx, &progress)
+        .await?;
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        aligned = aligned.len(),
+        "Bayer frame alignment complete"
+    );
+    report(0.60);
+
+    // Step 5: Merge per-channel via FFT (60% - 80%)
+    let step_start = std::time::Instant::now();
+    let ref_planes = &planes_list[ref_idx];
+    let (merged_buffer, half_w, half_h) = gpu
+        .merge_bayer_frames_gpu(ref_planes, &aligned, &config)
+        .await?;
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        "Bayer merge complete (per-channel FFT)"
+    );
+    report(0.80);
+
+    // Drop aligned frames to free GPU memory
+    drop(aligned);
+
+    // Step 6: Demosaic merged Bayer planes → full-res RGBA (80% - 90%)
+    // HDR+ Section 6: single demosaic after merge (not N demosaics before merge)
+    let step_start = std::time::Instant::now();
+    let colour_gains = ref_planes.colour_gains;
+    let ccm = ref_planes.colour_correction_matrix;
+    let demosaiced = gpu
+        .demosaic_bayer_planes(&merged_buffer, half_w, half_h, colour_gains, ccm)
+        .await?;
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        width = demosaiced.width,
+        height = demosaiced.height,
+        "Demosaic complete (full-res output)"
+    );
+    report(0.90);
+
+    // Step 7: Apply tone mapping (90% - 100%)
+    let step_start = std::time::Instant::now();
+    let tonemapped = gpu.apply_tonemap(&demosaiced, &config).await?;
+    info!(
+        elapsed_ms = step_start.elapsed().as_millis(),
+        "Tone mapping complete"
+    );
+    report(1.0);
+
+    info!(
+        total_elapsed_ms = total_start.elapsed().as_millis(),
+        width = tonemapped.width,
+        height = tonemapped.height,
+        "Bayer-domain burst processing complete"
+    );
+
+    Ok(tonemapped)
+}
+
+/// RGBA-domain burst processing pipeline (original path for non-Bayer input)
+async fn process_burst_mode_rgba(
+    frames: Vec<Arc<CameraFrame>>,
+    config: BurstModeConfig,
+    progress: Option<ProgressCallback>,
+) -> Result<MergedFrame, String> {
+    let total_start = std::time::Instant::now();
+    info!(
+        frames = frames.len(),
+        "Processing burst mode capture (RGBA pipeline)"
+    );
+
     let report = |value: f32| {
         if let Some(cb) = &progress {
             cb(value);
@@ -2553,10 +3308,9 @@ pub async fn process_burst_mode(
     report(0.10);
 
     // Align frames - GPU-only, no CPU round-trip (10% - 60%)
-    // This keeps aligned frame data on GPU, saving ~192MB per frame of CPU memory
     let step_start = std::time::Instant::now();
     let aligned = gpu
-        .align_frames_gpu_with_progress(&frames, ref_idx, &config, &progress)
+        .align_frames_gpu_with_progress(&frames, ref_idx, &progress)
         .await?;
     info!(
         elapsed_ms = step_start.elapsed().as_millis(),
@@ -2565,8 +3319,7 @@ pub async fn process_burst_mode(
     );
     report(0.60);
 
-    // Merge frames - GPU-only, reads directly from GPU buffers (60% - 85%)
-    // This avoids re-uploading aligned frames, saving ~336MB for 7 frames
+    // Merge frames - GPU-only (60% - 85%)
     let step_start = std::time::Instant::now();
     let merged = gpu
         .merge_frames_gpu(&frames[ref_idx], &aligned, &config)
@@ -2577,7 +3330,6 @@ pub async fn process_burst_mode(
     );
     report(0.85);
 
-    // Drop GPU aligned frames to free GPU memory before tonemap
     drop(aligned);
 
     // Apply tone mapping (85% - 100%)
@@ -2591,7 +3343,7 @@ pub async fn process_burst_mode(
 
     info!(
         total_elapsed_ms = total_start.elapsed().as_millis(),
-        "Night mode processing complete"
+        "RGBA burst processing complete"
     );
 
     Ok(tonemapped)

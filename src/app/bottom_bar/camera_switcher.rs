@@ -25,7 +25,9 @@ impl AppModel {
 
         // Hide camera switcher during virtual camera streaming
         if self.virtual_camera.is_streaming() {
-            return widget::Space::new(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH), Length::Shrink)
+            return widget::Space::new()
+                .width(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH))
+                .height(Length::Shrink)
                 .into();
         }
 
@@ -44,7 +46,7 @@ impl AppModel {
                     }
                     svg.into()
                 } else {
-                    widget::Space::new(32.0, 32.0).into()
+                    widget::Space::new().width(32.0).height(32.0).into()
                 };
 
             // Center icon in fixed-size container
@@ -67,7 +69,10 @@ impl AppModel {
             widget::container(btn).style(overlay_container_style).into()
         } else {
             // Add invisible placeholder with same width as icon button
-            widget::Space::new(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH), Length::Shrink).into()
+            widget::Space::new()
+                .width(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH))
+                .height(Length::Shrink)
+                .into()
         }
     }
 }

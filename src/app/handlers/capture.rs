@@ -46,6 +46,14 @@ impl AppModel {
             == Some("back")
     }
 
+    /// Check if the current camera supports multistream (simultaneous preview + raw capture)
+    pub(crate) fn is_current_camera_multistream(&self) -> bool {
+        self.available_cameras
+            .get(self.current_camera_index)
+            .map(|cam| cam.supports_multistream)
+            .unwrap_or(false)
+    }
+
     /// Check if hardware flash should be used (back camera with writable flash LEDs)
     pub(crate) fn use_hardware_flash(&self) -> bool {
         self.is_back_camera() && self.flash_hardware.has_devices()
@@ -143,13 +151,7 @@ impl AppModel {
 
         // In multistream mode, capture from the raw stream (full sensor resolution)
         // instead of the preview stream (1080p)
-        let is_multistream = self
-            .available_cameras
-            .get(self.current_camera_index)
-            .map(|cam| cam.supports_multistream)
-            .unwrap_or(false);
-
-        if is_multistream {
+        if self.is_current_camera_multistream() {
             return self.capture_photo_from_raw_stream();
         }
 
@@ -320,10 +322,6 @@ impl AppModel {
             }
         };
 
-        info!(
-            frame_count,
-            "Starting burst mode capture - collecting frames from stream..."
-        );
         self.is_capturing = true;
         self.burst_mode.start_capture(frame_count);
 
@@ -338,9 +336,97 @@ impl AppModel {
             }
         }
 
+        // In multistream mode, capture raw Bayer frames from the raw stream
+        // This gives full-resolution raw sensor data (e.g. 3280x2464 SRGGB10_CSI2P)
+        // instead of low-res ISP-processed viewfinder frames (e.g. 1436x1080 ABGR8888)
+        // HDR+ paper Section 2: "we begin from Bayer raw frames"
+        if self.is_current_camera_multistream() {
+            // Use the shared still capture Arcs (same mechanism as single photo capture)
+            // These are connected to the subscription's NativeLibcameraPipeline
+            let still_requested = Arc::clone(&self.still_capture_requested);
+            let still_frame = Arc::clone(&self.latest_still_frame);
+            info!(
+                frame_count,
+                "Starting burst mode capture - raw frames from raw stream (multistream)"
+            );
+
+            return Task::perform(
+                async move {
+                    let mut frames: Vec<Arc<crate::backends::camera::types::CameraFrame>> =
+                        Vec::with_capacity(frame_count);
+
+                    for i in 0..frame_count {
+                        // Request a still capture from the raw stream
+                        still_requested.store(true, std::sync::atomic::Ordering::Release);
+
+                        // Wait for raw frame with timeout
+                        let timeout = std::time::Duration::from_secs(2);
+                        let frame = wait_for_still_frame(&still_frame, timeout)
+                            .await
+                            .ok_or_else(|| {
+                                format!(
+                                    "Failed to capture raw frame {}/{}: timeout waiting for raw stream",
+                                    i + 1,
+                                    frame_count
+                                )
+                            })?;
+
+                        info!(
+                            frame = i + 1,
+                            total = frame_count,
+                            width = frame.width,
+                            height = frame.height,
+                            format = ?frame.format,
+                            "Raw burst frame captured"
+                        );
+
+                        frames.push(Arc::new(frame));
+                    }
+
+                    Ok(frames)
+                },
+                |result| cosmic::Action::App(Message::BurstModeRawFramesCaptured(result)),
+            );
+        }
+
+        // Fallback: collect viewfinder frames from the stream
+        info!(
+            frame_count,
+            "Starting burst mode capture - collecting frames from stream..."
+        );
         // Frames will be collected in handle_camera_frame
         // When enough frames are collected, BurstModeFramesCollected message is sent
         Task::none()
+    }
+
+    /// Handle raw burst frames captured via capture_photo() (multistream mode)
+    pub(crate) fn handle_burst_mode_raw_frames_captured(
+        &mut self,
+        result: Result<Vec<Arc<crate::backends::camera::types::CameraFrame>>, String>,
+    ) -> Task<cosmic::Action<Message>> {
+        match result {
+            Ok(frames) => {
+                info!(
+                    frames = frames.len(),
+                    "Raw burst frames captured successfully"
+                );
+                // Store the raw frames in burst mode state
+                self.burst_mode.set_frames(frames);
+                // Delegate to the existing processing flow
+                self.handle_burst_mode_frames_collected()
+            }
+            Err(e) => {
+                error!("Failed to capture raw burst frames: {}", e);
+                self.burst_mode.error();
+                self.is_capturing = false;
+                // Turn off flash
+                self.turn_off_flash_hardware();
+                if self.flash_active {
+                    self.flash_active = false;
+                }
+                Task::none()
+            }
+        }
     }
 
     /// Handle when all burst mode frames have been collected
@@ -357,7 +443,7 @@ impl AppModel {
             self.flash_active = false;
         }
 
-        // Stop the PipeWire camera stream during HDR+ processing
+        // Stop the camera stream during HDR+ processing
         // This frees GPU/CPU resources for burst processing
         // The stream will be restarted in handle_burst_mode_complete
         info!("Stopping camera stream for HDR+ processing");
@@ -408,7 +494,10 @@ impl AppModel {
         config.rotation = rotation;
 
         // Calculate adaptive processing parameters based on scene brightness
-        if let Some(first_frame) = frames.first() {
+        // estimate_scene_brightness assumes RGBA data, so skip for raw Bayer frames
+        if let Some(first_frame) = frames.first()
+            && !first_frame.format.is_bayer()
+        {
             let (_luminance, brightness) = estimate_scene_brightness(first_frame);
             let adaptive_params = calculate_adaptive_params(brightness);
             config.shadow_boost = adaptive_params.shadow_boost;
@@ -798,6 +887,10 @@ impl AppModel {
 
     pub(crate) fn handle_toggle_recording(&mut self) -> Task<cosmic::Action<Message>> {
         if self.recording.is_recording() {
+            // Turn off torch when stopping recording
+            if self.flash_enabled {
+                self.turn_off_flash_hardware();
+            }
             if let Some(sender) = self.recording.take_stop_sender() {
                 info!("Sending stop signal to recorder");
                 let _ = sender.send(());
@@ -834,6 +927,8 @@ impl AppModel {
         result: Result<String, String>,
     ) -> Task<cosmic::Action<Message>> {
         self.recording = RecordingState::Idle;
+        // Turn off torch when recording ends
+        self.turn_off_flash_hardware();
 
         match result {
             Ok(path) => {
@@ -891,6 +986,12 @@ impl AppModel {
             "Starting video recording"
         );
 
+        // Turn on hardware flash as torch during video recording
+        if self.flash_enabled && self.use_hardware_flash() {
+            info!("Flash enabled - turning on hardware flash torch for video recording");
+            self.turn_on_flash_hardware();
+        }
+
         let sensor_rotation = camera.rotation;
         let width = format.width;
         let height = format.height;
@@ -910,114 +1011,28 @@ impl AppModel {
             .get(self.current_video_encoder_index)
             .cloned();
 
-        let bitrate_kbps = self.config.bitrate_preset.bitrate_kbps(width, height);
-
-        // Check if we're using the libcamera backend — if so, use appsrc pipeline
-        let use_appsrc =
-            self.config.backend == crate::backends::camera::types::CameraBackendType::Libcamera;
-
-        if use_appsrc {
-            // For the appsrc pipeline, use the actual viewfinder frame dimensions
-            // (not active_format, which may be the raw/Bayer stream resolution).
-            let (appsrc_width, appsrc_height) = self
-                .current_frame
-                .as_ref()
-                .map(|f| (f.width, f.height))
-                .unwrap_or((width, height));
-            let appsrc_bitrate = self
-                .config
-                .bitrate_preset
-                .bitrate_kbps(appsrc_width, appsrc_height);
-            return self.start_appsrc_recording(AppsrcRecordingConfig {
-                width: appsrc_width,
-                height: appsrc_height,
-                framerate,
-                format: format.clone(),
-                output_path,
-                sensor_rotation,
-                audio_device,
-                selected_encoder,
-                bitrate_kbps: appsrc_bitrate,
-            });
-        }
-
-        // --- PipeWire path (existing code) ---
-        let device_path = camera.path.clone();
-        let metadata_path = camera.metadata_path.clone();
-        let pixel_format = format.pixel_format.clone();
-
-        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        let path_for_message = output_path.display().to_string();
-
-        // Create audio levels handle upfront so the UI can read it immediately.
-        // The recorder is created in the async task to avoid blocking the UI thread.
-        let audio_levels: crate::pipelines::video::SharedAudioLevels = Default::default();
-        self.recording = RecordingState::start(
-            path_for_message.clone(),
-            stop_tx,
-            Some(audio_levels.clone()),
-        );
-
-        let recording_task = Task::perform(
-            async move {
-                let recorder = tokio::task::spawn_blocking(move || {
-                    use crate::pipelines::video::{
-                        AudioChannels, AudioQuality, EncoderConfig, PipeWireRecorderConfig,
-                        RecorderConfig, VideoQuality, VideoRecorder,
-                    };
-
-                    let config = EncoderConfig {
-                        video_quality: VideoQuality::High,
-                        audio_quality: AudioQuality::High,
-                        audio_channels: AudioChannels::Mono,
-                        width,
-                        height,
-                        bitrate_override_kbps: Some(bitrate_kbps),
-                    };
-
-                    let recorder = VideoRecorder::new(PipeWireRecorderConfig {
-                        base: RecorderConfig {
-                            width,
-                            height,
-                            framerate,
-                            output_path: output_path.clone(),
-                            encoder_config: config,
-                            enable_audio: audio_device.is_some(),
-                            audio_device: audio_device.as_deref(),
-                            encoder_info: selected_encoder.as_ref(),
-                            rotation: sensor_rotation,
-                            audio_levels,
-                        },
-                        device_path: &device_path,
-                        metadata_path: metadata_path.as_deref(),
-                        pixel_format: &pixel_format,
-                        preview_sender: None,
-                    })?;
-
-                    recorder.start()?;
-                    let path = output_path.display().to_string();
-                    Ok::<_, String>((recorder, path))
-                })
-                .await
-                .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))?;
-
-                let (recorder, path) = recorder;
-                let _ = stop_rx.await;
-
-                tokio::task::spawn_blocking(move || {
-                    recorder.stop().map(|_| path).map_err(|e| e.to_string())
-                })
-                .await
-                .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))
-            },
-            |result| cosmic::Action::App(Message::RecordingStopped(result)),
-        );
-
-        let start_signal = Task::done(cosmic::Action::App(Message::RecordingStarted(
-            path_for_message,
-        )));
-
-        Task::batch([start_signal, recording_task])
+        // For the appsrc pipeline, use the actual viewfinder frame dimensions
+        // (not active_format, which may be the raw/Bayer stream resolution).
+        let (appsrc_width, appsrc_height) = self
+            .current_frame
+            .as_ref()
+            .map(|f| (f.width, f.height))
+            .unwrap_or((width, height));
+        let appsrc_bitrate = self
+            .config
+            .bitrate_preset
+            .bitrate_kbps(appsrc_width, appsrc_height);
+        self.start_appsrc_recording(AppsrcRecordingConfig {
+            width: appsrc_width,
+            height: appsrc_height,
+            framerate,
+            format: format.clone(),
+            output_path,
+            sensor_rotation,
+            audio_device,
+            selected_encoder,
+            bitrate_kbps: appsrc_bitrate,
+        })
     }
 
     /// Start recording using the appsrc pipeline (libcamera backend).
@@ -1053,12 +1068,43 @@ impl AppModel {
                 PixelFormat::from_gst_format(&format.pixel_format).unwrap_or(PixelFormat::I420)
             });
 
-        info!(
-            pixel_format = ?pixel_format,
-            "Using appsrc recording pipeline (libcamera backend)"
-        );
+        // Check if we can use the VA-API JPEG zero-copy path:
+        // - Camera outputs MJPEG
+        // - A VA-API JPEG decoder is available that handles this camera's
+        //   chroma subsampling (e.g. 4:2:0 → I420, 4:2:2 → Y42B)
+        // - No sensor rotation needed (GPU JPEG decode → encoder is direct)
+        let is_mjpeg = format.pixel_format == "MJPEG" || format.pixel_format.contains("MJPG");
+        let decoded_yuv_format = self
+            .current_frame
+            .as_ref()
+            .map(|f| f.gst_format_string())
+            .unwrap_or("I420");
+        let va_jpeg_dec = if is_mjpeg {
+            crate::media::encoders::detection::detect_va_jpeg_decoder(decoded_yuv_format)
+        } else {
+            None
+        };
+        let use_jpeg_pipeline = is_mjpeg
+            && va_jpeg_dec.is_some()
+            && sensor_rotation == crate::backends::camera::types::SensorRotation::None;
 
-        let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(15);
+        if use_jpeg_pipeline {
+            info!(
+                va_jpeg_dec = ?va_jpeg_dec,
+                "Using VA-API JPEG zero-copy recording pipeline"
+            );
+        } else {
+            info!(
+                pixel_format = ?pixel_format,
+                is_mjpeg,
+                va_jpeg_dec = ?va_jpeg_dec,
+                rotation = %sensor_rotation,
+                "Using appsrc recording pipeline (libcamera backend)"
+            );
+        }
+
+        let channel_size = if use_jpeg_pipeline { 30 } else { 15 };
+        let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(channel_size);
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
 
         let path_for_message = output_path.display().to_string();
@@ -1066,6 +1112,7 @@ impl AppModel {
         // Direct path: capture thread → appsrc (bypasses UI thread entirely)
         if let Some(ref manager) = self.backend_manager {
             manager.set_recording_sender(Some(frame_tx));
+            manager.set_jpeg_recording_mode(use_jpeg_pipeline);
         }
 
         // Create audio levels handle upfront so the UI can read it immediately.
@@ -1078,12 +1125,17 @@ impl AppModel {
         );
 
         let backend_manager = self.backend_manager.clone();
+        let va_jpeg_dec_name = va_jpeg_dec.map(|s| s.to_string());
+        let live_filter = self.recording_filter_code.clone();
 
         let recording_task = Task::perform(
             async move {
                 // Capture runtime handle — spawn_blocking doesn't propagate the
                 // tokio context, but the appsrc pusher needs it for tokio::spawn.
                 let rt_handle = tokio::runtime::Handle::current();
+
+                // Clone for use inside spawn_blocking's fallback path
+                let backend_manager_inner = backend_manager.clone();
 
                 let recorder = tokio::task::spawn_blocking(move || {
                     // Enter the runtime context so tokio::spawn works inside
@@ -1106,24 +1158,60 @@ impl AppModel {
                         bitrate_override_kbps: Some(bitrate_kbps),
                     };
 
-                    let recorder = VideoRecorder::new_from_appsrc(
-                        AppsrcRecorderConfig {
-                            base: RecorderConfig {
-                                width,
-                                height,
-                                framerate,
-                                output_path: output_path.clone(),
-                                encoder_config: config,
-                                enable_audio: audio_device.is_some(),
-                                audio_device: audio_device.as_deref(),
-                                encoder_info: selected_encoder.as_ref(),
-                                rotation: sensor_rotation,
-                                audio_levels,
-                            },
-                            pixel_format,
-                        },
-                        frame_rx,
-                    )?;
+                    let make_appsrc_config =
+                        |audio_levels: crate::pipelines::video::SharedAudioLevels| {
+                            AppsrcRecorderConfig {
+                                base: RecorderConfig {
+                                    width,
+                                    height,
+                                    framerate,
+                                    output_path: output_path.clone(),
+                                    encoder_config: config.clone(),
+                                    enable_audio: audio_device.is_some(),
+                                    audio_device: audio_device.as_deref(),
+                                    encoder_info: selected_encoder.as_ref(),
+                                    rotation: sensor_rotation,
+                                    audio_levels,
+                                },
+                                pixel_format,
+                                live_filter_code: live_filter.clone(),
+                            }
+                        };
+
+                    // Try VA-API JPEG pipeline first, fall back to legacy
+                    let recorder = if use_jpeg_pipeline {
+                        let dec = va_jpeg_dec_name.as_deref().unwrap();
+                        match VideoRecorder::new_from_appsrc_jpeg(
+                            make_appsrc_config(audio_levels.clone()),
+                            dec,
+                            frame_rx,
+                        ) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                warn!(
+                                    error = %e,
+                                    "VA-API JPEG pipeline failed, falling back to legacy"
+                                );
+                                // Clear jpeg mode so capture thread sends decoded frames
+                                if let Some(ref manager) = backend_manager_inner {
+                                    manager.set_jpeg_recording_mode(false);
+                                }
+                                // Need a new channel since the old rx was consumed
+                                // This is a rare error path — the recording will start
+                                // without any buffered frames, which is acceptable.
+                                let (fallback_tx, fallback_rx) = tokio::sync::mpsc::channel(15);
+                                if let Some(ref manager) = backend_manager_inner {
+                                    manager.set_recording_sender(Some(fallback_tx));
+                                }
+                                VideoRecorder::new_from_appsrc(
+                                    make_appsrc_config(audio_levels),
+                                    fallback_rx,
+                                )?
+                            }
+                        }
+                    } else {
+                        VideoRecorder::new_from_appsrc(make_appsrc_config(audio_levels), frame_rx)?
+                    };
 
                     recorder.start()?;
                     let path = output_path.display().to_string();
@@ -1141,6 +1229,7 @@ impl AppModel {
                 // the channel so the appsrc pusher sees None and sends EOS.
                 if let Some(ref manager) = backend_manager {
                     manager.set_recording_sender(None);
+                    manager.set_jpeg_recording_mode(false);
                 }
 
                 // Give a brief moment for EOS to propagate before stopping the pipeline.
@@ -1187,6 +1276,8 @@ impl AppModel {
         // Start a short blur transition (200ms) after stream restarts
         // This keeps the last frame blurred until new frames arrive, then fades out smoothly
         // Don't disable UI since capture is complete
+        self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start_with_duration(200, false);
 
         // Restart the camera stream after HDR+ processing
@@ -1333,9 +1424,30 @@ async fn save_first_burst_frame(
 ) -> Result<PathBuf, String> {
     use crate::pipelines::photo::burst_mode::{MergedFrame, SaveOutputParams, save_output};
 
+    // Skip first-frame comparison save for raw Bayer frames — the HDR+ output is the
+    // important artifact. Converting a single raw Bayer frame to RGBA just for comparison
+    // adds complexity and latency (GPU debayer required).
+    if frame.format.is_bayer() {
+        return Err("Skipping first-frame comparison for raw Bayer input".to_string());
+    }
+
     // Convert CameraFrame to MergedFrame for save_output
+    // Strip stride padding if present (viewfinder RGBA may have padded rows)
+    let data = {
+        let row_bytes = (frame.width * 4) as usize;
+        let stride = frame.stride as usize;
+        if stride > row_bytes && stride > 0 {
+            let mut out = Vec::with_capacity(row_bytes * frame.height as usize);
+            for y in 0..frame.height as usize {
+                out.extend_from_slice(&frame.data[y * stride..y * stride + row_bytes]);
+            }
+            out
+        } else {
+            frame.data.to_vec()
+        }
+    };
     let merged = MergedFrame {
-        data: frame.data.to_vec(),
+        data,
         width: frame.width,
         height: frame.height,
     };
@@ -1357,4 +1469,25 @@ async fn save_first_burst_frame(
 
     info!(path = %path.display(), "First burst frame saved for comparison");
     Ok(path)
+}
+
+/// Wait for a still frame to appear in the shared mutex, polling with a timeout.
+///
+/// Returns `Some(frame)` if a frame arrives before the deadline, `None` on timeout.
+pub(super) async fn wait_for_still_frame(
+    still_frame: &std::sync::Mutex<Option<crate::backends::camera::types::CameraFrame>>,
+    timeout: std::time::Duration,
+) -> Option<crate::backends::camera::types::CameraFrame> {
+    let start = std::time::Instant::now();
+    loop {
+        if let Ok(mut guard) = still_frame.lock()
+            && let Some(frame) = guard.take()
+        {
+            return Some(frame);
+        }
+        if start.elapsed() > timeout {
+            return None;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 }

@@ -38,7 +38,7 @@ pub async fn create_low_priority_compute_device(
 ) -> Result<(Arc<wgpu::Device>, Arc<wgpu::Queue>, GpuDeviceInfo), String> {
     info!(label = label, "Creating GPU device for compute");
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::VULKAN,
         ..Default::default()
     });
@@ -50,7 +50,7 @@ pub async fn create_low_priority_compute_device(
             force_fallback_adapter: false,
         })
         .await
-        .ok_or_else(|| "Failed to find suitable GPU adapter".to_string())?;
+        .map_err(|e| format!("Failed to find suitable GPU adapter: {}", e))?;
 
     let adapter_info = adapter.get_info();
     let adapter_limits = adapter.limits();
@@ -67,15 +67,14 @@ pub async fn create_low_priority_compute_device(
     );
 
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some(label),
-                required_features: wgpu::Features::empty(),
-                required_limits: adapter_limits.clone(),
-                memory_hints: wgpu::MemoryHints::Performance,
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some(label),
+            required_features: adapter.features() & wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
+            required_limits: adapter_limits.clone(),
+            memory_hints: wgpu::MemoryHints::Performance,
+            trace: wgpu::Trace::Off,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        })
         .await
         .map_err(|e| format!("Failed to create GPU device: {}", e))?;
 

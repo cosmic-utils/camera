@@ -4,6 +4,7 @@ runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm21
 base: com.system76.Cosmic.BaseApp
 base-version: stable
 command: camera
@@ -25,6 +26,10 @@ finish-args:
   - --filesystem=xdg-config/cosmic:rw
   # PipeWire access for camera and audio
   - --filesystem=xdg-run/pipewire-0:ro
+  # PulseAudio access (PipeWire's PulseAudio compatibility layer for pulsesrc)
+  - --socket=pulseaudio
+  # udev access for libcamera device enumeration (reads device metadata)
+  - --filesystem=/run/udev:ro
   # D-Bus access for COSMIC config daemon (live theme/config updates)
   # The wildcard is needed because the settings daemon creates dynamic config proxy
   # names like com.system76.CosmicSettingsDaemon.Config.com.system76.CosmicTheme.Dark.V1
@@ -76,9 +81,27 @@ modules:
         url: https://files.pythonhosted.org/packages/e5/69/882ee5c9d017149285cab114ebeab373308ef0f874fcdac9beb90e0ac4da/ply-3.11.tar.gz
         sha256: 00c7c1aaa88358b9c765b6d3000c6eec0ba42abca5351b095321aef446081da3
 
-  # Build libcamera from source so the Rust crate can link against it.
-  # The camera module uses LIBCAMERA_SOURCE=pkg-config to find it via pkg-config
-  # instead of the vendored meson build (which would require the git submodule).
+  # nlohmann/json header-only library, needed by libpisp
+  - name: nlohmann-json
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DJSON_BuildTests=OFF
+    sources:
+      - type: git
+        url: https://github.com/nlohmann/json.git
+        tag: v3.12.0
+        commit: 65ee68451d8eb2b5f3a30b410476ab83deb3289b
+
+  # libpisp is needed by libcamera's Raspberry Pi ISP pipeline handler
+  - name: libpisp
+    buildsystem: meson
+    sources:
+      - type: git
+        url: https://github.com/raspberrypi/libpisp.git
+        tag: v1.3.0
+        commit: 9ba67e6680f03f31f2b1741a53e8fd549be82cbe
+
+  # Build libcamera from source so the Rust crate can link against it via pkg-config.
   - name: libcamera
     buildsystem: meson
     config-opts:
@@ -90,11 +113,11 @@ modules:
       - -Dlc-compliance=disabled
       - -Ddocumentation=disabled
       - -Dtest=false
-      - -Dv4l2=disabled
     sources:
       - type: git
         url: https://git.libcamera.org/libcamera/libcamera.git
         tag: v0.7.0
+        commit: b7854fd07d42168f099b5ce30d1702e0e0875bf5
 
   - name: camera
     buildsystem: simple
@@ -103,9 +126,8 @@ modules:
       env:
         CARGO_HOME: /run/build/camera/cargo
         CARGO_TARGET_DIR: /run/build/camera/target
-        # Use the libcamera built by the module above instead of the vendored
-        # meson build (which needs the git submodule source tree).
-        LIBCAMERA_SOURCE: pkg-config
+        LIBCLANG_PATH: /usr/lib/sdk/llvm21/lib
+        BINDGEN_EXTRA_CLANG_ARGS: -I/usr/lib/sdk/llvm21/lib/clang/21/include
         # libcamera installs to lib64 on x86_64, but flatpak's default
         # PKG_CONFIG_PATH only includes lib/pkgconfig
         PKG_CONFIG_PATH: /app/lib64/pkgconfig:/app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig

@@ -125,7 +125,7 @@ impl GpuFilterPipeline {
             label: Some("filter_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -243,14 +243,14 @@ impl GpuFilterPipeline {
 
         // Upload RGBA data to input texture
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: input_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             rgba_data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
@@ -312,7 +312,7 @@ impl GpuFilterPipeline {
             });
 
             compute_pass.set_pipeline(&self.pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.set_bind_group(0, Some(&bind_group), &[]);
 
             // Dispatch workgroups (16x16 threads per workgroup)
             let workgroups_x = width.div_ceil(16);
@@ -333,7 +333,10 @@ impl GpuFilterPipeline {
             let _ = sender.send(result);
         });
 
-        let _ = self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
 
         receiver
             .await

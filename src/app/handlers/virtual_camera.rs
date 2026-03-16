@@ -785,6 +785,8 @@ impl AppModel {
             );
             self.current_frame = Some(frame);
             self.current_frame_is_file_source = true;
+            // Reset aspect ratio to Native so the file source displays uncropped
+            self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
         } else {
             warn!("Failed to load file source preview");
         }

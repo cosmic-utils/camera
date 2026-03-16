@@ -5,17 +5,17 @@
 //! Renders camera feed to the terminal using Unicode half-block characters
 //! for improved vertical resolution.
 
-use crate::backends::camera::pipewire::{
-    PipeWirePipeline, enumerate_pipewire_cameras, get_pipewire_formats,
+use crate::backends::camera::CameraBackend;
+use crate::backends::camera::libcamera::{CameraPipelineHandle, LibcameraBackend, create_pipeline};
+use crate::backends::camera::types::{
+    CameraDevice, CameraFormat, CameraFrame, FrameReceiver, PixelFormat,
 };
-use crate::backends::camera::types::{CameraDevice, CameraFormat, CameraFrame, PixelFormat};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use futures::channel::mpsc;
 use ratatui::{
     Terminal, backend::CrosstermBackend, buffer::Buffer, layout::Rect, style::Color,
     widgets::Widget,
@@ -49,8 +49,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct CameraPipeline {
-    _pipeline: PipeWirePipeline,
-    receiver: mpsc::Receiver<CameraFrame>,
+    _handle: CameraPipelineHandle,
+    receiver: FrameReceiver,
 }
 
 impl CameraPipeline {
@@ -58,10 +58,10 @@ impl CameraPipeline {
         device: &CameraDevice,
         format: &CameraFormat,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let (sender, receiver) = mpsc::channel(10);
-        let pipeline = PipeWirePipeline::new(device, format, sender)?;
+        let (handle, receiver) = create_pipeline(device, format)
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
         Ok(Self {
-            _pipeline: pipeline,
+            _handle: handle,
             receiver,
         })
     }
@@ -76,7 +76,8 @@ fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Enumerate cameras
-    let cameras = enumerate_pipewire_cameras().unwrap_or_default();
+    let backend = LibcameraBackend::new();
+    let cameras = backend.enumerate_cameras();
     if cameras.is_empty() {
         return Err("No cameras found".into());
     }
@@ -85,7 +86,7 @@ fn run_app(
 
     let multi_camera = cameras.len() > 1;
     let mut current_camera_index = 0;
-    let mut pipeline = initialize_camera(&cameras[current_camera_index])?;
+    let mut pipeline = initialize_camera(&backend, &cameras[current_camera_index])?;
 
     let mut frame_widget = FrameWidget::new();
     let mut show_help = false;
@@ -159,7 +160,7 @@ fn run_app(
                 // Drop old pipeline first
                 drop(pipeline);
 
-                match initialize_camera(&cameras[current_camera_index]) {
+                match initialize_camera(&backend, &cameras[current_camera_index]) {
                     Ok(new_pipeline) => {
                         pipeline = new_pipeline;
                         status_message = build_status_message(multi_camera);
@@ -174,7 +175,7 @@ fn run_app(
                         } else {
                             current_camera_index - 1
                         };
-                        pipeline = initialize_camera(&cameras[current_camera_index])?;
+                        pipeline = initialize_camera(&backend, &cameras[current_camera_index])?;
                     }
                 }
             }
@@ -199,10 +200,13 @@ fn run_app(
     Ok(())
 }
 
-fn initialize_camera(device: &CameraDevice) -> Result<CameraPipeline, Box<dyn std::error::Error>> {
+fn initialize_camera(
+    backend: &LibcameraBackend,
+    device: &CameraDevice,
+) -> Result<CameraPipeline, Box<dyn std::error::Error>> {
     info!(device = %device.name, "Initializing camera");
 
-    let formats = get_pipewire_formats(&device.path, device.metadata_path.as_deref());
+    let formats = backend.get_formats(device, false);
     if formats.is_empty() {
         return Err(format!("No formats available for camera: {}", device.name).into());
     }

@@ -24,12 +24,14 @@ impl AppModel {
     /// not the rotation of the camera being switched to.
     pub fn start_blur_transition(&mut self) {
         self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start();
     }
 
     /// Start a blur transition with custom duration
     pub fn start_blur_transition_with_duration(&mut self, duration_ms: u64, disable_ui: bool) {
         self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self
             .transition_state
             .start_with_duration(duration_ms, disable_ui);
@@ -47,9 +49,8 @@ impl AppModel {
         let camera_path = &camera.path;
 
         // Get formats for the new mode using configured backend
-        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
-        let device = camera.clone();
-        let formats_for_new_mode = backend.get_formats(&device, new_mode == CameraMode::Video);
+        let backend = crate::backends::camera::create_backend();
+        let formats_for_new_mode = backend.get_formats(camera, new_mode == CameraMode::Video);
 
         // Helper to check saved settings for a mode
         let check_saved_settings = |settings_map: &std::collections::HashMap<
@@ -230,9 +231,8 @@ impl AppModel {
         let camera_path = camera.path.clone();
 
         // Get formats for this camera using configured backend
-        let backend = crate::backends::camera::get_backend_for_type(self.config.backend);
-        let device = camera.clone();
-        self.available_formats = backend.get_formats(&device, mode == CameraMode::Video);
+        let backend = crate::backends::camera::create_backend();
+        self.available_formats = backend.get_formats(camera, mode == CameraMode::Video);
 
         // Format selection logic: both modes use saved settings, current format, or defaults
         // Virtual mode uses the same format selection as Photo mode

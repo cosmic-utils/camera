@@ -18,19 +18,72 @@ impl AppModel {
     // Camera Control Handlers
     // =========================================================================
 
+    /// Stop capture and schedule a full camera re-enumeration.
+    ///
+    /// Cancels the active pipeline, clears the camera list (so the subscription
+    /// won't restart prematurely), and after a brief delay calls
+    /// `enumerate_cameras()` which delivers its result via `CameraListChanged`.
+    fn stop_and_reenumerate(&mut self) -> Task<cosmic::Action<Message>> {
+        self.camera_cancel_flag
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.current_frame = None;
+        self.available_cameras.clear();
+        self.camera_dropdown_options.clear();
+
+        Task::perform(
+            async move {
+                // Give the capture thread time to drop its CameraManager
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                let backend = crate::backends::camera::create_backend();
+                backend.enumerate_cameras()
+            },
+            |cameras| cosmic::Action::App(Message::CameraListChanged(cameras)),
+        )
+    }
+
     /// Shared logic for switching to a different camera by index.
     ///
     /// Sets the cancellation flag, clears the current frame, resets zoom and
     /// aspect ratio, triggers the camera/mode switch, starts the transition
     /// animation, and re-queries exposure controls.
+    ///
+    /// If the target camera was added via hotplug and has no libcamera path yet,
+    /// a full re-enumeration is performed first to discover the correct path.
     fn do_camera_switch(&mut self, new_index: usize) -> Task<cosmic::Action<Message>> {
+        // If the target camera has no libcamera path (hotplug placeholder),
+        // we need a full re-enumeration first.
+        let needs_enumeration = self
+            .available_cameras
+            .get(new_index)
+            .map(|c| c.path.is_empty())
+            .unwrap_or(false);
+
+        if needs_enumeration {
+            info!("Switching to hotplugged camera — full re-enumeration required");
+            self.pending_hotplug_switch = self
+                .available_cameras
+                .get(new_index)
+                .and_then(|c| c.v4l2_path())
+                .map(str::to_owned);
+            return self.stop_and_reenumerate();
+        }
+
         self.camera_cancel_flag
             .store(true, std::sync::atomic::Ordering::Release);
-        self.camera_cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        // Clear current frame to avoid accessing invalid mapped buffers
+        // Capture blur state from the OLD camera before changing anything.
+        // blur_frame_rotation: rotation of the camera that produced the last frame
+        // blur_frame_mirror: whether the old camera's preview was mirrored
+        self.blur_frame_rotation = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|c| c.rotation)
+            .unwrap_or_default();
+        self.blur_frame_mirror = self.should_mirror_preview();
+
         self.current_frame = None;
-
         self.current_camera_index = new_index;
         self.zoom_level = 1.0;
         self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
@@ -63,20 +116,10 @@ impl AppModel {
     }
 
     /// Build human-readable camera dropdown labels from a list of camera devices.
-    ///
-    /// Strips the " (V4L2)" suffix that the V4L2 backend appends to camera names.
     fn build_camera_dropdown_labels(
         cameras: &[crate::backends::camera::types::CameraDevice],
     ) -> Vec<String> {
-        cameras
-            .iter()
-            .map(|cam| {
-                cam.name
-                    .strip_suffix(" (V4L2)")
-                    .unwrap_or(&cam.name)
-                    .to_string()
-            })
-            .collect()
+        cameras.iter().map(|cam| cam.name.clone()).collect()
     }
 
     pub(crate) fn handle_switch_camera(&mut self) -> Task<cosmic::Action<Message>> {
@@ -143,6 +186,18 @@ impl AppModel {
         // Recording frames are sent directly from the capture thread via
         // set_recording_sender (bypasses UI for lower latency / fewer drops).
 
+        // Drop stale frames from the old camera/mode that were already queued
+        // in the iced message queue when the switch happened — but only AFTER
+        // the transition blur has ended. During the blur period we want stale
+        // frames so the blurred old-camera image remains visible.
+        if !self.transition_state.in_transition
+            && let Some(transition_start) = self.transition_state.transition_start_time
+            && frame.captured_at < transition_start
+        {
+            debug!("Dropping stale frame captured before camera/mode switch");
+            return Task::none();
+        }
+
         // Track whether this frame is from a file source (for mirror handling)
         let is_file_source = self.virtual_camera.is_file_source();
 
@@ -156,7 +211,11 @@ impl AppModel {
                 .unwrap_or_default()
         };
 
-        if let Some(task) = self.transition_state.on_frame_received() {
+        if let Some(task) = self.transition_state.on_frame_received(frame.captured_at) {
+            // First frame from the new camera — update blur state so the blurred
+            // preview of the NEW camera uses the correct rotation/mirror.
+            self.blur_frame_rotation = frame_rotation;
+            self.blur_frame_mirror = self.should_mirror_preview();
             self.current_frame = Some(Arc::clone(&frame));
             self.current_frame_is_file_source = is_file_source;
             self.current_frame_rotation = frame_rotation;
@@ -332,16 +391,17 @@ impl AppModel {
             "Camera list changed (hotplug event)"
         );
 
-        let current_camera_still_available =
-            if let Some(current) = self.available_cameras.get(self.current_camera_index) {
-                new_cameras
-                    .iter()
-                    .any(|c| c.path == current.path && c.name == current.name)
-            } else {
-                false
-            };
+        let old_current = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .cloned();
+        let current_camera_still_available = old_current.as_ref().is_some_and(|current| {
+            new_cameras
+                .iter()
+                .any(|c| c.path == current.path && c.name == current.name)
+        });
 
-        self.available_cameras = new_cameras.clone();
+        self.available_cameras = new_cameras;
         self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
 
         if !current_camera_still_available {
@@ -363,7 +423,7 @@ impl AppModel {
                 self.virtual_camera = VirtualCameraState::Idle;
             }
 
-            if new_cameras.is_empty() {
+            if self.available_cameras.is_empty() {
                 error!("Current camera disconnected and no other cameras available");
                 self.current_camera_index = 0;
                 self.available_formats.clear();
@@ -376,19 +436,32 @@ impl AppModel {
                 self.camera_cancel_flag
                     .store(true, std::sync::atomic::Ordering::Release);
             } else {
-                info!("Current camera disconnected, switching to first available camera");
-                self.current_camera_index = 0;
+                // If there's a pending hotplug switch, find the target camera
+                // by its V4L2 device path; otherwise default to index 0.
+                let target_index = self
+                    .pending_hotplug_switch
+                    .take()
+                    .and_then(|target| {
+                        self.available_cameras
+                            .iter()
+                            .position(|c| c.v4l2_path() == Some(target.as_str()))
+                    })
+                    .unwrap_or(0);
+
+                info!(target_index, "Switching to camera after re-enumeration");
+                self.current_camera_index = target_index;
 
                 return Task::perform(
                     async move {
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        0
+                        target_index
                     },
                     |index| cosmic::Action::App(Message::SelectCamera(index)),
                 );
             }
-        } else if let Some(current) = self.available_cameras.get(self.current_camera_index)
-            && let Some(new_index) = new_cameras
+        } else if let Some(current) = old_current
+            && let Some(new_index) = self
+                .available_cameras
                 .iter()
                 .position(|c| c.path == current.path && c.name == current.name)
         {
@@ -397,8 +470,113 @@ impl AppModel {
         Task::none()
     }
 
+    /// Handle device nodes removed (camera unplugged).
+    ///
+    /// If the current camera is still present, just removes the disconnected
+    /// camera from the list without interrupting the stream. Otherwise stops
+    /// capture, re-enumerates, and forwards via `CameraListChanged`.
+    pub(crate) fn handle_hotplug_device_removed(
+        &mut self,
+        removed_nodes: Vec<String>,
+    ) -> Task<cosmic::Action<Message>> {
+        let removed_paths: Vec<String> = removed_nodes
+            .iter()
+            .map(|n| format!("/dev/{}", n))
+            .collect();
+
+        // Check if the current camera's V4L2 device was removed
+        let current_camera_removed = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .and_then(|c| c.v4l2_path())
+            .map(|path| removed_paths.iter().any(|r| r == path))
+            .unwrap_or(true); // If no device_info, assume affected
+
+        if !current_camera_removed {
+            // Current camera is fine — just remove the unplugged camera(s)
+            let before = self.available_cameras.len();
+            self.available_cameras.retain(|c| {
+                c.v4l2_path()
+                    .map(|path| !removed_paths.iter().any(|r| r == path))
+                    .unwrap_or(true) // Keep cameras without device_info
+            });
+
+            info!(
+                before,
+                after = self.available_cameras.len(),
+                "Removed unplugged camera from list without stopping stream"
+            );
+
+            self.camera_dropdown_options =
+                Self::build_camera_dropdown_labels(&self.available_cameras);
+
+            if self.current_camera_index >= self.available_cameras.len() {
+                self.current_camera_index = 0;
+            }
+
+            return Task::none();
+        }
+
+        info!("Current camera unplugged — stopping capture for re-enumeration");
+        self.stop_and_reenumerate()
+    }
+
+    /// Handle new device nodes added (camera plugged in).
+    ///
+    /// Does NOT stop the current capture stream. Instead, creates lightweight
+    /// `CameraDevice` entries from V4L2 info so the switch button appears
+    /// immediately. Full enumeration happens when the user actually switches.
+    pub(crate) fn handle_hotplug_device_added(
+        &mut self,
+        new_devices: Vec<(String, String)>,
+    ) -> Task<cosmic::Action<Message>> {
+        if new_devices.is_empty() {
+            info!("Hotplug device added but no new capture devices found");
+            return Task::none();
+        }
+
+        info!(
+            count = new_devices.len(),
+            "Hotplug device added — adding to camera list without stopping stream"
+        );
+
+        use crate::backends::camera::types::{CameraDevice, DeviceInfo};
+
+        for (dev_path, card_name) in &new_devices {
+            if self
+                .available_cameras
+                .iter()
+                .any(|c| c.v4l2_path() == Some(dev_path.as_str()))
+            {
+                debug!(dev_path, "V4L2 device already known, skipping");
+                continue;
+            }
+
+            info!(dev_path, card_name, "Adding hotplugged camera");
+
+            let card = card_name.clone();
+            self.available_cameras.push(CameraDevice {
+                name: card.clone(),
+                device_info: Some(DeviceInfo {
+                    card,
+                    path: dev_path.clone(),
+                    real_path: dev_path.clone(),
+                    driver: String::new(),
+                }),
+                camera_location: Some("external".to_string()),
+                ..Default::default()
+            });
+        }
+
+        self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
+
+        Task::none()
+    }
+
     pub(crate) fn handle_start_camera_transition(&mut self) -> Task<cosmic::Action<Message>> {
         info!("Starting camera transition with blur effect");
+        self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
         let _ = self.transition_state.start();
         Task::none()
     }
@@ -424,93 +602,6 @@ impl AppModel {
             error!(?err, "Failed to save mirror preview setting");
         }
         Task::none()
-    }
-
-    pub(crate) fn handle_select_backend(&mut self, index: usize) -> Task<cosmic::Action<Message>> {
-        use crate::backends::camera::types::CameraBackendType;
-        use cosmic::cosmic_config::CosmicConfigEntry;
-
-        let new_backend = match index {
-            0 => CameraBackendType::Libcamera,
-            _ => CameraBackendType::PipeWire,
-        };
-
-        if new_backend == self.config.backend {
-            return Task::none();
-        }
-
-        info!(
-            old = %self.config.backend,
-            new = %new_backend,
-            "Switching camera backend"
-        );
-
-        // Stop current camera streams by setting cancel flag
-        self.camera_cancel_flag
-            .store(true, std::sync::atomic::Ordering::Release);
-
-        // Clear current state
-        self.current_frame = None;
-        self.available_cameras.clear();
-        self.available_formats.clear();
-        self.active_format = None;
-        self.camera_dropdown_options.clear();
-
-        // Update backend in config
-        self.config.backend = new_backend;
-
-        // Recreate backend manager with new backend
-        self.backend_manager = Some(crate::backends::camera::CameraBackendManager::new(
-            new_backend,
-        ));
-
-        // Reset cancel flag for new streams
-        self.camera_cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        // Increment restart counter to force subscription restart
-        self.camera_stream_restart_counter += 1;
-
-        // Save config
-        if let Some(handler) = self.config_handler.as_ref()
-            && let Err(err) = self.config.write_entry(handler)
-        {
-            error!(?err, "Failed to save backend setting");
-        }
-
-        // Re-enumerate cameras asynchronously with new backend
-        let backend_type = new_backend;
-        let last_camera_path = self.config.last_camera_path.clone();
-        Task::perform(
-            async move {
-                let backend = crate::backends::camera::get_backend_for_type(backend_type);
-                let cameras = backend.enumerate_cameras();
-                info!(count = cameras.len(), backend = %backend_type, "Re-enumerated cameras for new backend");
-
-                let camera_index = if let Some(ref last_path) = last_camera_path {
-                    cameras
-                        .iter()
-                        .position(|cam| &cam.path == last_path)
-                        .unwrap_or(0)
-                } else {
-                    0
-                };
-
-                let formats = if let Some(camera) = cameras.get(camera_index) {
-                    if !camera.path.is_empty() {
-                        backend.get_formats(camera, false)
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                };
-
-                (cameras, camera_index, formats)
-            },
-            |(cameras, index, formats)| {
-                cosmic::Action::App(Message::CamerasInitialized(cameras, index, formats))
-            },
-        )
     }
 
     pub(crate) fn handle_toggle_virtual_camera_enabled(&mut self) -> Task<cosmic::Action<Message>> {

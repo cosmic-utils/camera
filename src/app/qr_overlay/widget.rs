@@ -15,7 +15,7 @@ use crate::app::state::Message;
 use crate::app::video_widget::VideoContentFit;
 use cosmic::iced::advanced::widget::{Operation, Tree};
 use cosmic::iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, renderer};
-use cosmic::iced::event::Status;
+
 use cosmic::iced::{Border, Color, Element, Event, Length, Point, Rectangle, Size};
 use cosmic::widget;
 use cosmic::{Renderer, Theme};
@@ -101,7 +101,7 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
     }
 
     fn layout(
-        &self,
+        &mut self,
         tree: &mut Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
@@ -117,26 +117,26 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
             self.content_fit,
         );
 
-        // Layout each button at its calculated position
-        let button_nodes: Vec<layout::Node> = self
+        // Pre-compute button positions to avoid borrow conflict with iter_mut
+        let positions: Vec<(f32, f32)> = self
             .detections
             .iter()
-            .zip(self.buttons.iter())
-            .zip(tree.children.iter_mut())
-            .map(|((detection, button), child_tree)| {
-                let (center_x, top_y) = self.get_button_position(
-                    detection,
-                    offset_x,
-                    offset_y,
-                    video_width,
-                    video_height,
-                );
+            .map(|detection| {
+                self.get_button_position(detection, offset_x, offset_y, video_width, video_height)
+            })
+            .collect();
 
+        // Layout each button at its calculated position
+        let button_nodes: Vec<layout::Node> = positions
+            .into_iter()
+            .zip(self.buttons.iter_mut())
+            .zip(tree.children.iter_mut())
+            .map(|(((center_x, top_y), button), child_tree)| {
                 // Layout the button with its intrinsic size
                 let button_limits = layout::Limits::new(Size::ZERO, Size::new(200.0, 50.0));
                 let mut button_node =
                     button
-                        .as_widget()
+                        .as_widget_mut()
                         .layout(child_tree, renderer, &button_limits);
 
                 // Center the button horizontally at the calculated position
@@ -205,6 +205,7 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
                         radius: OVERLAY_BORDER_RADIUS.into(),
                     },
                     shadow: Default::default(),
+                    snap: true,
                 },
                 Color::from_rgba(0.0, 0.0, 0.0, 0.3),
             );
@@ -229,17 +230,17 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
         }
     }
 
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         renderer: &Renderer,
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> Status {
+    ) {
         // Forward events to child buttons
         for ((button, child_tree), child_layout) in self
             .buttons
@@ -247,9 +248,9 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
             .zip(tree.children.iter_mut())
             .zip(layout.children())
         {
-            let status = button.as_widget_mut().on_event(
+            button.as_widget_mut().update(
                 child_tree,
-                event.clone(),
+                event,
                 child_layout,
                 cursor,
                 renderer,
@@ -257,13 +258,7 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
                 shell,
                 viewport,
             );
-
-            if status == Status::Captured {
-                return Status::Captured;
-            }
         }
-
-        Status::Ignored
     }
 
     fn mouse_interaction(
@@ -298,7 +293,7 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
         layout: Layout<'_>,
         renderer: &Renderer,
@@ -306,12 +301,12 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
     ) {
         for ((button, child_tree), child_layout) in self
             .buttons
-            .iter()
+            .iter_mut()
             .zip(tree.children.iter_mut())
             .zip(layout.children())
         {
             button
-                .as_widget()
+                .as_widget_mut()
                 .operate(child_tree, child_layout, renderer, operation);
         }
     }
