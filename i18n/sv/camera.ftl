@@ -11,9 +11,9 @@ mode-video = VIDEO
 mode-photo = FOTO
 mode-virtual = VIRTUELL
 
-# Virtuell kamera
+# Virtual camera
 virtual-camera-title = Virtuell kamera (experimentellt)
-virtual-camera-description = Streama din kameraström till andra program via en virtuell kameraenhet. Kräver PipeWire.
+virtual-camera-description = Strömma din kameraström till andra program via en virtuell kameraenhet. Kräver PipeWire.
 virtual-camera-enable = Aktivera virtuell kamera
 streaming-live = LIVE
 virtual-camera-open-file = Öppna fil
@@ -32,6 +32,7 @@ light = Ljust
 settings-camera = Kamera
 settings-video = Video
 settings-device = Enhet
+settings-backend = Backend
 settings-format = Format
 settings-microphone = Mikrofon
 settings-record-audio = Spela in ljud
@@ -43,7 +44,9 @@ settings-video-quality = Video kvalitet
 settings-manual-override = Manuell lägesöverstyrning
 settings-mirror-preview = Spegelförhandsvisning
 settings-mirror-preview-description = Vänd kameraförhandsvisningen horisontellt
+settings-reset-all = Återställ alla inställningar
 settings-bug-reports = Buggrapporter
+settings-stats-for-nerds = Statistik för nördar
 settings-report-bug = Rapportera bugg
 settings-show-report = Visa rapport
 settings-resolution = Upplösning
@@ -55,6 +58,15 @@ device-info-card = Kort
 device-info-driver = Drivrutin
 device-info-path = Sökväg
 device-info-real-path = Riktig sökväg
+device-info-device-path = Enhetssökväg
+device-info-sensor = Sensor
+device-info-pipeline = Pipeline
+device-info-libcamera-version = libcamera
+device-info-multistream = Multiström
+device-info-multistream-yes = Stöds
+device-info-multistream-no = Stöds inte
+device-info-rotation = Rotation
+device-info-none = Ingen enhetsinformation tillgänglig
 
 # Förinställningar för bithastighet
 preset-low = Låg
@@ -68,7 +80,7 @@ initializing-camera = Initierar kamera...
 format-resolution = Upplösning:
 format-framerate = Bildfrekvens:
 
-# Statusindikatorer
+# Status Statusindikatorer
 indicator-res = UPL
 indicator-fps = FPS
 indicator-hd = HD
@@ -102,6 +114,10 @@ exposure-backlight = Bakgrundsbelysning
 exposure-manual-mode = Manuell
 exposure-auto-mode = Automatisk
 exposure-not-supported = stöds inte
+
+# Fokuskontroller
+fokus-auto = Fokus
+fokus-position = Fokus
 
 # Färgkontroller
 color-title = Färg
@@ -162,25 +178,94 @@ about-support = Support & feedback
 insights-title = Insikter
 insights-pipeline = Pipeline
 insights-pipeline-full = GStreamer Pipeline
+insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Avkodarens reservkedja
-
-insights-performance = Liveframträdande
+insights-stream-combined = Förhandsgranska + spela in ström
 insights-frame-latency = Bildfördröjning
-insights-dropped-frames = Droppade bildrutor
-insights-frame-size-decoded = Bildrutestorlek
+insights-dropped-frames = Borttappade bildrutor
+insights-frame-size-decoded = Storlek på bildruta
 insights-decode-time-gst = Buffertbehandling
-insights-copy-time = Bildruta omslagstid
-insights-gpu-upload-time = GPU Uppladdningstid
-insights-gpu-upload-bandwidth = GPU-uppladdningsbandbredd
-
-insights-format = Format
+insights-copy-time = Bildomslagstid
+insights-gpu-upload-time = GPU uppladdningstid
+insights-gpu-upload-bandwidth = GPU uppladdningsbandbredd
 insights-format-source = Källa
 insights-format-resolution = Upplösning
 insights-format-framerate = Bildfrekvens
 insights-format-native = Ursprungligt format
-insights-format-gstreamer = GStreamer utmatning
-insights-format-wgpu = GPU-bearbetning
-
+insights-format-gstreamer = GStreamer utdata
+insights-cpu-processing = CPU bearbetning
+insights-cpu-decode-time = CPU-avkodningstid
+insights-format-wgpu = GPU bearbetning
 insights-selected = Vald
 insights-available = Tillgänglig
 insights-unavailable = Inte tillgänglig
+
+# Insikter - Backend
+insights-backend = Backend
+insights-backend-type = Typ
+insights-pipeline-handler = Pipeline hanterare
+insights-libcamera-version = libcamera version
+insights-sensor-model = Sensor
+insights-mjpeg-decoder = MJPEG avkodare
+
+# Insikter - Multiström
+insights-multistream-single = Enkelström
+insights-multistream-dual = Dubbelström
+insights-multistream-source-shared = Förhandsgranska och spela in
+insights-multistream-source-separate = Förhandsgranska / spela in
+insights-stream-preview = Förhandsgranska ström
+insights-stream-capture = Spela in ström
+insights-stream-role = Roll
+insights-stream-resolution = Upplösning
+insights-stream-pixel-format = Pixelformat
+insights-stream-frame-count = Bildrutor
+
+# Insikter - Inspelning
+insights-recording = Inspelnings pipeline
+insights-recording-mode = Läge
+insights-recording-encoder = Avkodare
+insights-recording-resolution = Upplösning
+insights-recording-framerate = Bildfrekvens
+insights-recording-capture = Fångst tråd
+insights-recording-channel = Kanal
+insights-recording-pusher = Appsrc pusher
+insights-recording-fps = Effektiv FPS
+insights-recording-delay = Bearbetningsfördröjning
+insights-recording-convert = NV12 konvertera
+insights-recording-pts = Nuvarande PTS
+insights-recording-pipeline = Pipeline
+
+# Insikter - Ljud
+insights-audio = Ljud
+insights-audio-recording = Inspelning
+insights-audio-device = Enhet
+insights-audio-node = Nod
+insights-audio-codec = Kodek
+insights-audio-channels = Kanaler
+insights-audio-enabled = Aktiverad
+insights-audio-disabled = Inaktiverad
+insights-audio-default = (Standard)
+insights-audio-mono = Mono
+insights-audio-pipeline = Pipeline
+insights-audio-format = Format
+insights-audio-inputs = Ingångskanaler
+insights-audio-output-level = Utgångsnivå
+insights-audio-not-recording = Spelar inte in
+
+# Insikter - Metadata per bildruta
+insights-metadata = Bildruta metadata
+insights-meta-exposure = Exponering
+insights-meta-analogue-gain = Analog förstärkning
+insights-meta-digital-gain = Digital förstärkning
+insights-meta-colour-temp = Färgtemperatur
+insights-meta-sequence = Sekvens
+insights-meta-colour-gains = VB förstärkning (R, B)
+insights-meta-black-level = Svartnivå
+insights-meta-lens-position = Linsposition
+insights-meta-lux = Belysningsstyrka
+insights-meta-focus-fom = Fokus FoM
+insights-meta-na = Inte tillgängligt
+
+# Insikter - Fånga
+insights-capture = Fånga
+insights-capture-burst = Ta seriebilder
