@@ -270,10 +270,7 @@ impl AppModel {
 
         self.camera_dropdown_options = Self::build_camera_dropdown_labels(&self.available_cameras);
 
-        self.active_format = {
-            info!("Photo mode: selecting maximum resolution");
-            crate::app::format_picker::preferences::select_max_resolution_format(&formats)
-        };
+        self.select_format_from_cache(self.mode);
 
         // Set default aspect ratio based on selected format dimensions (accounting for rotation)
         if let Some(fmt) = &self.active_format {

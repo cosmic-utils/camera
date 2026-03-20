@@ -121,7 +121,10 @@ impl AppModel {
                 .map(|f| {
                     let desc = get_codec_short_description(&f.pixel_format);
                     let detail = get_codec_display_detail(&f.pixel_format);
-                    (f.pixel_format.clone(), format!("{} ({})", desc, detail))
+                    (
+                        f.pixel_format.clone(),
+                        format!("{} - {} ({})", f.pixel_format, desc, detail),
+                    )
                 })
                 .collect::<HashSet<_>>()
                 .into_iter()

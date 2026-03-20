@@ -5,6 +5,7 @@
 use crate::app::format_picker::preferences as format_selection;
 use crate::app::state::{AppModel, CameraMode};
 use crate::backends::camera::types::{CameraFormat, Framerate};
+use crate::config::BurstModeSetting;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use tracing::{error, info};
 
@@ -19,6 +20,40 @@ fn framerate_matches_config(framerate: Option<&Framerate>, config_fps: Option<u3
 }
 
 impl AppModel {
+    /// Whether the format picker should be hidden for the current mode.
+    /// Libcamera handles resolution automatically in Photo/Video/Timelapse modes.
+    pub fn is_format_picker_hidden(&self) -> bool {
+        matches!(
+            self.mode,
+            CameraMode::Photo | CameraMode::Video | CameraMode::Timelapse
+        )
+    }
+
+    /// Whether the HDR+/burst mode button should be visible.
+    ///
+    /// - Off setting: hidden
+    /// - Auto with 1 frame (bright scene) AND not overridden: hidden
+    /// - Auto with >1 frames OR overridden: visible
+    /// - Fixed frame counts: always visible
+    pub fn should_show_burst_button(&self) -> bool {
+        match self.config.burst_mode_setting {
+            BurstModeSetting::Off => false,
+            BurstModeSetting::Auto => {
+                self.auto_detected_frame_count > 1 || self.hdr_override_disabled
+            }
+            _ => true,
+        }
+    }
+
+    /// Ordered list of available camera modes.
+    pub fn available_modes(&self) -> Vec<CameraMode> {
+        let mut modes = vec![CameraMode::Timelapse, CameraMode::Video, CameraMode::Photo];
+        if self.config.virtual_camera_enabled {
+            modes.push(CameraMode::Virtual);
+        }
+        modes
+    }
+
     /// Start a blur transition, capturing the current frame rotation for use during blur.
     /// This ensures the blurred frame uses the rotation of the camera that produced it,
     /// not the rotation of the camera being switched to.
@@ -35,70 +70,6 @@ impl AppModel {
         let _ = self
             .transition_state
             .start_with_duration(duration_ms, disable_ui);
-    }
-
-    /// Check if switching to a different mode would change the camera format
-    /// Returns true if the format would change, false if it would stay the same
-    pub fn would_format_change_for_mode(&self, new_mode: CameraMode) -> bool {
-        let camera_index = self.current_camera_index;
-        if camera_index >= self.available_cameras.len() {
-            return true; // No camera available, assume change
-        }
-
-        let camera = &self.available_cameras[camera_index];
-        let camera_path = &camera.path;
-
-        // Get formats for the new mode using configured backend
-        let backend = crate::backends::camera::create_backend();
-        let formats_for_new_mode = backend.get_formats(camera, new_mode == CameraMode::Video);
-
-        // Helper to check saved settings for a mode
-        let check_saved_settings = |settings_map: &std::collections::HashMap<
-            String,
-            crate::config::FormatSettings,
-        >| {
-            settings_map
-                .get(camera_path)
-                .and_then(|settings| {
-                    formats_for_new_mode.iter().find(|f| {
-                        f.width == settings.width
-                            && f.height == settings.height
-                            && framerate_matches_config(f.framerate.as_ref(), settings.framerate)
-                            && f.pixel_format == settings.pixel_format
-                    })
-                })
-                .cloned()
-        };
-
-        // Determine what format would be selected in the new mode
-        // Note: We don't use current format as fallback to avoid cross-contamination
-        let would_select_format = match new_mode {
-            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse => {
-                // Photo/Virtual/Timelapse mode: saved settings > max resolution
-                check_saved_settings(&self.config.photo_settings).or_else(|| {
-                    format_selection::select_max_resolution_format(&formats_for_new_mode)
-                })
-            }
-            CameraMode::Video => {
-                // Video mode: saved settings > optimal video defaults
-                check_saved_settings(&self.config.video_settings).or_else(|| {
-                    format_selection::select_first_time_video_format(&formats_for_new_mode)
-                })
-            }
-        };
-
-        // Compare with current format
-        match (self.active_format.as_ref(), would_select_format.as_ref()) {
-            (Some(current), Some(would_select)) => {
-                // Both formats exist - compare them
-                current.width != would_select.width
-                    || current.height != would_select.height
-                    || current.framerate != would_select.framerate
-                    || current.pixel_format != would_select.pixel_format
-            }
-            (None, Some(_)) | (Some(_), None) => true, // One exists, one doesn't - format changes
-            (None, None) => false,                     // Both None - no change
-        }
     }
 
     /// Save current camera and format settings to config
@@ -222,6 +193,29 @@ impl AppModel {
 
     /// Switch to a different camera or update format after camera/mode change
     /// This consolidates the logic shared by SwitchCamera, SetMode, and SelectCamera messages
+    /// Select format from cached available_formats without querying hardware.
+    /// Used during pipeline restart to avoid blocking the UI thread.
+    /// Select format from cached available_formats and update UI dropdowns.
+    /// Does NOT save to disk — call save_settings() separately (or defer it)
+    /// to avoid blocking the UI thread on eMMC writes.
+    pub fn select_format_from_cache(&mut self, mode: CameraMode) {
+        let camera_path = self
+            .available_cameras
+            .get(self.current_camera_index)
+            .map(|c| c.path.clone())
+            .unwrap_or_default();
+
+        self.active_format = match mode {
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse => {
+                self.select_photo_format(&camera_path)
+            }
+            CameraMode::Video => self.select_video_format(&camera_path),
+        };
+
+        self.update_all_dropdowns();
+        self.config.last_camera_path = Some(camera_path);
+    }
+
     pub fn switch_camera_or_mode(&mut self, camera_index: usize, mode: CameraMode) {
         if camera_index >= self.available_cameras.len() {
             return;
@@ -230,7 +224,8 @@ impl AppModel {
         let camera = &self.available_cameras[camera_index];
         let camera_path = camera.path.clone();
 
-        // Get formats for this camera using configured backend
+        // Get formats for this camera using configured backend.
+        // Non-blocking: returns cached formats if the pipeline lock is contended.
         let backend = crate::backends::camera::create_backend();
         self.available_formats = backend.get_formats(camera, mode == CameraMode::Video);
 

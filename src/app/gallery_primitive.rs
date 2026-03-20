@@ -19,6 +19,10 @@ pub struct GalleryPrimitive {
     pub width: u32,
     pub height: u32,
     pub corner_radius: f32,
+    /// Hover/pressed overlay intensity (0.0 = none, 0.15 = hover, 0.25 = pressed)
+    pub hover_alpha: f32,
+    /// Accent border color (RGBA) shown when hovered
+    pub accent_color: [f32; 4],
 }
 
 impl GalleryPrimitive {
@@ -35,6 +39,8 @@ impl GalleryPrimitive {
             width,
             height,
             corner_radius,
+            hover_alpha: 0.0,
+            accent_color: [0.0; 4],
         }
     }
 }
@@ -45,13 +51,16 @@ pub struct GalleryPipeline {
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     texture_format: wgpu::TextureFormat,
-    // Cache for uploaded textures
-    texture_cache: std::collections::HashMap<ImageId, GalleryTexture>,
+    // Cache for the single uploaded texture (at most one gallery thumbnail at a time)
+    texture_cache: Option<(ImageId, GalleryTexture)>,
 }
 
 struct GalleryTexture {
     bind_group: wgpu::BindGroup,
     viewport_buffer: wgpu::Buffer,
+    /// Physical widget bounds (x, y, width, height) clamped to render target
+    /// Stored during prepare() and used in render() for valid viewport rect
+    physical_bounds: Option<(f32, f32, f32, f32)>,
 }
 
 impl PipelineTrait for GalleryPipeline {
@@ -74,7 +83,7 @@ impl PrimitiveTrait for GalleryPrimitive {
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
         bounds: &Rectangle,
-        _viewport: &Viewport,
+        viewport: &Viewport,
     ) {
         // Upload image texture if needed and update viewport buffer
         pipeline.upload_image(
@@ -86,13 +95,50 @@ impl PrimitiveTrait for GalleryPrimitive {
             self.height,
         );
 
-        // Update viewport size and corner radius for this image
+        // Calculate physical bounds from logical bounds using scale factor
+        // Then clamp to render target to ensure valid viewport rect
+        let scale = viewport.scale_factor() as f32;
+        let render_target = viewport.physical_size();
+
+        let raw = (
+            bounds.x * scale,
+            bounds.y * scale,
+            bounds.width * scale,
+            bounds.height * scale,
+        );
+
+        let clamped_x = raw.0.max(0.0);
+        let clamped_y = raw.1.max(0.0);
+        let clamped_w = ((raw.0 + raw.2).min(render_target.width as f32) - clamped_x).max(0.0);
+        let clamped_h = ((raw.1 + raw.3).min(render_target.height as f32) - clamped_y).max(0.0);
+
+        // Calculate UV offset/scale to compensate for clamping
+        let (uv_offset, uv_scale) = if raw.2 > 0.0 && raw.3 > 0.0 {
+            (
+                ((clamped_x - raw.0) / raw.2, (clamped_y - raw.1) / raw.3),
+                (clamped_w / raw.2, clamped_h / raw.3),
+            )
+        } else {
+            ((0.0, 0.0), (1.0, 1.0))
+        };
+
+        // Store physical bounds for render()
+        pipeline.store_physical_bounds(
+            &self.image_handle,
+            (clamped_x, clamped_y, clamped_w, clamped_h),
+        );
+
+        // Update viewport size, corner radius, and UV adjustment
         pipeline.update_viewport(
             queue,
             &self.image_handle,
             bounds.width,
             bounds.height,
             self.corner_radius,
+            self.hover_alpha,
+            self.accent_color,
+            uv_offset,
+            uv_scale,
         );
     }
 
@@ -204,7 +250,7 @@ impl GalleryPipeline {
             bind_group_layout,
             sampler,
             texture_format: format,
-            texture_cache: std::collections::HashMap::new(),
+            texture_cache: None,
         }
     }
 
@@ -221,13 +267,13 @@ impl GalleryPipeline {
         let image_id = image_handle.id();
 
         // Check if already uploaded
-        if self.texture_cache.contains_key(&image_id) {
+        if self
+            .texture_cache
+            .as_ref()
+            .is_some_and(|(id, _)| *id == image_id)
+        {
             return;
         }
-
-        // Clear stale textures - since there's only one gallery thumbnail,
-        // remove any old textures before uploading the new one
-        self.texture_cache.clear();
 
         // Use the provided RGBA data directly
         if rgba_data.is_empty() {
@@ -288,18 +334,14 @@ impl GalleryPipeline {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Create viewport params buffer (will be updated during render)
-        // Contains: size (2 floats), corner_radius (1 float), padding (1 float)
+        // Create viewport params buffer (will be updated in update_viewport before render)
+        // Contains: size (2), corner_radius (1), hover_alpha (1), accent_color (4), uv_offset (2), uv_scale (2)
         let viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gallery viewport buffer"),
-            size: std::mem::size_of::<[f32; 4]>() as u64,
+            size: std::mem::size_of::<[f32; 12]>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        // Initialize with default 40x40 size and 8.0 corner radius
-        let viewport_data = [40.0f32, 40.0f32, 8.0f32, 0.0f32];
-        queue.write_buffer(&viewport_buffer, 0, bytemuck::cast_slice(&viewport_data));
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("gallery bind group"),
@@ -320,15 +362,30 @@ impl GalleryPipeline {
             ],
         });
 
-        self.texture_cache.insert(
+        self.texture_cache = Some((
             image_id,
             GalleryTexture {
                 bind_group,
                 viewport_buffer,
+                physical_bounds: None,
             },
-        );
+        ));
     }
 
+    fn store_physical_bounds(
+        &mut self,
+        image_handle: &cosmic::widget::image::Handle,
+        physical_bounds: (f32, f32, f32, f32),
+    ) {
+        let image_id = image_handle.id();
+        if let Some((id, gallery_texture)) = &mut self.texture_cache
+            && *id == image_id
+        {
+            gallery_texture.physical_bounds = Some(physical_bounds);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn update_viewport(
         &mut self,
         queue: &wgpu::Queue,
@@ -336,12 +393,32 @@ impl GalleryPipeline {
         width: f32,
         height: f32,
         corner_radius: f32,
+        hover_alpha: f32,
+        accent_color: [f32; 4],
+        uv_offset: (f32, f32),
+        uv_scale: (f32, f32),
     ) {
         let image_id = image_handle.id();
 
-        if let Some(gallery_texture) = self.texture_cache.get(&image_id) {
-            // Pack viewport params: size (2 floats), corner_radius (1 float), padding (1 float)
-            let viewport_data = [width, height, corner_radius, 0.0f32];
+        if let Some((id, gallery_texture)) = &self.texture_cache {
+            if *id != image_id {
+                return;
+            }
+            // Pack: size (2), corner_radius (1), hover_alpha (1), accent_color (4), uv_offset (2), uv_scale (2)
+            let viewport_data = [
+                width,
+                height,
+                corner_radius,
+                hover_alpha,
+                accent_color[0],
+                accent_color[1],
+                accent_color[2],
+                accent_color[3],
+                uv_offset.0,
+                uv_offset.1,
+                uv_scale.0,
+                uv_scale.1,
+            ];
             queue.write_buffer(
                 &gallery_texture.viewport_buffer,
                 0,
@@ -359,10 +436,19 @@ impl GalleryPipeline {
     ) {
         let image_id = image_handle.id();
 
-        if let Some(gallery_texture) = self.texture_cache.get(&image_id) {
-            if clip_bounds.width == 0 || clip_bounds.height == 0 {
+        if let Some((id, gallery_texture)) = &self.texture_cache {
+            if *id != image_id || clip_bounds.width == 0 || clip_bounds.height == 0 {
                 return;
             }
+
+            // Use full widget bounds for viewport (prevents distortion when partially clipped)
+            // Fall back to clip_bounds if physical_bounds not available
+            let widget_bounds = gallery_texture.physical_bounds.unwrap_or((
+                clip_bounds.x as f32,
+                clip_bounds.y as f32,
+                clip_bounds.width as f32,
+                clip_bounds.height as f32,
+            ));
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("gallery render pass"),
@@ -380,15 +466,17 @@ impl GalleryPipeline {
                 occlusion_query_set: None,
             });
 
+            // Use full widget bounds for viewport (prevents distortion in scrollables)
             render_pass.set_viewport(
-                clip_bounds.x as f32,
-                clip_bounds.y as f32,
-                clip_bounds.width as f32,
-                clip_bounds.height as f32,
+                widget_bounds.0,
+                widget_bounds.1,
+                widget_bounds.2,
+                widget_bounds.3,
                 0.0,
                 1.0,
             );
 
+            // Use clip bounds for scissor (clips to visible portion)
             render_pass.set_scissor_rect(
                 clip_bounds.x,
                 clip_bounds.y,
@@ -398,7 +486,7 @@ impl GalleryPipeline {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, Some(&gallery_texture.bind_group), &[]);
-            render_pass.draw(0..6, 0..1);
+            render_pass.draw(0..3, 0..1);
         }
     }
 }

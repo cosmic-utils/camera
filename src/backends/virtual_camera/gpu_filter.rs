@@ -54,17 +54,18 @@ impl GpuFilterRenderer {
     pub async fn new() -> BackendResult<Self> {
         info!("Initializing GPU filter renderer (RGBA mode)");
 
-        // Create device with low-priority queue to avoid starving UI rendering
-        let (device, queue, gpu_info) =
-            gpu::create_low_priority_compute_device("virtual_camera_gpu")
-                .await
-                .map_err(BackendError::InitializationFailed)?;
+        // Get shared GPU device to avoid creating multiple wgpu instances
+        let gpu = gpu::get_shared_gpu()
+            .await
+            .map_err(BackendError::InitializationFailed)?;
+        let device = gpu.device;
+        let queue = gpu.queue;
 
         info!(
-            name = %gpu_info.adapter_name,
-            backend = ?gpu_info.backend,
-            low_priority = gpu_info.low_priority_enabled,
-            "GPU device created for virtual camera filter"
+            name = %gpu.info.adapter_name,
+            backend = ?gpu.info.backend,
+            low_priority = gpu.info.low_priority_enabled,
+            "Using shared GPU device for virtual camera filter"
         );
 
         // Create shader with shared filter functions

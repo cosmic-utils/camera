@@ -344,16 +344,15 @@ impl CameraBackend for LibcameraBackend {
     fn enumerate_cameras(&self) -> Vec<CameraDevice> {
         debug!("Enumerating cameras via libcamera-rs");
 
-        // If a capture pipeline is active, we can't create another CameraManager.
-        // Return cached results from the last successful enumeration.
+        let _lock = CAMERA_MANAGER_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        // Check under the lock to avoid TOCTOU race with capture thread
         if native::is_capture_active() {
             debug!("Capture active, returning cached camera list");
             return CACHED_DEVICES.read().map(|g| g.clone()).unwrap_or_default();
         }
-
-        let _lock = CAMERA_MANAGER_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
 
         let mgr = match CameraManager::new() {
             Ok(mgr) => mgr,
@@ -492,26 +491,40 @@ impl CameraBackend for LibcameraBackend {
     }
 
     fn get_formats(&self, device: &CameraDevice, video_mode: bool) -> Vec<CameraFormat> {
-        info!(device_path = %device.path, video_mode, "Getting formats via libcamera-rs");
+        debug!(device_path = %device.path, video_mode, "Getting formats via libcamera-rs");
 
-        // If a capture pipeline is active, we can't create another CameraManager.
-        // Return cached results from the last successful format query for this device.
+        // Try to acquire the lock without blocking. If the capture thread holds it
+        // (e.g. during pipeline teardown), return cached formats so the UI stays responsive.
+        let _lock = match CAMERA_MANAGER_LOCK.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let cached = CACHED_FORMATS
+                    .read()
+                    .ok()
+                    .and_then(|cache| cache.get(&device.path).cloned())
+                    .unwrap_or_default();
+                debug!(
+                    count = cached.len(),
+                    "Lock contended (pipeline restarting), returning cached formats"
+                );
+                return cached;
+            }
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+        };
+
+        // Check under the lock to avoid TOCTOU race with capture thread
         if native::is_capture_active() {
             let cached = CACHED_FORMATS
                 .read()
                 .ok()
                 .and_then(|cache| cache.get(&device.path).cloned())
                 .unwrap_or_default();
-            info!(
+            debug!(
                 count = cached.len(),
                 "Capture active, returning cached formats"
             );
             return cached;
         }
-
-        let _lock = CAMERA_MANAGER_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
 
         let mgr = match CameraManager::new() {
             Ok(mgr) => mgr,
@@ -577,14 +590,13 @@ impl CameraBackend for LibcameraBackend {
             &device.path,
             format,
             device.supports_multistream,
-            false, // video_mode: LibcameraBackend::initialize() is not mode-aware;
-            // the subscription in app/mod.rs creates the pipeline directly
             PipelineSharedState {
                 frame_sender: sender,
                 still_requested,
                 still_frame,
                 recording_sender: Arc::new(Mutex::new(None)),
                 jpeg_recording_mode: Arc::new(AtomicBool::new(false)),
+                cancel_flag: Arc::new(AtomicBool::new(false)),
             },
         )?;
 
@@ -690,6 +702,23 @@ impl CameraBackend for LibcameraBackend {
             .ok_or_else(|| BackendError::Other("No frame available".to_string()))
     }
 
+    fn request_still_capture(&self) -> BackendResult<()> {
+        let pipeline = self
+            .pipeline
+            .as_ref()
+            .ok_or_else(|| BackendError::Other("Pipeline not initialized".to_string()))?;
+        pipeline.request_still_capture();
+        Ok(())
+    }
+
+    fn poll_still_frame(&self) -> Option<CameraFrame> {
+        self.pipeline.as_ref()?.get_still_frame()
+    }
+
+    fn poll_preview_frame(&self) -> Option<CameraFrame> {
+        self.pipeline.as_ref()?.get_preview_frame()
+    }
+
     fn get_preview_receiver(&self) -> Option<FrameReceiver> {
         self.frame_receiver.lock().unwrap().take()
     }
@@ -741,13 +770,13 @@ pub fn create_pipeline(
         &device.path,
         format,
         device.supports_multistream,
-        false,
         PipelineSharedState {
             frame_sender: sender,
             still_requested: Arc::new(AtomicBool::new(false)),
             still_frame: Arc::new(Mutex::new(None)),
             recording_sender: Arc::clone(&recording_sender),
             jpeg_recording_mode: Arc::new(AtomicBool::new(false)),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
         },
     )
     .map_err(|e| format!("{}", e))?;

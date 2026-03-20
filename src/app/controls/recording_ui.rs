@@ -55,7 +55,6 @@ impl AppModel {
 
         let row = widget::row()
             .push(indicator_dot(Color::from_rgb(1.0, 0.0, 0.0)))
-            .push(widget::space::horizontal().width(spacing.space_xxs))
             .push(widget::text(duration_text).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
@@ -81,7 +80,6 @@ impl AppModel {
 
         let row = widget::row()
             .push(indicator_dot(Color::from_rgb(0.1, 0.7, 0.2)))
-            .push(widget::space::horizontal().width(spacing.space_xxs))
             .push(widget::text(fl!("streaming-live")).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
@@ -107,7 +105,7 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
 
         let label = if self.timelapse.is_finalising() {
-            "Saving video...".to_string()
+            fl!("timelapse-saving")
         } else {
             let taken = self.timelapse.shots_taken();
             let elapsed = format_duration(self.timelapse.elapsed_duration());
@@ -115,7 +113,7 @@ impl AppModel {
         };
 
         let row = widget::row()
-            .push(indicator_dot(Color::from_rgb(1.0, 0.0, 0.0)))
+            .push(indicator_dot(Color::from_rgb(1.0, 0.55, 0.0)))
             .push(widget::text(label).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);

@@ -32,6 +32,11 @@ impl AppModel {
 
     pub(crate) fn handle_toggle_virtual_camera(&mut self) -> Task<cosmic::Action<Message>> {
         if self.virtual_camera.is_streaming() {
+            self.animate_capture_scale(1.0);
+        } else {
+            self.animate_capture_scale(0.82);
+        }
+        if self.virtual_camera.is_streaming() {
             info!("Stopping virtual camera streaming");
 
             // For video file sources, save the current playback position BEFORE stopping
@@ -49,6 +54,7 @@ impl AppModel {
             // but don't send VirtualCameraStopped - the streaming thread will send it
             // when it actually stops. This avoids duplicate messages.
             self.virtual_camera = VirtualCameraState::Idle;
+            self.start_bottom_bar_fade(1.0);
 
             // Clear current frame to avoid accessing invalid mapped buffers
             // The frame might contain a GStreamer mapped buffer that becomes invalid
@@ -84,6 +90,7 @@ impl AppModel {
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel();
         let (filter_tx, mut filter_rx) = tokio::sync::watch::channel(filter_type);
         self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx, false);
+        self.start_bottom_bar_fade(0.0);
 
         // Start the virtual camera streaming on a DEDICATED THREAD
         // This is critical: CPU filtering is blocking and must NOT run on the async executor
@@ -216,6 +223,7 @@ impl AppModel {
 
         // Use start_file_source to mark this as file source streaming
         self.virtual_camera = VirtualCameraState::start(stop_tx, frame_tx, filter_tx, true);
+        self.start_bottom_bar_fade(0.0);
 
         // For video files, keep the current progress (with stored seek position) until
         // the streaming thread sends actual progress updates. This prevents the slider
@@ -586,6 +594,7 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.virtual_camera = VirtualCameraState::Idle;
         self.update_idle_inhibit();
+        self.start_bottom_bar_fade(1.0);
         // Clear the file source preview receiver (only relevant for file source streaming)
         self.file_source_preview_receiver = None;
 

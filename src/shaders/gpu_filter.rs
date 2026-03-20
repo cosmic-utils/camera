@@ -44,15 +44,16 @@ impl GpuFilterPipeline {
     pub async fn new() -> Result<Self, String> {
         info!("Initializing GPU filter pipeline");
 
-        // Create device with low-priority queue to avoid starving UI rendering
-        let (device, queue, gpu_info) =
-            gpu::create_low_priority_compute_device("filter_pipeline_gpu").await?;
+        // Get shared GPU device to avoid creating multiple wgpu instances
+        let gpu = gpu::get_shared_gpu().await?;
+        let device = gpu.device;
+        let queue = gpu.queue;
 
         info!(
-            adapter_name = %gpu_info.adapter_name,
-            adapter_backend = ?gpu_info.backend,
-            low_priority = gpu_info.low_priority_enabled,
-            "GPU device created for filter pipeline"
+            adapter_name = %gpu.info.adapter_name,
+            adapter_backend = ?gpu.info.backend,
+            low_priority = gpu.info.low_priority_enabled,
+            "Using shared GPU device for filter pipeline"
         );
 
         // Create shader with shared filter functions

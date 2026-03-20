@@ -322,6 +322,17 @@ impl cosmic::Application for AppModel {
             config,
             config_handler,
             mode: CameraMode::Photo,
+            carousel_button_slide: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            quick_record: crate::app::state::QuickRecordState::Idle,
+            capture_scale_from: 1.0,
+            capture_scale_to: 1.0,
+            capture_anim_start: None,
+            photo_btn_scale_from: 1.0,
+            photo_btn_scale_to: 1.0,
+            photo_btn_anim_start: None,
+            bottom_bar_opacity_target: 1.0,
+            bottom_bar_opacity_from: 1.0,
+            bottom_bar_fade_start: None,
             recording: RecordingState::default(),
             virtual_camera: VirtualCameraState::default(),
             virtual_camera_file_source: preview_file_source,
@@ -707,10 +718,6 @@ impl cosmic::Application for AppModel {
         // Restart counter forces subscription to restart (e.g., after HDR+ processing)
         let restart_counter = self.camera_stream_restart_counter;
 
-        // Capture current mode so mode changes restart the libcamera pipeline
-        // (different modes use different stream roles: Raw for photo, VideoRecording for video)
-        let camera_mode = self.mode;
-
         // Get the shared recording sender Arc so the capture thread can forward
         // frames directly to the appsrc recording pipeline (libcamera only).
         let recording_sender = self.backend_manager.as_ref().map(|m| m.recording_sender());
@@ -736,8 +743,7 @@ impl cosmic::Application for AppModel {
                     // NOTE: is_recording is NOT included here!
                     // This allows preview to continue during recording
                     cameras_initialized,
-                    restart_counter, // Forces restart after HDR+ processing
-                    camera_mode,     // Restart pipeline when mode changes (different stream roles)
+                    restart_counter, // Forces restart (HDR+ processing, mode switch with role change)
                 ),
                 cosmic::iced::stream::channel(100, async move |mut output| {
                     info!(camera_index, "Camera subscription started");
@@ -916,8 +922,6 @@ impl cosmic::Application for AppModel {
                                     format.clone()
                                 };
 
-                                let video_mode = camera_mode == CameraMode::Video;
-
                                 // Use the shared recording sender from the manager,
                                 // or a dummy Arc if no manager is available.
                                 let rec_sender = recording_sender
@@ -928,13 +932,13 @@ impl cosmic::Application for AppModel {
                                     camera_name,
                                     &preview_format,
                                     device.supports_multistream,
-                                    video_mode,
                                     crate::backends::camera::libcamera::PipelineSharedState {
                                         frame_sender: sender,
                                         still_requested: Arc::clone(&still_capture_requested),
                                         still_frame: Arc::clone(&latest_still_frame),
                                         recording_sender: rec_sender,
                                         jpeg_recording_mode: Arc::clone(&jpeg_recording_mode),
+                                        cancel_flag: Arc::clone(&cancel_flag),
                                     },
                                 ) {
                                     Ok(pipeline) => {

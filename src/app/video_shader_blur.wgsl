@@ -143,7 +143,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             // Sample RGB texture
             let rgb = textureSample(texture_blur, sampler_blur, sample_coords).rgb;
 
-            // Gaussian weight based on actual distance from center
+            // Ring-level weight (same for all samples in this ring, not per-sample Gaussian)
             let dist_squared = radius * radius;
             let weight = exp(-dist_squared / sigma_squared_2);
 
@@ -152,9 +152,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    // Add center sample with higher weight for stability
+    // Add center sample with Gaussian weight (distance=0 → exp(0)=1.0)
     let center_rgb = textureSample(texture_blur, sampler_blur, tex_coords).rgb;
-    let center_weight = 2.0;  // Stronger center weight
+    let center_weight = 1.0;
 
     rgb_sum += center_rgb * center_weight;
     weight_sum += center_weight;

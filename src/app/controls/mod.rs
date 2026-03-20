@@ -7,7 +7,6 @@
 //! - Recording indicator and timer
 
 pub mod capture_button;
-pub mod recording_buttons;
 pub mod recording_ui;
 
 // Re-export for convenience

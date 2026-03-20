@@ -45,6 +45,7 @@ impl AppModel {
         self.exposure_picker_visible = false;
         self.color_picker_visible = false;
         self.tools_menu_visible = false;
+        self.motor_picker_visible = false;
     }
 
     pub(crate) fn handle_toggle_format_picker(&mut self) -> Task<cosmic::Action<Message>> {

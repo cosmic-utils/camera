@@ -49,7 +49,7 @@ pub(crate) static DIAGNOSTICS: RwLock<PipelineDiagnostics> = RwLock::new(Pipelin
 
 /// Check if a capture thread currently holds a CameraManager.
 /// When true, no other code should create a CameraManager.
-pub(crate) fn is_capture_active() -> bool {
+pub fn is_capture_active() -> bool {
     CAPTURE_ACTIVE.load(Ordering::Acquire)
 }
 
@@ -112,11 +112,8 @@ pub(crate) struct StreamDiag {
 
 pub(crate) struct DiagnosticParams {
     pub(crate) is_multistream: bool,
-    pub(crate) has_video_stream: bool,
-    pub(crate) is_video_mode: bool,
     pub(crate) vf: StreamDiag,
     pub(crate) raw: StreamDiag,
-    pub(crate) video: StreamDiag,
 }
 
 pub(crate) fn publish_diagnostics(p: DiagnosticParams) {
@@ -128,23 +125,15 @@ pub(crate) fn publish_diagnostics(p: DiagnosticParams) {
         "libcamera ViewFinder {}x{} {}",
         p.vf.size.width, p.vf.size.height, p.vf.format_name
     );
-    if p.has_video_stream {
-        desc.push_str(&format!(
-            " + VideoRecording {}x{} {}",
-            p.video.size.width, p.video.size.height, p.video.format_name
-        ));
-    } else if p.is_multistream {
+    if p.is_multistream {
         desc.push_str(&format!(
             " + Raw {}x{} {}",
             p.raw.size.width, p.raw.size.height, p.raw.format_name
         ));
     }
-    if p.is_video_mode && !p.has_video_stream {
-        desc.push_str(" (video fallback: VF→encoder)");
-    }
     d.pipeline_string = Some(desc);
 
-    d.is_multistream = p.is_multistream || p.has_video_stream;
+    d.is_multistream = p.is_multistream;
 
     // When MJPEG: initial label is "MJPEG"; updated to actual decoded
     // format (e.g. "I422 (MJPEG)") after first frame is decoded.
@@ -153,16 +142,7 @@ pub(crate) fn publish_diagnostics(p: DiagnosticParams) {
         p.vf.format_name.clone(),
     ));
 
-    if p.has_video_stream {
-        d.capture_stream_info = Some((
-            format!("{}x{}", p.video.size.width, p.video.size.height),
-            p.video.format_name,
-            p.video.stride,
-            p.video.size.height,
-        ));
-        d.preview_role = Some("View-finder".to_string());
-        d.capture_role = Some("Video-recording".to_string());
-    } else if p.is_multistream {
+    if p.is_multistream {
         d.capture_stream_info = Some((
             format!("{}x{}", p.raw.size.width, p.raw.size.height),
             p.raw.format_name,

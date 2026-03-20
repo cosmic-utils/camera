@@ -255,7 +255,7 @@ fn save_photo(frame: &CameraFrame) -> Result<PathBuf, Box<dyn std::error::Error>
     let img: image::RgbImage =
         image::ImageBuffer::from_raw(width, height, rgb_data).ok_or("Failed to create image")?;
 
-    let photo_dir = crate::app::get_photo_directory("Camera");
+    let photo_dir = crate::app::get_photo_directory(crate::constants::DEFAULT_SAVE_FOLDER);
     std::fs::create_dir_all(&photo_dir)?;
 
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -376,6 +376,9 @@ fn sample_pixel(frame: &CameraFrame, x: u32, y: u32) -> Color {
 }
 
 fn sample_pixel_rgb(frame: &CameraFrame, x: u32, y: u32) -> (u8, u8, u8) {
+    if frame.width == 0 || frame.height == 0 {
+        return (0, 0, 0);
+    }
     let x = x.min(frame.width - 1);
     let y = y.min(frame.height - 1);
     let data: &[u8] = &frame.data;

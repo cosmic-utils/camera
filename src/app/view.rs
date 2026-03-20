@@ -9,6 +9,7 @@
 //! - Bottom bar (bottom_bar module)
 //! - Format picker overlay (format_picker module)
 
+use crate::app::bottom_bar::slide_h::SlideH;
 use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
 use crate::app::video_widget::VideoContentFit;
@@ -269,94 +270,104 @@ impl AppModel {
         // Check if we have video file controls (play/pause button for video file sources)
         let has_video_controls = self.build_video_play_pause_button().is_some();
 
-        let capture_button_only =
-            if self.recording.is_recording() || self.virtual_camera.is_streaming() {
-                // When recording/streaming: stop button centered, photo button to its right
-                // For video file sources: also show play/pause button to the left
-                let stop_button = self.build_capture_button();
-                let photo_button = self.build_photo_during_recording_button();
-                let play_pause_button = self.build_video_play_pause_button();
+        let capture_button_only = if (self.recording.is_recording()
+            && !self.quick_record.is_recording())
+            || self.virtual_camera.is_streaming()
+        {
+            // When recording/streaming (not quick-record): stop button centered,
+            // photo button aligned with camera switch button in bottom bar below.
+            // Mirror the bottom bar: [Gallery=44] [Fill] [Center] [Fill] [Switch=44]
+            // Mirror the bottom bar layout exactly:
+            // Bottom bar: [gallery=44] [Fill] [carousel=150] [Fill] [switch=44]
+            // Recording:  [spacer=44]  [Fill] [stop=150]     [Fill] [photo]
+            // The stop circle is wrapped in a 150px container to match
+            // the carousel width, ensuring Fill spacers are identical
+            // and the photo button aligns with the camera switch position.
+            // Use the same layout as the bottom bar:
+            // [gallery(Shrink)] [Fill] [carousel(Shrink)] [Fill] [SlideH(switch, -1.0)]
+            // SlideH shifts the button visually inward by the carousel's
+            // button slide offset, keeping it aligned with the camera switch.
+            let stop_circle = self.build_capture_circle();
+            let photo_button = self.build_photo_during_recording_button();
+            let slide = std::sync::Arc::clone(&self.carousel_button_slide);
 
-                // Calculate button width for layout balancing
-                let button_width = crate::constants::ui::CAPTURE_BUTTON_OUTER;
-
-                // Layout depends on whether we have a play/pause button
-                // With play/pause: [Fill] [Play/Pause] [Stop] [Photo] [Fill]
-                // Without: [Fill] [Spacer] [Stop] [Photo] [Fill]
-                let mut row = widget::row().push(
+            let spacing = cosmic::theme::spacing();
+            let side_width = ui::PLACEHOLDER_BUTTON_WIDTH; // 44px
+            // Match carousel layout width (adapts to theme spacing density)
+            let center_width = crate::app::bottom_bar::mode_carousel::carousel_width_for_modes(
+                &self.available_modes(),
+            );
+            let row = widget::row()
+                .push(
+                    widget::Space::new()
+                        .width(Length::Fixed(side_width))
+                        .height(Length::Shrink),
+                )
+                .push(
                     widget::Space::new()
                         .width(Length::Fill)
                         .height(Length::Shrink),
-                );
-
-                if let Some(pp_button) = play_pause_button {
-                    // Add play/pause button to the left of stop button
-                    row = row.push(pp_button);
-                } else {
-                    // Add spacer to balance the photo button on the right
-                    row = row.push(
-                        widget::Space::new()
-                            .width(Length::Fixed(button_width))
-                            .height(Length::Shrink),
-                    );
-                }
-
-                row = row
-                    .push(stop_button)
-                    .push(photo_button)
-                    .push(
-                        widget::Space::new()
-                            .width(Length::Fill)
-                            .height(Length::Shrink),
-                    )
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill);
-
-                row.into()
-            } else if has_video_controls {
-                // Video file selected but not streaming: show play button + capture button
-                let capture_button = self.build_capture_button();
-                let play_pause_button = self.build_video_play_pause_button();
-                let icon_button_width = crate::constants::ui::ICON_BUTTON_WIDTH;
-
-                // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
-                // Use fixed-width container for play button to ensure centering
-                let mut row = widget::row().push(
+                )
+                .push(
+                    widget::container(stop_circle)
+                        .width(Length::Fixed(center_width))
+                        .center_x(center_width),
+                )
+                .push(
                     widget::Space::new()
                         .width(Length::Fill)
                         .height(Length::Shrink),
+                )
+                .push(SlideH::new(photo_button, slide, -1.0))
+                .padding([0, spacing.space_m])
+                .align_y(Alignment::Center)
+                .width(Length::Fill);
+
+            row.into()
+        } else if has_video_controls {
+            // Video file selected but not streaming: show play button + capture button
+            let capture_button = self.build_capture_button();
+            let play_pause_button = self.build_video_play_pause_button();
+            let icon_button_width = crate::constants::ui::ICON_BUTTON_WIDTH;
+
+            // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
+            // Use fixed-width container for play button to ensure centering
+            let mut row = widget::row().push(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Shrink),
+            );
+
+            if let Some(pp_button) = play_pause_button {
+                // Wrap play/pause button in fixed-width container for consistent centering
+                row = row.push(
+                    widget::container(pp_button)
+                        .width(Length::Fixed(icon_button_width))
+                        .align_x(cosmic::iced::alignment::Horizontal::Center),
                 );
+            }
 
-                if let Some(pp_button) = play_pause_button {
-                    // Wrap play/pause button in fixed-width container for consistent centering
-                    row = row.push(
-                        widget::container(pp_button)
-                            .width(Length::Fixed(icon_button_width))
-                            .align_x(cosmic::iced::alignment::Horizontal::Center),
-                    );
-                }
+            row = row
+                .push(capture_button)
+                // Spacer matches play/pause button width for centering
+                .push(
+                    widget::Space::new()
+                        .width(Length::Fixed(icon_button_width))
+                        .height(Length::Shrink),
+                )
+                .push(
+                    widget::Space::new()
+                        .width(Length::Fill)
+                        .height(Length::Shrink),
+                )
+                .align_y(Alignment::Center)
+                .width(Length::Fill);
 
-                row = row
-                    .push(capture_button)
-                    // Spacer matches play/pause button width for centering
-                    .push(
-                        widget::Space::new()
-                            .width(Length::Fixed(icon_button_width))
-                            .height(Length::Shrink),
-                    )
-                    .push(
-                        widget::Space::new()
-                            .width(Length::Fill)
-                            .height(Length::Shrink),
-                    )
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill);
-
-                row.into()
-            } else {
-                // Normal single capture button
-                self.build_capture_button()
-            };
+            row.into()
+        } else {
+            // Normal single capture button
+            self.build_capture_button()
+        };
 
         // Capture button area (filter name label is now an overlay on the preview)
         let capture_button_area: Element<'_, Message> = capture_button_only;
@@ -499,20 +510,18 @@ impl AppModel {
         // Wrap content in a stack so we can overlay the picker
         let mut main_stack = cosmic::iced::widget::stack![content];
 
-        // Add iOS-style format picker overlay if visible
+        // Add format picker overlay if visible
         // Hide with libcamera backend in photo/video modes (resolution is handled automatically)
-        let is_libcamera_no_picker =
-            self.mode == CameraMode::Photo || self.mode == CameraMode::Video;
-        if self.format_picker_visible && !is_libcamera_no_picker {
+        if self.format_picker_visible && !self.is_format_picker_hidden() {
             main_stack = main_stack.push(self.build_format_picker());
         }
 
-        // Add iOS-style exposure picker overlay if visible
+        // Add exposure picker overlay if visible
         if self.exposure_picker_visible {
             main_stack = main_stack.push(self.build_exposure_picker());
         }
 
-        // Add iOS-style color picker overlay if visible
+        // Add color picker overlay if visible
         if self.color_picker_visible {
             main_stack = main_stack.push(self.build_color_picker());
         }
@@ -573,16 +582,13 @@ impl AppModel {
         // - File source is set in Virtual mode (show file resolution instead)
         let has_file_source =
             self.mode == CameraMode::Virtual && self.virtual_camera_file_source.is_some();
-        let is_libcamera_no_picker = self.mode == CameraMode::Photo
-            || self.mode == CameraMode::Video
-            || self.mode == CameraMode::Timelapse;
         let show_format_button = !self.format_picker_visible
             && (self.mode == CameraMode::Photo
                 || self.mode == CameraMode::Timelapse
                 || !self.recording.is_recording())
             && !self.virtual_camera.is_streaming()
             && !has_file_source
-            && !is_libcamera_no_picker;
+            && !self.is_format_picker_hidden();
 
         if show_format_button {
             row = row.push(self.build_format_button());
@@ -641,22 +647,7 @@ impl AppModel {
                         .height(Length::Shrink),
                 );
 
-                // HDR+ / Burst mode toggle button visibility and behavior:
-                // - Off setting → button completely hidden
-                // - Auto with 1 frame (bright scene) AND not overridden → button hidden
-                // - Auto with >1 frames OR overridden → button visible
-                // - Fixed frame counts → button visible, can click to override
-                use crate::config::BurstModeSetting;
-                let show_burst_button = match self.config.burst_mode_setting {
-                    BurstModeSetting::Off => false,
-                    BurstModeSetting::Auto => {
-                        // Show button if: would use burst OR override is active
-                        self.auto_detected_frame_count > 1 || self.hdr_override_disabled
-                    }
-                    _ => true, // Fixed frame counts always show button
-                };
-
-                if show_burst_button {
+                if self.should_show_burst_button() {
                     // Show moon-off icon when HDR+ is disabled (by override or setting)
                     let is_hdr_active = self.would_use_burst_mode();
                     let moon_icon_bytes = if is_hdr_active {
@@ -787,12 +778,12 @@ impl AppModel {
             .into()
     }
 
-    /// Build the format button (iOS-style resolution/FPS display)
+    /// Build the format button (resolution/FPS display)
     fn build_format_button(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         let is_disabled = self.transition_state.ui_disabled;
 
-        // Format iOS-style label with superscript-style RES and FPS
+        // Format label with superscript-style RES and FPS
         let (res_label, fps_label) = if let Some(fmt) = &self.active_format {
             let res = if fmt.width >= resolution_thresholds::THRESHOLD_4K {
                 fl!("indicator-4k")

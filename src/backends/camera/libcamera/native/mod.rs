@@ -28,10 +28,10 @@
 //! ```
 
 mod capture_thread;
-pub(crate) mod diagnostics;
+pub mod diagnostics;
 pub(crate) mod pixel_formats;
 
-pub(crate) use diagnostics::is_capture_active;
+pub use diagnostics::is_capture_active;
 
 use crate::backends::camera::types::*;
 use capture_thread::{CaptureThreadInitResult, CaptureThreadParams, capture_thread_main};
@@ -48,6 +48,9 @@ pub(crate) struct PipelineSharedState {
     pub(crate) still_frame: Arc<Mutex<Option<CameraFrame>>>,
     pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
     pub(crate) jpeg_recording_mode: Arc<AtomicBool>,
+    /// Cancel flag from the subscription — allows the capture thread to abort
+    /// before creating a CameraManager if a newer mode switch superseded this one.
+    pub(crate) cancel_flag: Arc<AtomicBool>,
 }
 
 /// Native libcamera pipeline using direct libcamera-rs bindings
@@ -82,13 +85,11 @@ impl NativeLibcameraPipeline {
     /// * `camera_id` - libcamera camera ID (from enumeration)
     /// * `preview_format` - Format for preview stream (typically 1080p or lower)
     /// * `supports_multistream` - Whether camera supports dual-stream capture
-    /// * `video_mode` - Whether to configure for video recording
     /// * `shared` - Shared communication handles (frame sender, still capture, recording)
     pub(crate) fn new(
         camera_id: &str,
         preview_format: &CameraFormat,
         supports_multistream: bool,
-        video_mode: bool,
         shared: PipelineSharedState,
     ) -> BackendResult<Self> {
         info!(
@@ -113,7 +114,6 @@ impl NativeLibcameraPipeline {
             preview_width: preview_format.width,
             preview_height: preview_format.height,
             supports_multistream,
-            video_mode,
             stop_flag: Arc::clone(&stop_flag),
             latest_preview: Arc::clone(&latest_preview),
             latest_still: Arc::clone(&shared.still_frame),
@@ -123,6 +123,7 @@ impl NativeLibcameraPipeline {
             frame_sender: shared.frame_sender,
             recording_sender: Arc::clone(&shared.recording_sender),
             jpeg_recording_mode: Arc::clone(&shared.jpeg_recording_mode),
+            cancel_flag: Arc::clone(&shared.cancel_flag),
         };
 
         // Spawn capture thread - it owns all libcamera objects
@@ -144,7 +145,6 @@ impl NativeLibcameraPipeline {
 
         info!(
             multistream = init_result.is_multistream,
-            has_video_stream = init_result.has_video_stream,
             "Native libcamera pipeline started"
         );
 

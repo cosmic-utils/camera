@@ -7,10 +7,11 @@ page-id = Page { $num }
 git-description = Git commit {$hash} on {$date}
 
 # Mode switcher
-mode-video = VIDEO
-mode-photo = PHOTO
-mode-timelapse = TIMELAPSE
-mode-virtual = VIRTUAL
+mode-video = Video
+mode-photo = Photo
+mode-timelapse = Timelapse
+timelapse-saving = Saving video...
+mode-virtual = Virtual
 
 # Virtual camera
 virtual-camera-title = Virtual camera (experimental)

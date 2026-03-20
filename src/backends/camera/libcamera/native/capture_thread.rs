@@ -23,7 +23,6 @@ pub(crate) struct CaptureThreadParams {
     pub(crate) preview_width: u32,
     pub(crate) preview_height: u32,
     pub(crate) supports_multistream: bool,
-    pub(crate) video_mode: bool,
     pub(crate) stop_flag: Arc<AtomicBool>,
     pub(crate) latest_preview: Arc<Mutex<Option<CameraFrame>>>,
     pub(crate) latest_still: Arc<Mutex<Option<CameraFrame>>>,
@@ -33,12 +32,14 @@ pub(crate) struct CaptureThreadParams {
     pub(crate) frame_sender: FrameSender,
     pub(crate) recording_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<RecordingFrame>>>>,
     pub(crate) jpeg_recording_mode: Arc<AtomicBool>,
+    /// Cancel flag — checked before creating CameraManager to abort if a newer
+    /// mode switch has superseded this one.
+    pub(crate) cancel_flag: Arc<AtomicBool>,
 }
 
 /// Result of capture thread initialization (sent back to main thread)
 pub(crate) struct CaptureThreadInitResult {
     pub(crate) is_multistream: bool,
-    pub(crate) has_video_stream: bool,
 }
 
 /// Extract the number of bytes actually written to the first plane of a frame buffer.
@@ -254,14 +255,6 @@ pub(crate) fn capture_thread_main(
 /// How often to emit per-frame diagnostic log messages (every Nth frame).
 const LOG_EVERY_N_FRAMES: u64 = 30;
 
-/// Mode-aware second stream selection
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum SecondStream {
-    None,
-    Raw,
-    VideoRecording,
-}
-
 /// Stream format metadata read back after configure.
 struct StreamFormats {
     vf_size: libcamera::geometry::Size,
@@ -273,10 +266,6 @@ struct StreamFormats {
     raw_stride: u32,
     raw_format_name: String,
     raw_pixel_format: Option<PixelFormat>,
-    video_size: libcamera::geometry::Size,
-    video_format_name: String,
-    video_pixel_format: Option<PixelFormat>,
-    video_stride: u32,
 }
 
 /// Set up libcamera and run the capture loop.
@@ -294,33 +283,80 @@ fn capture_thread_setup_and_run(
     // Wait for any previous CameraManager to be fully dropped.
     // libcamera enforces a singleton — creating a second instance is fatal.
     // The old capture thread signals CAPTURE_RELEASED after dropping its manager.
-    {
-        let _mgr_lock = super::super::CAMERA_MANAGER_LOCK
+    //
+    // We must hold CAMERA_MANAGER_LOCK when checking/setting CAPTURE_ACTIVE and
+    // when creating CameraManager to serialize all threads through this section.
+    let mgr = {
+        let mut mgr_lock = super::super::CAMERA_MANAGER_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if CAPTURE_ACTIVE.load(Ordering::Acquire) {
-            drop(_mgr_lock);
+            // Release CAMERA_MANAGER_LOCK while waiting so the old thread can
+            // acquire it during its cleanup path.
+            drop(mgr_lock);
             info!("Waiting for previous CameraManager to be released...");
             let (lock, cvar) = &CAPTURE_RELEASED;
             let guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-            // Wait until CAPTURE_ACTIVE is cleared (with timeout to avoid deadlock)
+            let cancel = &params.cancel_flag;
             let _guard = cvar
                 .wait_timeout_while(guard, std::time::Duration::from_secs(5), |_| {
-                    CAPTURE_ACTIVE.load(Ordering::Acquire)
+                    CAPTURE_ACTIVE.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire)
                 })
                 .unwrap_or_else(|e| e.into_inner());
+
+            // Re-acquire CAMERA_MANAGER_LOCK before proceeding — this serializes
+            // multiple waiting threads so only one creates a CameraManager.
+            mgr_lock = super::super::CAMERA_MANAGER_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+
+            // If the old CameraManager still hasn't been released, bail out
+            // rather than creating a fatal duplicate.
+            if CAPTURE_ACTIVE.load(Ordering::Acquire) && !params.cancel_flag.load(Ordering::Acquire)
+            {
+                drop(mgr_lock);
+                return Err(BackendError::InitializationFailed(
+                    "Timed out waiting for previous CameraManager to release".to_string(),
+                ));
+            }
         }
+
+        // Early out if superseded by a newer mode switch
+        if params.cancel_flag.load(Ordering::Acquire) {
+            info!("Cancel flag set — aborting capture thread startup");
+            return Ok(());
+        }
+
+        // Mark ourselves as active while still holding the lock — no other thread
+        // can slip in between this store and CameraManager::new().
+        CAPTURE_ACTIVE.store(true, Ordering::Release);
+
+        // Release the lock during the hardware release delay so UI threads
+        // calling enumerate_cameras()/get_formats() are not blocked.
+        // CAPTURE_ACTIVE=true already prevents other capture threads from racing past.
+        drop(mgr_lock);
 
         // Delay for hardware release — the "simple" pipeline handler needs time
         // to fully release V4L2 resources before a new CameraManager can start.
         // This runs on the capture thread (not the UI thread) to avoid stutter.
         std::thread::sleep(std::time::Duration::from_millis(500));
 
-        CAPTURE_ACTIVE.store(true, Ordering::Release);
-    }
+        // Check cancel after the sleep
+        if params.cancel_flag.load(Ordering::Acquire) {
+            info!("Cancel flag set after wait — aborting capture thread startup");
+            CAPTURE_ACTIVE.store(false, Ordering::Release);
+            CAPTURE_RELEASED.1.notify_all();
+            return Ok(());
+        }
 
-    let mgr = CameraManager::new()
-        .map_err(|e| BackendError::InitializationFailed(format!("CameraManager::new: {}", e)))?;
+        // Re-acquire the lock for CameraManager creation
+        let _mgr_lock = super::super::CAMERA_MANAGER_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        CameraManager::new()
+            .map_err(|e| BackendError::InitializationFailed(format!("CameraManager::new: {}", e)))?
+    };
 
     info!(version = mgr.version(), "libcamera version");
 
@@ -334,15 +370,9 @@ fn capture_thread_setup_and_run(
         .acquire()
         .map_err(|e| BackendError::InitializationFailed(format!("Camera acquire: {}", e)))?;
 
-    let (config, is_multistream, has_video_stream, actual_second_stream) =
-        configure_streams(&cam, &mut active_cam, &params)?;
+    let (config, is_multistream) = configure_streams(&cam, &mut active_cam, &params)?;
 
-    let formats = read_stream_formats(
-        &config,
-        is_multistream,
-        has_video_stream,
-        actual_second_stream,
-    );
+    let formats = read_stream_formats(&config, is_multistream);
 
     info!(
         vf_format = %formats.vf_format_name,
@@ -352,12 +382,7 @@ fn capture_thread_setup_and_run(
         raw_format = %formats.raw_format_name,
         raw_size = format!("{}x{}", formats.raw_size.width, formats.raw_size.height),
         raw_pixel_format = ?formats.raw_pixel_format,
-        video_format = %formats.video_format_name,
-        video_size = format!("{}x{}", formats.video_size.width, formats.video_size.height),
-        video_pixel_format = ?formats.video_pixel_format,
-        has_video_stream,
         multistream = is_multistream,
-        second_stream = ?actual_second_stream,
         "Actual configured formats (post-configure)"
     );
 
@@ -367,13 +392,7 @@ fn capture_thread_setup_and_run(
         .and_then(|c| c.stream())
         .ok_or_else(|| BackendError::InitializationFailed("No viewfinder stream".to_string()))?;
 
-    let stream_raw = if is_multistream && actual_second_stream == SecondStream::Raw {
-        config.get(1).and_then(|c| c.stream())
-    } else {
-        None
-    };
-
-    let stream_video = if has_video_stream {
+    let stream_raw = if is_multistream {
         config.get(1).and_then(|c| c.stream())
     } else {
         None
@@ -384,10 +403,7 @@ fn capture_thread_setup_and_run(
         &mut active_cam,
         &stream_vf,
         &stream_raw,
-        &stream_video,
         is_multistream,
-        has_video_stream,
-        actual_second_stream,
     )?;
 
     // Subscribe to request completion via channel
@@ -410,8 +426,6 @@ fn capture_thread_setup_and_run(
     // Publish diagnostics
     publish_diagnostics(DiagnosticParams {
         is_multistream,
-        has_video_stream,
-        is_video_mode: params.video_mode,
         vf: StreamDiag {
             size: formats.vf_size,
             format_name: formats.vf_format_name.clone(),
@@ -421,11 +435,6 @@ fn capture_thread_setup_and_run(
             size: formats.raw_size,
             format_name: formats.raw_format_name.clone(),
             stride: formats.raw_stride,
-        },
-        video: StreamDiag {
-            size: formats.video_size,
-            format_name: formats.video_format_name.clone(),
-            stride: formats.video_stride,
         },
     });
 
@@ -444,10 +453,7 @@ fn capture_thread_setup_and_run(
 
     // Report successful initialization (after all fallible init steps)
     init_tx
-        .send(Ok(CaptureThreadInitResult {
-            is_multistream,
-            has_video_stream,
-        }))
+        .send(Ok(CaptureThreadInitResult { is_multistream }))
         .map_err(|_| {
             BackendError::InitializationFailed("Main thread dropped init receiver".to_string())
         })?;
@@ -457,10 +463,8 @@ fn capture_thread_setup_and_run(
         &rx,
         &stream_vf,
         &stream_raw,
-        &stream_video,
         &formats,
         is_multistream,
-        has_video_stream,
         &mut jpeg_decompressor,
         &mut params,
     );
@@ -494,46 +498,26 @@ fn capture_thread_setup_and_run(
     Ok(())
 }
 
-/// Generate camera configuration with stream roles, apply to hardware.
-/// Falls back from VideoRecording to Raw if the camera doesn't support dual
-/// processed streams.
+/// Generate camera configuration with stream roles and apply to hardware.
 fn configure_streams(
     cam: &libcamera::camera::Camera<'_>,
     active_cam: &mut libcamera::camera::ActiveCamera<'_>,
     params: &CaptureThreadParams,
-) -> Result<
-    (
-        libcamera::camera::CameraConfiguration,
-        bool,
-        bool,
-        SecondStream,
-    ),
-    BackendError,
-> {
+) -> Result<(libcamera::camera::CameraConfiguration, bool), BackendError> {
     use libcamera::stream::StreamRole;
 
-    // Mode-aware stream role selection:
-    // - Video mode: ViewFinder + VideoRecording (dual processed streams for ISP-optimized encoding)
-    //   Fallback:   ViewFinder + Raw (Raw keeps full sensor FoV, VF frames used for encoding)
-    // - Photo mode: ViewFinder + Raw (full-res Bayer for still capture)
-    // - Single:     ViewFinder only
-    let (roles, second_stream) = if params.video_mode && params.supports_multistream {
-        (
-            vec![StreamRole::ViewFinder, StreamRole::VideoRecording],
-            SecondStream::VideoRecording,
-        )
-    } else if params.supports_multistream {
-        (
-            vec![StreamRole::ViewFinder, StreamRole::Raw],
-            SecondStream::Raw,
-        )
+    // All modes use the same stream layout to avoid pipeline restarts on mode switch.
+    // ViewFinder+Raw on multistream cameras: ViewFinder for preview and video encoding
+    // (via appsrc), Raw for full-res Bayer photo/timelapse capture.
+    // ViewFinder only on single-stream cameras.
+    let roles = if params.supports_multistream {
+        vec![StreamRole::ViewFinder, StreamRole::Raw]
     } else {
-        (vec![StreamRole::ViewFinder], SecondStream::None)
+        vec![StreamRole::ViewFinder]
     };
 
     info!(
-        video_mode = params.video_mode,
-        second_stream = ?second_stream,
+        second_stream = params.supports_multistream,
         "Requesting stream roles"
     );
 
@@ -541,8 +525,7 @@ fn configure_streams(
         BackendError::InitializationFailed("Failed to generate camera configuration".to_string())
     })?;
 
-    let mut actual_second_stream = second_stream;
-    let mut is_multistream = config.len() >= 2 && params.supports_multistream;
+    let is_multistream = config.len() >= 2 && params.supports_multistream;
 
     // Configure stream sizes
     if let Some(mut vf_cfg) = config.get_mut(0) {
@@ -554,15 +537,6 @@ fn configure_streams(
             "Set viewfinder size"
         );
     }
-    // For VideoRecording stream, set same resolution as ViewFinder
-    if actual_second_stream == SecondStream::VideoRecording
-        && let Some(mut vid_cfg) = config.get_mut(1)
-    {
-        vid_cfg.set_size(libcamera::geometry::Size::new(
-            params.preview_width,
-            params.preview_height,
-        ));
-    }
 
     let status = config.validate();
     info!(
@@ -571,64 +545,11 @@ fn configure_streams(
         "Configuration validated"
     );
 
-    // Apply configuration to hardware — with fallback for VideoRecording
-    match active_cam.configure(&mut config) {
-        Ok(()) => {}
-        Err(e) if actual_second_stream == SecondStream::VideoRecording => {
-            // Dual processed streams not supported (e.g. simple pipeline handler).
-            // Fall back to ViewFinder + Raw — Raw forces full sensor mode (no crop/zoom)
-            // and ViewFinder frames are used for video encoding via Option A.
-            warn!(
-                error = %e,
-                "ViewFinder+VideoRecording configure failed, falling back to ViewFinder+Raw"
-            );
-            actual_second_stream = SecondStream::Raw;
+    active_cam
+        .configure(&mut config)
+        .map_err(|e| BackendError::InitializationFailed(format!("Camera configure: {}", e)))?;
 
-            config = cam
-                .generate_configuration(&[StreamRole::ViewFinder, StreamRole::Raw])
-                .ok_or_else(|| {
-                    BackendError::InitializationFailed(
-                        "Failed to generate fallback configuration".to_string(),
-                    )
-                })?;
-
-            if let Some(mut vf_cfg) = config.get_mut(0) {
-                vf_cfg.set_size(libcamera::geometry::Size::new(
-                    params.preview_width,
-                    params.preview_height,
-                ));
-            }
-            let fallback_status = config.validate();
-            info!(
-                status = ?fallback_status,
-                config = config.to_string_repr(),
-                "Fallback configuration validated"
-            );
-
-            active_cam.configure(&mut config).map_err(|e2| {
-                BackendError::InitializationFailed(format!(
-                    "Camera configure (fallback ViewFinder+Raw): {}",
-                    e2
-                ))
-            })?;
-
-            is_multistream = config.len() >= 2 && params.supports_multistream;
-        }
-        Err(e) => {
-            return Err(BackendError::InitializationFailed(format!(
-                "Camera configure: {}",
-                e
-            )));
-        }
-    }
-
-    let has_video_stream = actual_second_stream == SecondStream::VideoRecording;
-    Ok((
-        config,
-        is_multistream,
-        has_video_stream,
-        actual_second_stream,
-    ))
+    Ok((config, is_multistream))
 }
 
 /// Read back actual stream formats after hardware configure.
@@ -636,8 +557,6 @@ fn configure_streams(
 fn read_stream_formats(
     config: &libcamera::camera::CameraConfiguration,
     is_multistream: bool,
-    has_video_stream: bool,
-    actual_second_stream: SecondStream,
 ) -> StreamFormats {
     let config_repr = config.to_string_repr();
     let (vf_format_name, vf_size, vf_mapped, vf_stride) =
@@ -656,21 +575,9 @@ fn read_stream_formats(
         })
     };
 
-    let (raw_format_name, raw_size, raw_pixel_format, raw_stride) =
-        if is_multistream && actual_second_stream == SecondStream::Raw {
-            let (name, size, mapped, stride) = read_stream_config(config, 1, &config_repr);
-            (name, size, mapped, stride)
-        } else {
-            (
-                String::new(),
-                libcamera::geometry::Size::new(0, 0),
-                None,
-                0u32,
-            )
-        };
-
-    let (video_format_name, video_size, video_pixel_format, video_stride) = if has_video_stream {
-        read_stream_config(config, 1, &config_repr)
+    let (raw_format_name, raw_size, raw_pixel_format, raw_stride) = if is_multistream {
+        let (name, size, mapped, stride) = read_stream_config(config, 1, &config_repr);
+        (name, size, mapped, stride)
     } else {
         (
             String::new(),
@@ -690,26 +597,18 @@ fn read_stream_formats(
         raw_stride,
         raw_format_name,
         raw_pixel_format,
-        video_size,
-        video_format_name,
-        video_pixel_format,
-        video_stride,
     }
 }
 
 /// Allocate frame buffers, memory-map them, and create capture requests.
 ///
 /// Returns the allocator (which must outlive the requests) and the request vector.
-#[allow(clippy::too_many_arguments)]
 fn allocate_and_create_requests(
     cam: &libcamera::camera::Camera<'_>,
     active_cam: &mut libcamera::camera::ActiveCamera<'_>,
     stream_vf: &libcamera::stream::Stream,
     stream_raw: &Option<libcamera::stream::Stream>,
-    stream_video: &Option<libcamera::stream::Stream>,
     is_multistream: bool,
-    has_video_stream: bool,
-    actual_second_stream: SecondStream,
 ) -> Result<
     (
         libcamera::framebuffer_allocator::FrameBufferAllocator,
@@ -726,14 +625,8 @@ fn allocate_and_create_requests(
         BackendError::InitializationFailed(format!("Alloc viewfinder buffers: {}", e))
     })?;
 
-    let raw_buffers = if is_multistream && actual_second_stream == SecondStream::Raw {
+    let raw_buffers = if is_multistream {
         alloc_optional_buffers(&mut alloc, stream_raw, "raw")?
-    } else {
-        None
-    };
-
-    let video_buffers = if has_video_stream {
-        alloc_optional_buffers(&mut alloc, stream_video, "video")?
     } else {
         None
     };
@@ -741,23 +634,18 @@ fn allocate_and_create_requests(
     info!(
         vf_buffers = vf_buffers.len(),
         raw_buffers = raw_buffers.as_ref().map(|b| b.len()).unwrap_or(0),
-        video_buffers = video_buffers.as_ref().map(|b| b.len()).unwrap_or(0),
         "Allocated buffers"
     );
 
     // Wrap buffers in memory-mapped wrappers for data access
     let vf_mapped = mmap_buffers(vf_buffers, "vf")?;
     let raw_mapped = raw_buffers.map(|b| mmap_buffers(b, "raw")).transpose()?;
-    let video_mapped = video_buffers
-        .map(|b| mmap_buffers(b, "video"))
-        .transpose()?;
 
     // Create requests with buffers
     let buf_count = vf_mapped.len();
     let mut requests: Vec<Request> = Vec::with_capacity(buf_count);
     let mut vf_iter = vf_mapped.into_iter();
     let mut raw_iter = raw_mapped.map(|v| v.into_iter());
-    let mut video_iter = video_mapped.map(|v| v.into_iter());
 
     for i in 0..buf_count {
         let mut req = active_cam.create_request(Some(i as u64)).ok_or_else(|| {
@@ -779,15 +667,6 @@ fn allocate_and_create_requests(
             })?;
         }
 
-        if let Some(ref mut vid_it) = video_iter
-            && let Some(vid_buf) = vid_it.next()
-            && let Some(sv) = stream_video
-        {
-            req.add_buffer(sv, vid_buf).map_err(|e| {
-                BackendError::InitializationFailed(format!("Add video buffer: {}", e))
-            })?;
-        }
-
         requests.push(req);
     }
 
@@ -795,7 +674,7 @@ fn allocate_and_create_requests(
     Ok((alloc, requests))
 }
 
-/// Run the capture loop — receive completed requests, process viewfinder/video/raw
+/// Run the capture loop — receive completed requests, process viewfinder/raw
 /// buffers, send frames to consumers. Returns when `stop_flag` is set or the
 /// request channel disconnects.
 #[allow(clippy::too_many_arguments)]
@@ -804,10 +683,8 @@ fn run_capture_loop(
     rx: &std::sync::mpsc::Receiver<libcamera::request::Request>,
     stream_vf: &libcamera::stream::Stream,
     stream_raw: &Option<libcamera::stream::Stream>,
-    stream_video: &Option<libcamera::stream::Stream>,
     formats: &StreamFormats,
     is_multistream: bool,
-    has_video_stream: bool,
     jpeg_decompressor: &mut Option<turbojpeg::Decompressor>,
     params: &mut CaptureThreadParams,
 ) {
@@ -974,7 +851,6 @@ fn run_capture_loop(
                     frame_num,
                     params,
                     is_multistream,
-                    has_video_stream,
                     jpeg_sent_to_recorder,
                 );
             }
@@ -982,50 +858,8 @@ fn run_capture_loop(
             warn!("No viewfinder buffer in completed request");
         }
 
-        // Process VideoRecording buffer (only when recording is active)
-        if has_video_stream && let Some(sv) = stream_video {
-            let has_recorder = params
-                .recording_sender
-                .lock()
-                .ok()
-                .as_ref()
-                .map(|g| g.is_some())
-                .unwrap_or(false);
-
-            if has_recorder {
-                let vid_pf = formats.video_pixel_format.unwrap_or(PixelFormat::NV12);
-                if let Some(video_frame) = process_buffer(
-                    &req,
-                    sv,
-                    formats.video_size,
-                    formats.video_stride,
-                    vid_pf,
-                    captured_at,
-                    &metadata,
-                ) && let Ok(guard) = params.recording_sender.lock()
-                    && let Some(ref tx) = *guard
-                {
-                    let send_result = tx.try_send(RecordingFrame::Decoded(Arc::new(video_frame)));
-                    if send_result.is_err() {
-                        crate::pipelines::video::recorder::rec_stats_capture_dropped();
-                    } else {
-                        crate::pipelines::video::recorder::rec_stats_capture_sent();
-                    }
-                    if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
-                        warn!(
-                            frame = frame_num,
-                            seq = ?metadata.sequence,
-                            dropped = send_result.is_err(),
-                            "Sent video-stream frame to recorder"
-                        );
-                    }
-                }
-            }
-        }
-
-        // Process raw buffer only when still capture is requested (photo mode multistream only)
-        if !has_video_stream
-            && is_multistream
+        // Process raw buffer only when still capture is requested (multistream only)
+        if is_multistream
             && params.still_requested.load(Ordering::Relaxed)
             && let Some(sr) = stream_raw
         {
@@ -1050,8 +884,8 @@ fn run_capture_loop(
 
                 if let Ok(mut still) = params.latest_still.lock() {
                     *still = Some(still_frame);
+                    params.still_requested.store(false, Ordering::Relaxed);
                 }
-                params.still_requested.store(false, Ordering::Relaxed);
             }
         }
 
@@ -1074,14 +908,13 @@ fn run_capture_loop(
 /// Dispatch a completed viewfinder frame to all consumers:
 /// 1. Store as latest preview (for still capture fallback)
 /// 2. Handle single-stream still capture
-/// 3. Send to recording (Option A: VF→encoder when no video stream)
+/// 3. Send to recording (VF→encoder via appsrc)
 /// 4. Send to UI preview channel
 fn dispatch_viewfinder_frame(
     frame: CameraFrame,
     frame_num: u64,
     params: &mut CaptureThreadParams,
     is_multistream: bool,
-    has_video_stream: bool,
     skip_recording: bool,
 ) {
     // Store latest preview frame
@@ -1103,11 +936,9 @@ fn dispatch_viewfinder_frame(
         params.still_requested.store(false, Ordering::Relaxed);
     }
 
-    // Option A: ViewFinder → recording (when no dedicated video stream).
-    // Send to recording FIRST for lowest encoder latency, then preview.
+    // Send ViewFinder frames to recording (via appsrc encoder pipeline).
     // Skip if raw JPEG was already sent to the recorder in JPEG mode.
-    if !has_video_stream
-        && !skip_recording
+    if !skip_recording
         && let Ok(guard) = params.recording_sender.lock()
         && let Some(ref tx) = *guard
     {
@@ -1155,7 +986,10 @@ fn extract_metadata(req: &libcamera::request::Request) -> FrameMetadata {
             .map(|v| v.0 as u32),
         sequence: Some(req.sequence()),
         lens_position: meta.get::<controls::LensPosition>().ok().map(|v| v.0),
-        sensor_timestamp: None,
+        sensor_timestamp: meta
+            .get::<controls::SensorTimestamp>()
+            .ok()
+            .map(|v| v.0 as u64),
         af_state: None,
         ae_state: None,
         awb_state: None,
@@ -1305,7 +1139,12 @@ fn decode_mjpeg_frame(
         width: width as u32,
         height: height as u32,
         data: FrameData::Copied(data),
-        format: PixelFormat::I420,
+        format: match header.subsamp {
+            turbojpeg::Subsamp::Sub2x2 => PixelFormat::I420,
+            // No PixelFormat::I422 variant yet; treat 4:2:2 as I420 for now
+            // (plane layout is still correct via yuv_planes, only the enum tag is imprecise)
+            _ => PixelFormat::I420,
+        },
         stride: width as u32,
         yuv_planes: Some(yuv_planes),
         captured_at,

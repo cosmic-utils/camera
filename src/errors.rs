@@ -123,7 +123,17 @@ impl fmt::Display for PhotoError {
     }
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AppError::Camera(e) => Some(e),
+            AppError::Recording(e) => Some(e),
+            AppError::Photo(e) => Some(e),
+            AppError::Config(_) | AppError::Storage(_) | AppError::Other(_) => None,
+        }
+    }
+}
+
 impl std::error::Error for CameraError {}
 impl std::error::Error for RecordingError {}
 impl std::error::Error for PhotoError {}

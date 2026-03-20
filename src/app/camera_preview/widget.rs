@@ -76,7 +76,11 @@ impl AppModel {
                 };
                 info!("Applying blur to frame during {}", reason);
             }
-            let video_id = if should_blur { 1 } else { 0 };
+            let video_id = if should_blur {
+                crate::app::video_primitive::VIDEO_ID_BLUR
+            } else {
+                crate::app::video_primitive::VIDEO_ID_NORMAL
+            };
 
             // Use Cover mode (fill/zoom) in theatre mode, Contain mode (letterbox) otherwise
             let content_fit = if self.theatre.enabled {

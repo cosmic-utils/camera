@@ -27,6 +27,24 @@ impl AppModel {
             .unwrap_or_default()
     }
 
+    /// Cycle to the next or previous mode in the ordered mode list.
+    pub(crate) fn handle_cycle_mode(&mut self, forward: bool) -> Task<cosmic::Action<Message>> {
+        let modes = self.available_modes();
+        let current_idx = modes.iter().position(|&m| m == self.mode).unwrap_or(0);
+        let new_idx = if forward {
+            if current_idx + 1 < modes.len() {
+                current_idx + 1
+            } else {
+                return Task::none(); // Already at last mode
+            }
+        } else if current_idx > 0 {
+            current_idx - 1
+        } else {
+            return Task::none(); // Already at first mode
+        };
+        self.handle_set_mode(modes[new_idx])
+    }
+
     pub(crate) fn handle_set_mode(&mut self, mode: CameraMode) -> Task<cosmic::Action<Message>> {
         if self.mode == mode {
             return Task::none();
@@ -55,33 +73,9 @@ impl AppModel {
             self.timelapse = crate::app::state::TimelapseState::Idle;
         }
 
-        let would_change_format = self.would_format_change_for_mode(mode);
-
         // Skip blur transition and camera restart when a file source is active
         // (no camera stream to restart, blur would never resolve)
         let file_source_active = self.virtual_camera_file_source.is_some();
-
-        // For libcamera with multistream cameras, always restart the pipeline on mode switch
-        // because different modes use different stream roles (Raw vs VideoRecording),
-        // even if the preview format stays the same.
-        let need_restart =
-            !file_source_active && (would_change_format || self.is_current_camera_multistream());
-
-        if need_restart {
-            if would_change_format {
-                info!("Mode switch will change format - triggering camera reload with blur");
-            } else {
-                info!(
-                    "Mode switch changes stream roles (libcamera multistream) - triggering pipeline restart"
-                );
-            }
-            self.start_blur_transition();
-            self.camera_cancel_flag
-                .store(true, std::sync::atomic::Ordering::Release);
-            self.camera_cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        } else {
-            info!("Mode switch won't change format - keeping same preview");
-        }
 
         // Reset filter when switching to Virtual mode (filters supported in Photo and Video)
         if mode == CameraMode::Virtual
@@ -97,9 +91,22 @@ impl AppModel {
             self.core.window.show_context = false;
         }
 
+        // Select format from cached data — never blocks on hardware.
+        // If the format changes, format_id in the subscription key changes,
+        // causing the subscription to restart automatically (with blur if needed).
+        let old_format = self.active_format.clone();
         self.mode = mode;
         self.zoom_level = 1.0; // Reset zoom when switching modes
-        self.switch_camera_or_mode(self.current_camera_index, mode);
+        self.select_format_from_cache(mode);
+
+        // All modes use the same stream layout (ViewFinder+Raw), so no pipeline
+        // restart is needed unless the format itself changed.
+        if !file_source_active && self.active_format != old_format {
+            info!("Mode switch: format changed — restarting pipeline");
+            self.start_blur_transition();
+        } else {
+            info!("Mode switch: no pipeline restart needed — keeping stream");
+        }
 
         // When switching to Virtual mode with a file source, restore the file source preview
         if mode == CameraMode::Virtual
@@ -167,8 +174,12 @@ impl AppModel {
             );
         }
 
-        // Re-query exposure controls when format changes
-        if need_restart {
+        // Note: we don't call save_settings() here to avoid blocking the UI
+        // on eMMC writes (~150ms on phone). Settings are saved when the user
+        // explicitly changes format/resolution, or on app exit.
+
+        // Re-query exposure controls when pipeline restarts
+        if self.active_format != old_format {
             return self.query_exposure_controls_task();
         }
 

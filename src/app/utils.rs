@@ -38,6 +38,8 @@ mod tests {
     #[test]
     fn test_parse_codec() {
         assert_eq!(parse_codec("H264 - H.264/AVC"), "H264");
+        assert_eq!(parse_codec("H264 - H.264/AVC (H264)"), "H264");
+        assert_eq!(parse_codec("MJPG - Motion JPEG (MJPG)"), "MJPG");
         assert_eq!(parse_codec("MJPEG"), "MJPEG");
         assert_eq!(parse_codec(""), "");
     }

@@ -6,13 +6,14 @@
 //! Uses the same wgpu instance as libcosmic's UI rendering.
 
 use std::sync::Arc;
+use tokio::sync::OnceCell;
 use tracing::{debug, info};
 
 /// Re-export wgpu types from cosmic for use in compute pipelines
 pub use cosmic::iced_wgpu::wgpu;
 
 /// Information about the created GPU device
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GpuDeviceInfo {
     /// Name of the GPU adapter
     pub adapter_name: String,
@@ -22,18 +23,44 @@ pub struct GpuDeviceInfo {
     pub low_priority_enabled: bool,
 }
 
+/// Shared GPU context holding a single device and queue for all compute pipelines.
+#[derive(Clone)]
+pub struct SharedGpuContext {
+    /// The shared wgpu device
+    pub device: Arc<wgpu::Device>,
+    /// The shared wgpu queue
+    pub queue: Arc<wgpu::Queue>,
+    /// Information about the GPU adapter
+    pub info: GpuDeviceInfo,
+}
+
+/// Lazy-initialized shared GPU device singleton.
+static SHARED_GPU: OnceCell<Result<SharedGpuContext, String>> = OnceCell::const_new();
+
+/// Get or create the shared GPU device and queue for compute work.
+///
+/// All compute pipelines (filter, histogram, conversion, virtual camera) share
+/// a single wgpu device instance to reduce resource usage.
+pub async fn get_shared_gpu() -> Result<SharedGpuContext, String> {
+    SHARED_GPU
+        .get_or_init(|| async {
+            create_low_priority_compute_device("shared_compute")
+                .await
+                .map(|(device, queue, info)| SharedGpuContext {
+                    device,
+                    queue,
+                    info,
+                })
+        })
+        .await
+        .clone()
+}
+
 /// Create a wgpu device and queue for compute work.
 ///
-/// Uses standard device creation through cosmic's wgpu.
-///
-/// # Arguments
-///
-/// * `label` - A label for the device (for debugging)
-///
-/// # Returns
-///
-/// A tuple of (Device, Queue, GpuDeviceInfo) or an error message
-pub async fn create_low_priority_compute_device(
+/// This is a private helper used by the shared GPU singleton.
+/// External code should use [`get_shared_gpu`] instead.
+async fn create_low_priority_compute_device(
     label: &str,
 ) -> Result<(Arc<wgpu::Device>, Arc<wgpu::Queue>, GpuDeviceInfo), String> {
     info!(label = label, "Creating GPU device for compute");

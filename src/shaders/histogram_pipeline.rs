@@ -63,14 +63,15 @@ impl HistogramPipeline {
     pub async fn new() -> Result<Self, String> {
         info!("Initializing GPU histogram pipeline");
 
-        let (device, queue, gpu_info) =
-            gpu::create_low_priority_compute_device("histogram_pipeline_gpu").await?;
+        let gpu = gpu::get_shared_gpu().await?;
+        let device = gpu.device;
+        let queue = gpu.queue;
 
         info!(
-            adapter_name = %gpu_info.adapter_name,
-            adapter_backend = ?gpu_info.backend,
-            low_priority = gpu_info.low_priority_enabled,
-            "GPU device created for histogram pipeline"
+            adapter_name = %gpu.info.adapter_name,
+            adapter_backend = ?gpu.info.backend,
+            low_priority = gpu.info.low_priority_enabled,
+            "Using shared GPU device for histogram pipeline"
         );
 
         let shader_source = include_str!("histogram_compute.wgsl");
@@ -274,10 +275,6 @@ impl HistogramPipeline {
             },
         );
 
-        // Clear histogram buffer
-        self.queue
-            .write_buffer(histogram_buffer, 0, &[0u8; 256 * 4]);
-
         // Update uniforms
         let params = Params {
             width,
@@ -321,6 +318,9 @@ impl HistogramPipeline {
                 label: Some("histogram_encoder"),
             });
 
+        // Clear histogram buffer inside the command encoder (synchronized with dispatch)
+        encoder.clear_buffer(histogram_buffer, 0, None);
+
         // Pass 1: Build histogram
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -360,11 +360,19 @@ impl HistogramPipeline {
 
         // Map staging buffer and read results
         let buffer_slice = staging_buffer.slice(..);
-        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
         let _ = self.device.poll(wgpu::PollType::Wait {
             submission_index: None,
             timeout: None,
         });
+
+        receiver
+            .recv()
+            .map_err(|e| format!("Buffer map channel closed: {e}"))?
+            .map_err(|e| format!("Buffer map failed: {e}"))?;
 
         let metrics: BrightnessMetrics = {
             let data = buffer_slice.get_mapped_range();
@@ -388,32 +396,40 @@ impl HistogramPipeline {
 }
 
 /// Singleton instance for shared histogram pipeline
-static GPU_HISTOGRAM_PIPELINE: std::sync::OnceLock<std::sync::Mutex<Option<HistogramPipeline>>> =
+static GPU_HISTOGRAM_PIPELINE: std::sync::OnceLock<tokio::sync::Mutex<Option<HistogramPipeline>>> =
     std::sync::OnceLock::new();
 
 /// Get or initialize the shared histogram pipeline
-fn get_histogram_pipeline() -> Option<std::sync::MutexGuard<'static, Option<HistogramPipeline>>> {
-    let mutex =
-        GPU_HISTOGRAM_PIPELINE.get_or_init(|| match pollster::block_on(HistogramPipeline::new()) {
+async fn get_histogram_pipeline()
+-> Option<tokio::sync::MutexGuard<'static, Option<HistogramPipeline>>> {
+    let lock = GPU_HISTOGRAM_PIPELINE.get_or_init(|| tokio::sync::Mutex::new(None));
+    let mut guard = lock.lock().await;
+
+    if guard.is_none() {
+        match HistogramPipeline::new().await {
             Ok(pipeline) => {
                 info!("GPU histogram pipeline initialized");
-                std::sync::Mutex::new(Some(pipeline))
+                *guard = Some(pipeline);
             }
             Err(e) => {
                 warn!("Failed to initialize GPU histogram pipeline: {}", e);
-                std::sync::Mutex::new(None)
+                return None;
             }
-        });
+        }
+    }
 
-    let guard = mutex.lock().ok()?;
-    if guard.is_some() { Some(guard) } else { None }
+    Some(guard)
 }
 
 /// Analyze brightness using GPU histogram
 ///
 /// Falls back to None if GPU is unavailable.
-pub fn analyze_brightness_gpu(data: &[u8], width: u32, height: u32) -> Option<BrightnessMetrics> {
-    let mut guard = get_histogram_pipeline()?;
+pub async fn analyze_brightness_gpu(
+    data: &[u8],
+    width: u32,
+    height: u32,
+) -> Option<BrightnessMetrics> {
+    let mut guard = get_histogram_pipeline().await?;
     let pipeline = guard.as_mut()?;
     pipeline.analyze(data, width, height).ok()
 }

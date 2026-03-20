@@ -166,7 +166,6 @@ struct V4l2Queryctrl {
 
 /// V4L2 query menu structure
 #[repr(C)]
-#[repr(packed)]
 struct V4l2Querymenu {
     id: u32,
     index: u32,
@@ -311,7 +310,11 @@ pub fn get_control(device_path: &str, control_id: u32) -> Option<i32> {
 
 /// Set value of a control
 pub fn set_control(device_path: &str, control_id: u32, value: i32) -> Result<(), String> {
-    let file = File::open(device_path).map_err(|e| format!("Failed to open device: {}", e))?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(device_path)
+        .map_err(|e| format!("Failed to open device: {}", e))?;
     let fd = file.as_raw_fd();
 
     let mut ctrl = V4l2Control {

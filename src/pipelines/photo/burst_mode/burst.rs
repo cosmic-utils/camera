@@ -433,7 +433,7 @@ fn classify_from_histogram(metrics: &GpuBrightnessMetrics) -> (SceneBrightness, 
 /// 3. Simple luminance average (fast fallback)
 ///
 /// Returns fused classification with confidence score.
-pub fn analyze_brightness_multi(
+pub async fn analyze_brightness_multi(
     frame: &CameraFrame,
     exposure: Option<ExposureMetadata>,
 ) -> MultiMetricBrightness {
@@ -442,7 +442,7 @@ pub fn analyze_brightness_multi(
     let simple_confidence = 0.5; // Lowest confidence - just averaging
 
     // 2. Try GPU histogram analysis (most accurate)
-    let histogram = analyze_brightness_gpu(&frame.data, frame.width, frame.height);
+    let histogram = analyze_brightness_gpu(&frame.data, frame.width, frame.height).await;
     let histogram_result = histogram.as_ref().map(classify_from_histogram);
 
     // 3. Try V4L2 exposure analysis

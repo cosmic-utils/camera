@@ -3,7 +3,6 @@
 //! Camera switcher button widget implementation
 
 use crate::app::state::{AppModel, Message};
-use crate::app::view::overlay_container_style;
 use crate::constants::ui;
 use cosmic::Element;
 use cosmic::iced::Length;
@@ -23,6 +22,7 @@ impl AppModel {
     pub fn build_camera_switcher(&self) -> Element<'_, Message> {
         let is_disabled = self.transition_state.ui_disabled
             || self.recording.is_recording()
+            || self.quick_record.is_recording()
             || self.timelapse.is_active();
 
         // Hide camera switcher during virtual camera streaming
@@ -36,41 +36,28 @@ impl AppModel {
         if self.available_cameras.len() > 1 {
             let switch_handle = widget::icon::from_svg_bytes(CAMERA_SWITCH_ICON).symbolic(true);
 
-            // Build the SVG directly so we can apply opacity when disabled
-            let svg_widget: Element<'_, Message> =
-                if let Some(svg_handle) = widget::icon(switch_handle).into_svg_handle() {
-                    let mut svg = widget::svg(svg_handle)
-                        .symbolic(true)
-                        .width(Length::Fixed(32.0))
-                        .height(Length::Fixed(32.0));
-                    if is_disabled {
-                        svg = svg.opacity(0.3);
-                    }
-                    svg.into()
-                } else {
-                    widget::Space::new().width(32.0).height(32.0).into()
-                };
+            // Create icon widget with accent color
+            let icon_widget =
+                widget::icon(switch_handle)
+                    .size(24)
+                    .class(cosmic::theme::Svg::custom(|theme| {
+                        cosmic::iced::widget::svg::Style {
+                            color: Some(cosmic::iced::Color::from(theme.cosmic().accent_color())),
+                        }
+                    }));
 
-            // Center icon in fixed-size container
-            let icon_content = widget::container(svg_widget)
-                .width(Length::Fixed(52.0))
-                .height(Length::Fixed(52.0))
-                .center(Length::Fixed(52.0));
-
-            // Use custom button with icon as content - matches top bar overlay_icon_button pattern
-            // Use Button::Text for theme-aware styling (transparent background, themed icon color)
-            let mut btn = widget::button::custom(icon_content)
-                .padding(0)
-                .class(cosmic::theme::Button::Text);
+            let mut btn = widget::button::custom(icon_widget)
+                .padding(10)
+                .width(Length::Fixed(44.0))
+                .height(Length::Fixed(44.0))
+                .class(cosmic::theme::Button::Standard);
 
             if !is_disabled {
                 btn = btn.on_press(Message::SwitchCamera);
             }
 
-            // Wrap in container with themed background for better visibility on camera preview
-            widget::container(btn).style(overlay_container_style).into()
+            btn.into()
         } else {
-            // Add invisible placeholder with same width as icon button
             widget::Space::new()
                 .width(Length::Fixed(ui::PLACEHOLDER_BUTTON_WIDTH))
                 .height(Length::Shrink)

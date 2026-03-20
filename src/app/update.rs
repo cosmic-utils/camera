@@ -200,8 +200,13 @@ impl AppModel {
             Message::RecordingStopped(result) => self.handle_recording_stopped(result),
             Message::UpdateRecordingDuration => self.handle_update_recording_duration(),
             Message::StartRecordingAfterDelay => self.handle_start_recording_after_delay(),
+            Message::CaptureButtonPressed => self.handle_capture_button_pressed(),
+            Message::CaptureButtonReleased => self.handle_capture_button_released(),
+            Message::QuickRecordThreshold => self.handle_quick_record_threshold(),
 
             // ===== Timelapse =====
+            Message::NextMode => self.handle_cycle_mode(true),
+            Message::PrevMode => self.handle_cycle_mode(false),
             Message::ToggleTimelapse => self.handle_toggle_timelapse(),
             Message::TimelapseTick => self.handle_timelapse_tick(),
             Message::SetTimelapseInterval(i) => self.handle_set_timelapse_interval(i),

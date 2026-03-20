@@ -917,15 +917,16 @@ impl BurstModeGpuPipeline {
     pub async fn new() -> Result<Self, String> {
         info!("Initializing burst mode GPU pipeline (all operations GPU-accelerated)");
 
-        // Create device with low-priority queue to avoid starving UI rendering
-        let (device, queue, gpu_info) =
-            gpu::create_low_priority_compute_device("burst_mode_gpu").await?;
+        // Get shared GPU device to avoid creating multiple wgpu instances
+        let gpu = gpu::get_shared_gpu().await?;
+        let device = gpu.device;
+        let queue = gpu.queue;
 
         info!(
-            adapter = %gpu_info.adapter_name,
-            backend = ?gpu_info.backend,
-            low_priority = gpu_info.low_priority_enabled,
-            "GPU device created for burst mode"
+            adapter = %gpu.info.adapter_name,
+            backend = ?gpu.info.backend,
+            low_priority = gpu.info.low_priority_enabled,
+            "Using shared GPU device for burst mode"
         );
 
         let max_buffer_size = device.limits().max_storage_buffer_binding_size as u64;

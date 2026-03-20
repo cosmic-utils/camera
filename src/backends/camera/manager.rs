@@ -122,9 +122,37 @@ impl CameraBackendManager {
     }
 
     /// Capture a photo
+    ///
+    /// Polls for a still frame with a 2-second timeout, releasing the RwLock
+    /// between iterations so that concurrent write operations (mode switch,
+    /// shutdown) are not blocked for the full duration.
     pub fn capture_photo(&self) -> BackendResult<CameraFrame> {
+        // Request still capture under a brief lock
+        {
+            let state = self.state.read().unwrap();
+            state.backend.request_still_capture()?;
+        }
+
+        // Poll for the still frame, releasing the lock between iterations
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(2);
+
+        while start.elapsed() < timeout {
+            {
+                let state = self.state.read().unwrap();
+                if let Some(frame) = state.backend.poll_still_frame() {
+                    return Ok(frame);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Timeout — fall back to preview frame
         let state = self.state.read().unwrap();
-        state.backend.capture_photo()
+        state
+            .backend
+            .poll_preview_frame()
+            .ok_or_else(|| BackendError::Other("No frame available after timeout".to_string()))
     }
 
     /// Set (or clear) the direct recording sender.

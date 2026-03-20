@@ -11,7 +11,10 @@ var sampler_img: sampler;
 struct ViewportParams {
     size: vec2<f32>,
     corner_radius: f32,
-    _padding: f32, // Padding for 16-byte alignment
+    hover_alpha: f32, // 0.0 = normal, >0 = hover/pressed overlay
+    accent_color: vec4<f32>, // border color when hovered (RGBA)
+    uv_offset: vec2<f32>, // UV offset for scroll clipping compensation
+    uv_scale: vec2<f32>,  // UV scale for scroll clipping compensation
 }
 
 @group(0) @binding(2)
@@ -46,6 +49,9 @@ fn rounded_box_sdf(pos: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
 // Fragment shader - renders image with rounded corners and cover fit
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Apply UV offset/scale to compensate for scroll clipping
+    let tex_coords = viewport.uv_offset + in.tex_coords * viewport.uv_scale;
+
     // Get texture dimensions
     let tex_size = vec2<f32>(textureDimensions(texture_img));
 
@@ -65,10 +71,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Adjust UV coordinates to center and scale the texture (cover fit)
-    let adjusted_uv = (in.tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
+    let adjusted_uv = (tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
 
     // Convert to pixel coordinates for rounded corner calculation (centered)
-    let pixel_pos = (in.tex_coords - vec2<f32>(0.5, 0.5)) * viewport.size;
+    // Use scroll-adjusted tex_coords so positions map to the full widget space,
+    // not just the visible viewport portion. This ensures corners stay aligned
+    // when the widget is partially clipped during animations.
+    let pixel_pos = (tex_coords - vec2<f32>(0.5, 0.5)) * viewport.size;
 
     // Calculate distance to rounded rectangle using corner radius from uniform
     let half_size = viewport.size * 0.5;
@@ -78,8 +87,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(texture_img, sampler_img, adjusted_uv);
 
     // Apply smooth alpha based on distance (anti-aliasing)
-    // Only use the corner alpha, not the image's alpha (photos should be opaque)
     let alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
 
-    return vec4<f32>(color.rgb, alpha);
+    var final_rgb = color.rgb;
+
+    // Draw accent border when hovered (2px wide ring at the rounded edge)
+    if (viewport.accent_color.a > 0.0) {
+        let border_width = 2.0;
+        let border_alpha = smoothstep(-border_width - 1.0, -border_width, dist)
+                         * (1.0 - smoothstep(-1.0, 1.0, dist));
+        final_rgb = mix(final_rgb, viewport.accent_color.rgb, border_alpha * viewport.accent_color.a);
+    }
+
+    return vec4<f32>(final_rgb, alpha);
 }

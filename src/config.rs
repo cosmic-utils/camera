@@ -330,7 +330,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             app_theme: AppTheme::default(), // Default to System theme
-            save_folder_name: "Camera".to_string(),
+            save_folder_name: crate::constants::DEFAULT_SAVE_FOLDER.to_string(),
             last_camera_path: None,
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),

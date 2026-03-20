@@ -46,30 +46,7 @@ impl BitratePreset {
     /// - 2K (2560x1440): Low=8, Medium=16, High=32 Mbps
     /// - 4K (3840x2160): Low=15, Medium=30, High=50 Mbps
     pub fn bitrate_kbps(&self, width: u32, _height: u32) -> u32 {
-        let resolution_tier = get_resolution_tier(width);
-
-        match (resolution_tier, self) {
-            // SD (640x480 and below)
-            (ResolutionTier::SD, BitratePreset::Low) => 1_000,
-            (ResolutionTier::SD, BitratePreset::Medium) => 2_000,
-            (ResolutionTier::SD, BitratePreset::High) => 4_000,
-            // HD (1280x720)
-            (ResolutionTier::HD, BitratePreset::Low) => 2_500,
-            (ResolutionTier::HD, BitratePreset::Medium) => 5_000,
-            (ResolutionTier::HD, BitratePreset::High) => 10_000,
-            // Full HD (1920x1080)
-            (ResolutionTier::FullHD, BitratePreset::Low) => 4_000,
-            (ResolutionTier::FullHD, BitratePreset::Medium) => 8_000,
-            (ResolutionTier::FullHD, BitratePreset::High) => 16_000,
-            // 2K (2560x1440)
-            (ResolutionTier::TwoK, BitratePreset::Low) => 8_000,
-            (ResolutionTier::TwoK, BitratePreset::Medium) => 16_000,
-            (ResolutionTier::TwoK, BitratePreset::High) => 32_000,
-            // 4K (3840x2160 and above)
-            (ResolutionTier::FourK, BitratePreset::Low) => 15_000,
-            (ResolutionTier::FourK, BitratePreset::Medium) => 30_000,
-            (ResolutionTier::FourK, BitratePreset::High) => 50_000,
-        }
+        self.bitrate_for_tier(get_resolution_tier(width))
     }
 
     /// Get the bitrate for a specific resolution tier (for matrix display)
@@ -162,19 +139,16 @@ pub fn format_bitrate(kbps: u32) -> String {
     }
 }
 
+/// Default folder name for saving photos and videos
+pub const DEFAULT_SAVE_FOLDER: &str = "Camera";
+
 /// UI Constants
 pub mod ui {
     /// Button width for format picker
     pub const PICKER_BUTTON_WIDTH: f32 = 50.0;
 
-    /// Capture button size (outer)
-    pub const CAPTURE_BUTTON_OUTER: f32 = 60.0;
-
     /// Capture button size (inner)
-    pub const CAPTURE_BUTTON_INNER: f32 = 50.0;
-
-    /// Capture button border radius
-    pub const CAPTURE_BUTTON_RADIUS: f32 = 25.0;
+    pub const CAPTURE_BUTTON_INNER: f32 = 60.0;
 
     /// Overlay button/container background transparency (0.0 = transparent, 1.0 = opaque)
     ///
@@ -190,7 +164,7 @@ pub mod ui {
     pub const PICKER_BORDER_RADIUS: f32 = 8.0;
 
     /// Placeholder button width when camera switch is hidden
-    pub const PLACEHOLDER_BUTTON_WIDTH: f32 = 40.0;
+    pub const PLACEHOLDER_BUTTON_WIDTH: f32 = 44.0;
 
     /// Standard icon button width (for layout balancing)
     pub const ICON_BUTTON_WIDTH: f32 = 44.0;

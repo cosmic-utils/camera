@@ -112,9 +112,7 @@ impl BugReportGenerator {
         }
 
         // Distribution info
-        if let Ok(output) = Command::new("cat").arg("/etc/os-release").output()
-            && let Ok(os_release) = String::from_utf8(output.stdout)
-        {
+        if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
             for line in os_release.lines() {
                 if line.starts_with("PRETTY_NAME=") {
                     let distro = line

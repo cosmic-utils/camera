@@ -106,7 +106,7 @@ pub trait CameraBackend: Send + Sync {
 
     // ===== Capture: Photo =====
 
-    /// Capture a single photo frame
+    /// Capture a single photo frame (blocking, up to 2 seconds)
     ///
     /// This captures a single frame with the current camera settings.
     /// The frame data is copied immediately, so the camera preview is not blocked.
@@ -116,6 +116,16 @@ pub trait CameraBackend: Send + Sync {
     /// * `Ok(CameraFrame)` - Frame captured successfully
     /// * `Err(BackendError)` - Capture failed
     fn capture_photo(&self) -> BackendResult<CameraFrame>;
+
+    /// Request a still capture (non-blocking).
+    /// Returns Ok(()) if the request was accepted.
+    fn request_still_capture(&self) -> BackendResult<()>;
+
+    /// Poll for a still frame without blocking. Returns `None` if not yet available.
+    fn poll_still_frame(&self) -> Option<CameraFrame>;
+
+    /// Poll for the latest preview frame without blocking.
+    fn poll_preview_frame(&self) -> Option<CameraFrame>;
 
     // ===== Preview =====
 

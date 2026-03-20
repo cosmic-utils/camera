@@ -143,6 +143,15 @@ impl AppModel {
 
     /// Capture the current frame as a photo with the selected filter and zoom
     pub(crate) fn capture_photo(&mut self) -> Task<cosmic::Action<Message>> {
+        self.capture_photo_with_frame(None)
+    }
+
+    /// Capture a photo, optionally using a pre-captured frame (zero-shutter-lag).
+    /// Falls back to `self.current_frame` if `zsl_frame` is `None`.
+    fn capture_photo_with_frame(
+        &mut self,
+        zsl_frame: Option<Arc<crate::backends::camera::types::CameraFrame>>,
+    ) -> Task<cosmic::Action<Message>> {
         // Use HDR+ burst mode only if it would actually be used (frame_count > 1)
         // This respects auto-detected brightness and user override
         if self.would_use_burst_mode() {
@@ -155,15 +164,19 @@ impl AppModel {
             return self.capture_photo_from_raw_stream();
         }
 
-        let Some(frame) = &self.current_frame else {
-            info!("No frame available to capture");
-            return Task::none();
+        let frame_arc = if let Some(frame) = zsl_frame {
+            frame
+        } else {
+            let Some(frame) = &self.current_frame else {
+                info!("No frame available to capture");
+                return Task::none();
+            };
+            Arc::clone(frame)
         };
 
         info!("Capturing photo...");
         self.is_capturing = true;
 
-        let frame_arc = Arc::clone(frame);
         let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
@@ -172,8 +185,8 @@ impl AppModel {
 
         // Calculate crop rectangle based on aspect ratio setting (accounting for rotation)
         let crop_rect = self.photo_aspect_ratio.optional_crop_rect_with_rotation(
-            frame.width,
-            frame.height,
+            frame_arc.width,
+            frame_arc.height,
             rotation,
         );
 
@@ -450,9 +463,6 @@ impl AppModel {
         self.camera_cancel_flag
             .store(true, std::sync::atomic::Ordering::Release);
 
-        // Update state to processing
-        self.burst_mode.start_processing();
-
         // Take the frames from the buffer
         let frames: Vec<Arc<crate::backends::camera::types::CameraFrame>> =
             self.burst_mode.take_frames();
@@ -604,6 +614,19 @@ impl AppModel {
     }
 
     pub(crate) fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
+        // Animate the correct button depending on recording state
+        if self.recording.is_recording() {
+            self.animate_photo_btn_scale(0.82);
+        } else {
+            self.animate_capture_scale(0.82);
+        }
+
+        // If quick-record is active, ignore direct Capture messages
+        // (the quick-record state machine handles capture)
+        if self.quick_record.is_pressed() || self.quick_record.is_recording() {
+            return Task::none();
+        }
+
         // If timer countdown is active, abort it
         if self.photo_timer_countdown.is_some() {
             return self.handle_abort_photo_timer();
@@ -884,11 +907,18 @@ impl AppModel {
 
     pub(crate) fn handle_clear_capture_animation(&mut self) -> Task<cosmic::Action<Message>> {
         self.is_capturing = false;
+        if self.recording.is_recording() {
+            self.animate_photo_btn_scale(1.0);
+        } else {
+            self.animate_capture_scale(1.0);
+        }
         Task::none()
     }
 
     pub(crate) fn handle_toggle_recording(&mut self) -> Task<cosmic::Action<Message>> {
         if self.recording.is_recording() {
+            // Stopping: animate release (scale back up)
+            self.animate_capture_scale(1.0);
             // Turn off torch when stopping recording
             if self.flash_enabled {
                 self.turn_off_flash_hardware();
@@ -899,7 +929,10 @@ impl AppModel {
             }
             self.recording = RecordingState::Idle;
             self.update_idle_inhibit();
+            // Fade bottom bar back in
+            self.start_bottom_bar_fade(1.0);
         } else {
+            // Starting: validate before animating
             if self
                 .available_cameras
                 .get(self.current_camera_index)
@@ -912,6 +945,10 @@ impl AppModel {
                 error!("No active format for recording");
                 return Task::none();
             }
+            // Animate to recording size (after guards pass)
+            self.animate_capture_scale(0.82);
+            // Fade bottom bar out
+            self.start_bottom_bar_fade(0.0);
             return Task::done(cosmic::Action::App(Message::StartRecordingAfterDelay));
         }
         Task::none()
@@ -931,7 +968,10 @@ impl AppModel {
         result: Result<String, String>,
     ) -> Task<cosmic::Action<Message>> {
         self.recording = RecordingState::Idle;
+        self.quick_record = crate::app::state::QuickRecordState::Idle;
         self.update_idle_inhibit();
+        // Restore bottom bar
+        self.start_bottom_bar_fade(1.0);
         // Turn off torch when recording ends
         self.turn_off_flash_hardware();
 
@@ -962,6 +1002,158 @@ impl AppModel {
             return Self::delay_task(1000, Message::UpdateRecordingDuration);
         }
         Task::none()
+    }
+
+    /// Photo mode: capture frame on press, start 300ms timer for quick-record.
+    pub(crate) fn handle_capture_button_pressed(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::app::state::QuickRecordState;
+
+        // Only handle in Photo mode when idle
+        if self.mode != CameraMode::Photo
+            || self.recording.is_recording()
+            || self.burst_mode.is_active()
+            || self.quick_record.is_recording()
+        {
+            return Task::none();
+        }
+
+        // Don't start quick-record if photo timer is counting down
+        if self.photo_timer_countdown.is_some() {
+            return Task::none();
+        }
+
+        // Capture current frame for zero-shutter-lag photo
+        let captured_frame = self.current_frame.clone();
+
+        self.quick_record = QuickRecordState::Pressed {
+            press_time: std::time::Instant::now(),
+            captured_frame,
+        };
+        self.animate_capture_scale(0.82);
+
+        // Schedule 300ms threshold check
+        Self::delay_task(300, Message::QuickRecordThreshold)
+    }
+
+    /// Photo mode: finger lifted — either process photo or stop recording.
+    pub(crate) fn handle_capture_button_released(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::app::state::QuickRecordState;
+
+        self.animate_capture_scale(1.0);
+
+        match std::mem::take(&mut self.quick_record) {
+            QuickRecordState::Pressed { captured_frame, .. } => {
+                // Short tap: use the zero-shutter-lag frame captured at press time
+                self.quick_record = QuickRecordState::Idle;
+                self.capture_photo_with_frame(captured_frame)
+            }
+            QuickRecordState::Recording => {
+                // Long press ended: stop recording
+                self.quick_record = QuickRecordState::Idle;
+
+                // Fade bottom bar back in
+                self.start_bottom_bar_fade(1.0);
+
+                // Stop recording (same as toggle off)
+                if let Some(sender) = self.recording.take_stop_sender() {
+                    let _ = sender.send(());
+                }
+                self.recording = RecordingState::Idle;
+                self.update_idle_inhibit();
+                Task::none()
+            }
+            QuickRecordState::Idle => Task::none(),
+        }
+    }
+
+    /// 300ms elapsed — if still pressed, start recording.
+    pub(crate) fn handle_quick_record_threshold(&mut self) -> Task<cosmic::Action<Message>> {
+        use crate::app::state::QuickRecordState;
+        // Only act if still in Pressed state (finger hasn't lifted)
+        if !self.quick_record.is_pressed() {
+            return Task::none();
+        }
+        // Animate to recording scale
+        self.animate_capture_scale(0.82);
+
+        // Discard the captured photo frame, start recording
+        self.quick_record = QuickRecordState::Recording;
+        self.start_quick_recording()
+    }
+
+    /// Start quick-recording using the existing appsrc infrastructure.
+    /// Same as normal video recording but initiated from Photo mode.
+    fn start_quick_recording(&mut self) -> Task<cosmic::Action<Message>> {
+        if self
+            .available_cameras
+            .get(self.current_camera_index)
+            .is_none()
+        {
+            self.quick_record = crate::app::state::QuickRecordState::Idle;
+            self.animate_capture_scale(1.0);
+            return Task::none();
+        }
+        if self.active_format.is_none() {
+            self.quick_record = crate::app::state::QuickRecordState::Idle;
+            self.animate_capture_scale(1.0);
+            return Task::none();
+        }
+
+        // Fade out bottom bar (must be before borrowing camera/format from self)
+        self.start_bottom_bar_fade(0.0);
+
+        let camera = &self.available_cameras[self.current_camera_index];
+        let format = self.active_format.as_ref().unwrap();
+
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let filename = format!("VID_{}.mp4", timestamp);
+        let save_dir = crate::app::get_video_directory(&self.config.save_folder_name);
+        let output_path = save_dir.join(&filename);
+
+        info!(
+            output = %output_path.display(),
+            "Starting quick-record (long-press in Photo mode)"
+        );
+
+        let sensor_rotation = camera.rotation;
+        let framerate = format.framerate.map(|f| f.as_int()).unwrap_or(30);
+
+        // Use viewfinder frame dimensions (not raw format dimensions)
+        let (appsrc_width, appsrc_height) = self
+            .current_frame
+            .as_ref()
+            .map(|f| (f.width, f.height))
+            .unwrap_or((format.width, format.height));
+
+        let audio_device = if self.config.record_audio {
+            self.available_audio_devices
+                .get(self.current_audio_device_index)
+                .map(|dev| dev.node_name.clone())
+        } else {
+            None
+        };
+
+        let selected_encoder = self
+            .available_video_encoders
+            .get(self.current_video_encoder_index)
+            .cloned();
+
+        let appsrc_bitrate = self
+            .config
+            .bitrate_preset
+            .bitrate_kbps(appsrc_width, appsrc_height);
+
+        self.start_appsrc_recording(AppsrcRecordingConfig {
+            width: appsrc_width,
+            height: appsrc_height,
+            framerate,
+            format: format.clone(),
+            output_path,
+            sensor_rotation,
+            audio_device,
+            selected_encoder,
+            bitrate_kbps: appsrc_bitrate,
+        })
     }
 
     pub(crate) fn handle_start_recording_after_delay(&mut self) -> Task<cosmic::Action<Message>> {
@@ -1369,6 +1561,11 @@ impl AppModel {
 
     pub(crate) fn handle_toggle_timelapse(&mut self) -> Task<cosmic::Action<Message>> {
         if self.timelapse.is_running() {
+            self.animate_capture_scale(1.0);
+        } else {
+            self.animate_capture_scale(0.82);
+        }
+        if self.timelapse.is_running() {
             info!("Stopping timelapse");
             return self.stop_timelapse();
         }
@@ -1389,6 +1586,7 @@ impl AppModel {
             interval_ms,
             frame_sender: frame_tx,
         };
+        self.start_bottom_bar_fade(0.0);
 
         // Build output path
         let folder_name = self.config.save_folder_name.clone();
@@ -1471,6 +1669,7 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.timelapse = TimelapseState::Idle;
         self.update_idle_inhibit();
+        self.start_bottom_bar_fade(1.0);
         match result {
             Ok(path) => {
                 info!(path = %path, "Timelapse video saved");

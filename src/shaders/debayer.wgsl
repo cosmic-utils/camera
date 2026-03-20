@@ -152,10 +152,17 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         b = dot(linear, params.ccm_row2.xyz);
     }
 
-    // Apply sRGB gamma correction for raw linear sensor data
+    // Clamp to [0,1] range
     let rgb = clamp(vec3(r, g, b), vec3(0.0), vec3(1.0));
-    let srgb = vec3(linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b));
-    textureStore(output, vec2(x, y), vec4(srgb, 1.0));
+
+    // Apply sRGB gamma only when ISP colour processing is active (data is linear).
+    // Without ISP colour, the data is in sensor-native space where gamma is meaningless.
+    if (params.use_isp_colour == 1u) {
+        let srgb = vec3(linear_to_srgb(rgb.r), linear_to_srgb(rgb.g), linear_to_srgb(rgb.b));
+        textureStore(output, vec2(x, y), vec4(srgb, 1.0));
+    } else {
+        textureStore(output, vec2(x, y), vec4(rgb, 1.0));
+    }
 }
 
 // Convert linear light to sRGB gamma-corrected value

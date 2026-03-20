@@ -310,6 +310,9 @@ pub struct GpuConvertPipeline {
     tex_v: Option<wgpu::Texture>,
     output_texture: Option<wgpu::Texture>,
     output_view: Option<wgpu::TextureView>,
+    /// Cached staging buffer for `read_rgba_to_cpu` readback
+    readback_staging_buffer: Option<wgpu::Buffer>,
+    readback_staging_buffer_size: u64,
 }
 
 impl GpuConvertPipeline {
@@ -317,14 +320,15 @@ impl GpuConvertPipeline {
     pub async fn new() -> Result<Self, String> {
         info!("Initializing format conversion pipelines");
 
-        let (device, queue, gpu_info) =
-            gpu::create_low_priority_compute_device("yuv_convert_pipeline").await?;
+        let gpu = gpu::get_shared_gpu().await?;
+        let device = gpu.device;
+        let queue = gpu.queue;
 
         info!(
-            adapter_name = %gpu_info.adapter_name,
-            adapter_backend = ?gpu_info.backend,
-            low_priority = gpu_info.low_priority_enabled,
-            "GPU device created for format conversion"
+            adapter_name = %gpu.info.adapter_name,
+            adapter_backend = ?gpu.info.backend,
+            low_priority = gpu.info.low_priority_enabled,
+            "Using shared GPU device for format conversion"
         );
 
         // Create uniform buffer (shared across all pipelines, sized for largest params struct)
@@ -403,6 +407,8 @@ impl GpuConvertPipeline {
             cached_height: 0,
             cached_format: PixelFormat::RGBA,
             cached_uv_dims: None,
+            readback_staging_buffer: None,
+            readback_staging_buffer_size: 0,
             tex_y: None,
             tex_uv: None,
             tex_v: None,
@@ -1440,20 +1446,28 @@ impl GpuConvertPipeline {
     }
 
     /// Read back the converted RGBA data to CPU memory
-    pub async fn read_rgba_to_cpu(&self, width: u32, height: u32) -> Result<Vec<u8>, String> {
+    pub async fn read_rgba_to_cpu(&mut self, width: u32, height: u32) -> Result<Vec<u8>, String> {
         let output = self
             .output_texture
             .as_ref()
             .ok_or("Output texture not allocated")?;
 
         let padded_bytes_per_row = align_to_copy_row(width * 4);
+        let required_size = (padded_bytes_per_row * height) as u64;
 
-        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("convert_staging"),
-            size: (padded_bytes_per_row * height) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        // Reuse cached staging buffer if it matches, otherwise allocate and cache
+        if self.readback_staging_buffer_size != required_size {
+            self.readback_staging_buffer =
+                Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("convert_staging"),
+                    size: required_size,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                }));
+            self.readback_staging_buffer_size = required_size;
+        }
+
+        let staging_buffer = self.readback_staging_buffer.as_ref().unwrap();
 
         let mut encoder = self
             .device
@@ -1469,7 +1483,7 @@ impl GpuConvertPipeline {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &staging_buffer,
+                buffer: staging_buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_bytes_per_row),

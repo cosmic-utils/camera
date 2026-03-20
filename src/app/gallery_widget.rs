@@ -32,8 +32,8 @@ impl GalleryWidget {
 
         Self {
             primitive,
-            width: Length::Fixed(40.0),
-            height: Length::Fixed(40.0),
+            width: Length::Fixed(44.0),
+            height: Length::Fixed(44.0),
         }
     }
 }
@@ -70,8 +70,13 @@ impl Widget<crate::app::Message, Theme, Renderer> for GalleryWidget {
     ) {
         let bounds = layout.bounds();
 
-        // Draw the custom primitive using the wgpu renderer's primitive support
-        renderer.draw_primitive(bounds, self.primitive.clone());
+        let mut prim = self.primitive.clone();
+        if _cursor.position().is_some_and(|p| bounds.contains(p)) {
+            let accent = _theme.cosmic().accent_color();
+            prim.accent_color = [accent.red, accent.green, accent.blue, 1.0];
+        }
+
+        renderer.draw_primitive(bounds, prim);
     }
 }
 

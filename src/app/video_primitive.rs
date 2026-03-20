@@ -10,6 +10,11 @@
 use crate::app::state::FilterType;
 use crate::backends::camera::types::{FrameData, PixelFormat, YuvPlanes};
 use cosmic::iced::Rectangle;
+
+/// Video ID for the normal camera preview (no blur).
+pub const VIDEO_ID_NORMAL: u64 = 0;
+/// Video ID for the blurred background preview (used during transitions/HDR+ processing).
+pub const VIDEO_ID_BLUR: u64 = 1;
 use cosmic::iced_wgpu::graphics::Viewport;
 use cosmic::iced_wgpu::primitive::{Pipeline as PipelineTrait, Primitive as PrimitiveTrait};
 use cosmic::iced_wgpu::wgpu;
@@ -213,6 +218,9 @@ pub struct VideoPipeline {
     // Using RwLock for interior mutability (Sync-safe) since render() takes &self
     blur_intermediate_1: std::sync::RwLock<Option<BlurIntermediateTexture>>,
     blur_intermediate_2: std::sync::RwLock<Option<BlurIntermediateTexture>>,
+    /// Set after the first 3-pass blur render. Subsequent frames skip the
+    /// expensive blur passes and just blit the cached result.
+    blur_cached: std::sync::atomic::AtomicBool,
     // GPU timing tracking to detect and handle stalls
     last_upload_duration: std::sync::Mutex<std::time::Duration>,
     frames_skipped: std::sync::atomic::AtomicU32,
@@ -363,8 +371,12 @@ impl PrimitiveTrait for VideoPrimitive {
             if let Some(frame) = frame_opt {
                 let upload_start = Instant::now();
 
-                // For blur video (video_id == 1), ensure intermediate textures exist
-                if self.video_id == 1 {
+                // For blur video (VIDEO_ID_BLUR), ensure intermediate textures exist
+                // and invalidate the blur cache so the new frame gets blurred.
+                if self.video_id == VIDEO_ID_BLUR {
+                    pipeline
+                        .blur_cached
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                     pipeline.ensure_intermediate_textures(
                         device,
                         frame.width,
@@ -409,7 +421,7 @@ impl PrimitiveTrait for VideoPrimitive {
             // Update viewport buffer for this specific filter binding
             let binding_key = (self.video_id, filter_mode);
             if let Some(binding) = pipeline.bindings.get(&binding_key) {
-                // For blur video (video_id == 1), use Contain mode for Pass 1
+                // For blur video (VIDEO_ID_BLUR), use Contain mode for Pass 1
                 // For regular video, use the requested Cover/Contain mode
                 // Get crop UV values (default to full image if not set)
                 let (crop_min, crop_max) = self.crop_uv.map_or(
@@ -417,7 +429,7 @@ impl PrimitiveTrait for VideoPrimitive {
                     |(u_min, v_min, u_max, v_max)| ([u_min, v_min], [u_max, v_max]),
                 );
 
-                if self.video_id == 1 {
+                if self.video_id == VIDEO_ID_BLUR {
                     if let Some((tex_width, tex_height)) = tex_dims {
                         // Blur video: use Contain mode with texture dimensions for Pass 1
                         // Apply mirror in first pass since this reads from source texture
@@ -840,6 +852,7 @@ impl VideoPipeline {
             bindings: std::collections::HashMap::new(),
             blur_intermediate_1: std::sync::RwLock::new(None),
             blur_intermediate_2: std::sync::RwLock::new(None),
+            blur_cached: std::sync::atomic::AtomicBool::new(false),
             last_upload_duration: std::sync::Mutex::new(std::time::Duration::ZERO),
             frames_skipped: std::sync::atomic::AtomicU32::new(0),
             yuv_compute_pipeline: Some(yuv_compute_pipeline),
@@ -977,11 +990,11 @@ impl VideoPipeline {
         if frame.id.is_multiple_of(30) {
             let size_bytes = frame.data_slice().len();
             tracing::debug!(
-                gpu_upload_ms = format!("{:.2}", gpu_copy_time.as_micros() as f64 / 1000.0),
-                total_prepare_ms = format!("{:.2}", upload_duration.as_micros() as f64 / 1000.0),
+                gpu_upload_us = gpu_copy_time.as_micros() as u64,
+                total_prepare_us = upload_duration.as_micros() as u64,
                 width = frame.width,
                 height = frame.height,
-                size_mb = format!("{:.1}", size_bytes as f64 / 1_000_000.0),
+                size_bytes,
                 format = ?frame.format,
                 "GPU texture upload"
             );
@@ -1757,8 +1770,8 @@ impl VideoPipeline {
                 return;
             }
 
-            // Video ID 1 is used for blurred transition frames with 3-pass blur
-            if video_id == 1 {
+            // Blurred transition frames use a 3-pass blur pipeline
+            if video_id == VIDEO_ID_BLUR {
                 // 3-PASS BLUR for transition frames
                 let intermediate_1_opt = self.blur_intermediate_1.read().unwrap();
                 let intermediate_2_opt = self.blur_intermediate_2.read().unwrap();
@@ -1801,60 +1814,69 @@ impl VideoPipeline {
 
                     render_pass.set_pipeline(&self.pipeline_rgb_blur);
                     render_pass.set_bind_group(0, Some(&binding.bind_group), &[]);
-                    render_pass.draw(0..6, 0..1);
+                    render_pass.draw(0..3, 0..1);
                     return;
                 }
 
                 let intermediate_1 = intermediate_1_opt.as_ref().unwrap();
                 let intermediate_2 = intermediate_2_opt.as_ref().unwrap();
 
-                // Pass 1: RGBA blur to intermediate texture 1
-                {
-                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("camera blur pass 1"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &intermediate_1.view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                            depth_slice: None,
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
+                // Only run the expensive 3-pass blur on the first frame.
+                // Subsequent frames just blit the cached result from intermediate_2.
+                if !self.blur_cached.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Pass 1: RGBA blur to intermediate texture 1
+                    {
+                        let mut render_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("camera blur pass 1"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &intermediate_1.view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                    depth_slice: None,
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
 
-                    render_pass.set_pipeline(&self.pipeline_rgb_blur);
-                    render_pass.set_bind_group(0, Some(&binding.bind_group), &[]);
-                    render_pass.draw(0..6, 0..1);
+                        render_pass.set_pipeline(&self.pipeline_rgb_blur);
+                        render_pass.set_bind_group(0, Some(&binding.bind_group), &[]);
+                        render_pass.draw(0..3, 0..1);
+                    }
+
+                    // Pass 2: RGB blur from intermediate 1 to intermediate 2
+                    {
+                        let mut render_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("camera blur pass 2"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &intermediate_2.view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                    depth_slice: None,
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                        render_pass.set_pipeline(&self.pipeline_rgb_blur);
+                        render_pass.set_bind_group(0, Some(&intermediate_1.bind_group), &[]);
+                        render_pass.draw(0..3, 0..1);
+                    }
+
+                    self.blur_cached
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
 
-                // Pass 2: RGB blur from intermediate 1 to intermediate 2
-                {
-                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("camera blur pass 2"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &intermediate_2.view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                            depth_slice: None,
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    render_pass.set_pipeline(&self.pipeline_rgb_blur);
-                    render_pass.set_bind_group(0, Some(&intermediate_1.bind_group), &[]);
-                    render_pass.draw(0..6, 0..1);
-                }
-
-                // Pass 3: RGB blur from intermediate 2 to final target
+                // Final pass (or cached blit): from intermediate_2 to target
                 {
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("camera blur pass 3"),
@@ -1892,7 +1914,7 @@ impl VideoPipeline {
 
                     render_pass.set_pipeline(&self.pipeline_rgb_blur);
                     render_pass.set_bind_group(0, Some(&intermediate_2.bind_group), &[]);
-                    render_pass.draw(0..6, 0..1);
+                    render_pass.draw(0..3, 0..1);
                 }
             } else {
                 // Single-pass RGBA rendering for live preview
@@ -1932,7 +1954,7 @@ impl VideoPipeline {
 
                 render_pass.set_pipeline(&self.pipeline_rgba);
                 render_pass.set_bind_group(0, Some(&binding.bind_group), &[]);
-                render_pass.draw(0..6, 0..1);
+                render_pass.draw(0..3, 0..1);
             }
         }
     }

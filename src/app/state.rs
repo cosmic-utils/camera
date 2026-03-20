@@ -100,6 +100,31 @@ impl RecordingState {
     }
 }
 
+/// State machine for long-press-to-record in Photo mode.
+/// Tap (<300ms) captures a photo, long press (≥300ms) starts video recording.
+#[derive(Default)]
+pub enum QuickRecordState {
+    #[default]
+    Idle,
+    /// Finger/mouse is down. Frame captured for potential photo.
+    Pressed {
+        press_time: std::time::Instant,
+        captured_frame: Option<std::sync::Arc<crate::backends::camera::types::CameraFrame>>,
+    },
+    /// Recording is active (threshold exceeded).
+    Recording,
+}
+
+impl QuickRecordState {
+    pub fn is_pressed(&self) -> bool {
+        matches!(self, Self::Pressed { .. })
+    }
+
+    pub fn is_recording(&self) -> bool {
+        matches!(self, Self::Recording)
+    }
+}
+
 /// Virtual camera streaming state machine
 #[derive(Default)]
 pub enum VirtualCameraState {
@@ -520,12 +545,6 @@ impl BurstModeState {
         self.frame_buffer = frames;
     }
 
-    /// Start processing
-    pub fn start_processing(&mut self) {
-        self.stage = BurstModeStage::Processing;
-        self.processing_progress = 0.0;
-    }
-
     /// Mark complete
     pub fn complete(&mut self) {
         self.stage = BurstModeStage::Complete;
@@ -642,6 +661,25 @@ pub struct AppModel {
     pub config_handler: Option<cosmic_config::Config>,
     /// Current camera mode (Photo or Video)
     pub mode: CameraMode,
+    /// Shared button inward slide (written by carousel update, read by SlideH draw).
+    /// Updated every frame so buttons track the carousel even when view() isn't called.
+    pub carousel_button_slide: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Quick-record state machine (long-press-to-record in Photo mode)
+    pub quick_record: QuickRecordState,
+    /// Capture button scale animation state
+    pub capture_scale_from: f32,
+    pub capture_scale_to: f32,
+    pub capture_anim_start: Option<std::time::Instant>,
+    /// Animation state for the photo-during-recording button (separate from main button)
+    pub photo_btn_scale_from: f32,
+    pub photo_btn_scale_to: f32,
+    pub photo_btn_anim_start: Option<std::time::Instant>,
+    /// Bottom bar fade animation: target opacity (0.0 = hidden, 1.0 = visible)
+    pub bottom_bar_opacity_target: f32,
+    /// Bottom bar fade animation: opacity when animation started
+    pub bottom_bar_opacity_from: f32,
+    /// Bottom bar fade animation: timestamp when animation started
+    pub bottom_bar_fade_start: Option<std::time::Instant>,
     /// Recording state (idle, recording, or paused)
     pub recording: RecordingState,
     /// Virtual camera state (idle or streaming)
@@ -1466,6 +1504,12 @@ pub enum Message {
     UpdateRecordingDuration,
     /// Start recording after camera is released
     StartRecordingAfterDelay,
+    /// Capture button pressed down (for quick-record state machine)
+    CaptureButtonPressed,
+    /// Capture button released (for quick-record state machine)
+    CaptureButtonReleased,
+    /// Long-press threshold reached — start quick recording
+    QuickRecordThreshold,
 
     // ===== Virtual Camera =====
     /// Toggle virtual camera streaming (start/stop)
@@ -1543,6 +1587,10 @@ pub enum Message {
     ToggleTimelapse,
     /// Timelapse interval timer tick — capture next frame
     TimelapseTick,
+    /// Cycle to the next camera mode (swipe left)
+    NextMode,
+    /// Cycle to the previous camera mode (swipe right)
+    PrevMode,
     /// Set timelapse interval from dropdown
     SetTimelapseInterval(usize),
     /// Timelapse video assembly completed (path or error)

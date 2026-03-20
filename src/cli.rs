@@ -383,8 +383,7 @@ fn select_video_format(formats: &[CameraFormat]) -> CameraFormat {
         .unwrap_or_else(|| formats[0].clone())
 }
 
-/// Default folder name for saving photos and videos
-const DEFAULT_SAVE_FOLDER: &str = "Camera";
+use camera::constants::DEFAULT_SAVE_FOLDER;
 
 /// Get default photo directory
 fn get_default_photo_dir() -> PathBuf {
@@ -537,7 +536,7 @@ fn is_supported_image(path: &Path) -> bool {
 }
 
 /// Load a DNG file and convert to RGBA CameraFrame
-fn load_dng_frame(path: &PathBuf) -> Result<CameraFrame, Box<dyn std::error::Error>> {
+fn load_dng_frame(path: &Path) -> Result<CameraFrame, Box<dyn std::error::Error>> {
     use camera::backends::camera::types::{CameraFrame, FrameData, PixelFormat};
     use image::GenericImageView;
     use std::fs::File;
