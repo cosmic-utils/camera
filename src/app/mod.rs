@@ -532,9 +532,6 @@ impl cosmic::Application for AppModel {
                     Vec::new()
                 };
 
-                // Log available encoders after cameras are enumerated (non-critical)
-                crate::pipelines::video::check_available_encoders();
-
                 (cameras, camera_index, formats)
             },
             |(cameras, index, formats)| {
@@ -572,6 +569,12 @@ impl cosmic::Application for AppModel {
             |result| cosmic::Action::App(Message::GpuPipelinesWarmed(result)),
         );
 
+        // Probe encoder availability in background (non-blocking, ~800ms for HW encoders)
+        let encoder_probe_task = Task::perform(
+            async { crate::pipelines::video::check_available_encoders() },
+            |_| cosmic::Action::App(Message::Noop),
+        );
+
         // Apply the theme from config on startup (THEME global defaults to Dark)
         let theme_task = cosmic::command::set_theme(app.config.app_theme.theme());
 
@@ -582,6 +585,7 @@ impl cosmic::Application for AppModel {
                 load_thumbnail_task,
                 preview_source_task,
                 gpu_warmup_task,
+                encoder_probe_task,
                 theme_task,
             ]),
         )
