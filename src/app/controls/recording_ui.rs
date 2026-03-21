@@ -112,8 +112,11 @@ impl AppModel {
             format!("{taken} shots - {elapsed}")
         };
 
+        let theme = cosmic::theme::active();
+        let destructive: Color = theme.cosmic().destructive_color().into();
+
         let row = widget::row()
-            .push(indicator_dot(Color::from_rgb(1.0, 0.55, 0.0)))
+            .push(indicator_dot(destructive))
             .push(widget::text(label).size(14))
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
