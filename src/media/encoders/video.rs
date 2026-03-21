@@ -197,7 +197,7 @@ pub fn enumerate_video_encoders() -> Vec<EncoderInfo> {
         ),
         ("v4l2h265enc", "V4L2 H.265 (HW)", VideoCodec::HEVC, true, 25),
         // Software HEVC/H.265
-        ("x265enc", "x265 H.265 (SW)", VideoCodec::HEVC, false, 30),
+        ("x265enc", "x265 H.265 (SW)", VideoCodec::HEVC, false, 31),
         // Hardware H.264
         (
             "vaapih264enc",
@@ -224,13 +224,13 @@ pub fn enumerate_video_encoders() -> Vec<EncoderInfo> {
         ),
         ("v4l2h264enc", "V4L2 H.264 (HW)", VideoCodec::H264, true, 45),
         // Software H.264
-        ("x264enc", "x264 H.264 (SW)", VideoCodec::H264, false, 50),
+        ("x264enc", "x264 H.264 (SW)", VideoCodec::H264, false, 30),
         (
             "openh264enc",
             "OpenH264 H.264 (SW)",
             VideoCodec::H264,
             false,
-            51,
+            32,
         ),
     ];
 
@@ -329,8 +329,9 @@ pub fn create_encoder_from_info_with_bitrate(
 /// 1. Hardware AV1 (vaapiavcenc, nvav1enc)
 /// 2. Hardware HEVC/H.265 (vaapih265enc, nvh265enc)
 /// 3. Hardware H.264 (vaapih264enc, nvh264enc)
-/// 4. Software HEVC/H.265 (x265enc)
-/// 5. Software H.264 (x264enc)
+/// 4. Software H.264 (x264enc)
+/// 5. Software HEVC/H.265 (x265enc)
+/// 6. Software H.264 (openh264enc)
 ///
 /// # Arguments
 /// * `quality` - Quality preset for encoding
@@ -370,10 +371,11 @@ pub fn select_video_encoder_with_bitrate(
         ("vaapih264enc", VideoCodec::H264, true),
         ("nvh264enc", VideoCodec::H264, true),
         ("v4l2h264enc", VideoCodec::H264, true),
+        // Software H.264 (preferred — fast, widely compatible)
+        ("x264enc", VideoCodec::H264, false),
         // Software HEVC
         ("x265enc", VideoCodec::HEVC, false),
-        // Software H.264
-        ("x264enc", VideoCodec::H264, false),
+        // Software H.264 (fallback)
         ("openh264enc", VideoCodec::H264, false),
     ];
 
