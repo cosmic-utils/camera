@@ -1099,28 +1099,22 @@ impl PhotoAspectRatio {
 
     /// Calculate crop rectangle accounting for sensor rotation
     ///
-    /// For photo processing where rotation is applied AFTER crop, we need to calculate
-    /// the crop on the original frame such that it produces the desired aspect ratio
-    /// after rotation.
-    ///
-    /// For 90°/270° rotations, the target aspect ratio is inverted because the
-    /// crop is applied before rotation.
+    /// For photo processing, crop is applied BEFORE rotation. Aspect ratio
+    /// labels like "4:3" always refer to the longer side first, so on a
+    /// portrait display "4:3" means 3:4 (w < h). Since the crop happens
+    /// on the original landscape sensor, we apply the same 4:3 ratio to
+    /// the landscape frame — after 90°/270° rotation, the result becomes
+    /// portrait 3:4 as expected.
     pub fn crop_rect_with_rotation(
         &self,
         frame_width: u32,
         frame_height: u32,
-        rotation: crate::backends::camera::types::SensorRotation,
+        _rotation: crate::backends::camera::types::SensorRotation,
     ) -> (u32, u32, u32, u32) {
-        if rotation.swaps_dimensions() {
-            // For 90°/270° rotation: crop is applied BEFORE rotation
-            // If user wants W:H ratio after rotation, we need H:W ratio before rotation
-            // So we calculate crop for swapped dimensions, which inverts the aspect ratio
-            let (x, y, w, h) = self.crop_rect(frame_height, frame_width);
-            // Swap the crop coordinates to match the original frame orientation
-            (y, x, h, w)
-        } else {
-            self.crop_rect(frame_width, frame_height)
-        }
+        // Crop is always computed in sensor space (original dimensions).
+        // The rotation applied afterwards naturally produces the correct
+        // display orientation (e.g. 4:3 landscape → 3:4 portrait after 90° rotation).
+        self.crop_rect(frame_width, frame_height)
     }
 
     /// Returns the crop rect for this aspect ratio, or None for Native (no crop)
