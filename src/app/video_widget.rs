@@ -103,9 +103,16 @@ impl VideoWidget {
         };
 
         let aspect_ratio = if let Some((u_min, v_min, u_max, v_max)) = config.crop_uv {
-            // Use cropped region's aspect ratio (crop is in rotated space)
-            let crop_width = (u_max - u_min) * effective_width;
-            let crop_height = (v_max - v_min) * effective_height;
+            // Crop UVs are in texture space (original sensor orientation).
+            // Compute the cropped region in texture pixels, then apply
+            // the rotation swap to get the displayed aspect ratio.
+            let tex_crop_w = (u_max - u_min) * frame.width as f32;
+            let tex_crop_h = (v_max - v_min) * frame.height as f32;
+            let (crop_width, crop_height) = if swaps_dimensions {
+                (tex_crop_h, tex_crop_w)
+            } else {
+                (tex_crop_w, tex_crop_h)
+            };
             if crop_height > 0.0 {
                 crop_width / crop_height
             } else {

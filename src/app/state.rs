@@ -1114,25 +1114,28 @@ impl PhotoAspectRatio {
 
     /// Calculate crop UV coordinates for shader use, accounting for sensor rotation
     ///
-    /// Since rotation is now applied by the GPU shader (not GStreamer), the frame
-    /// arrives with original sensor dimensions. The shader applies rotation BEFORE
-    /// crop, so crop_uv should be calculated for the POST-rotation dimensions.
+    /// The GPU shader rotation transforms screen UV → texture UV, then
+    /// `mix(crop_min, crop_max, tex)` restricts sampling to a sub-region.
+    /// Since the `mix` operates in texture space (original sensor orientation),
+    /// the crop UVs must also be in texture space.
     ///
-    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range
+    /// For 90°/270° rotations the screen axes are swapped relative to the
+    /// texture.  A "4:3" label on a portrait phone means the photo is 3:4
+    /// (w < h on screen), but the texture crop that achieves this has the
+    /// same 4:3 ratio in landscape texture space.  So we always compute
+    /// the crop on the original texture dimensions with the original ratio.
+    ///
+    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range (texture space)
     pub fn crop_uv_with_rotation(
         &self,
         frame_width: u32,
         frame_height: u32,
-        rotation: crate::backends::camera::types::SensorRotation,
+        _rotation: crate::backends::camera::types::SensorRotation,
     ) -> Option<(f32, f32, f32, f32)> {
-        // For 90°/270° rotations, swap dimensions to get effective post-rotation size
-        // The shader applies rotation before crop, so crop is in rotated coordinate space
-        let (effective_width, effective_height) = if rotation.swaps_dimensions() {
-            (frame_height, frame_width)
-        } else {
-            (frame_width, frame_height)
-        };
-        self.crop_uv(effective_width, effective_height)
+        // Crop is always computed in texture space (original sensor dimensions).
+        // The shader rotation handles the screen ↔ texture coordinate mapping,
+        // so the crop UVs are rotation-independent.
+        self.crop_uv(frame_width, frame_height)
     }
 
     /// Calculate crop rectangle accounting for sensor rotation
