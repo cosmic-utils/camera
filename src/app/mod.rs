@@ -1375,7 +1375,7 @@ impl cosmic::Application for AppModel {
                     let send_scheme =
                         |output: &mut cosmic::iced::futures::channel::mpsc::Sender<Message>,
                          scheme: ColorScheme| {
-                            let is_dark = !matches!(scheme, ColorScheme::PreferLight);
+                            let is_dark = matches!(scheme, ColorScheme::PreferDark);
                             output
                                 .try_send(Message::PortalColorSchemeChanged(is_dark))
                                 .ok();

@@ -254,8 +254,8 @@ impl AppTheme {
             }
         } else {
             match self {
-                Self::Dark | Self::System => Theme::dark(),
-                Self::Light => Theme::light(),
+                Self::Dark => Theme::dark(),
+                Self::Light | Self::System => Theme::light(),
             }
         }
     }
