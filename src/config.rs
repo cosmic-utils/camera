@@ -288,7 +288,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 15]
+#[version = 16]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -324,6 +324,8 @@ pub struct Config {
     pub composition_guide: CompositionGuide,
     /// Timelapse capture interval
     pub timelapse_interval: TimelapseInterval,
+    /// Haptic feedback on capture, mode switch, etc.
+    pub haptic_feedback: bool,
 }
 
 impl Default for Config {
@@ -348,6 +350,7 @@ impl Default for Config {
             audio_encoder: AudioEncoder::default(), // Default to Opus
             composition_guide: CompositionGuide::default(), // Default to None
             timelapse_interval: TimelapseInterval::default(), // Default to 2 fps
+            haptic_feedback: true, // Enable haptic feedback by default
         }
     }
 }

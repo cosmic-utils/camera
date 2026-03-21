@@ -116,6 +116,8 @@ struct CarouselState {
     label_strings: Vec<String>,
     /// Number of modes when labels were last cached (dirty flag)
     cached_mode_count: usize,
+    /// Nearest mode index during drag (for haptic feedback on boundary crossing)
+    drag_nearest_idx: Option<usize>,
 }
 
 impl Default for CarouselState {
@@ -152,6 +154,7 @@ impl Default for CarouselState {
             label_centers: Vec::new(),
             label_strings: Vec::new(),
             cached_mode_count: 0,
+            drag_nearest_idx: None,
         }
     }
 }
@@ -668,6 +671,7 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
                         let raw = state.drag_base_offset + (position.x - start_x);
                         state.drag_offset =
                             rubber_band_offset(raw, state, &self.modes, self.selected_index());
+                        check_drag_haptic(state, &self.modes, self.selected_index());
                         // Trigger stage 2 on drag movement (or reverse a running collapse)
                         if !state.full_expanding || state.full_expand_start.is_none() {
                             start_full_expand(state);
@@ -730,6 +734,7 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
                     let raw = state.drag_base_offset + (position.x - start_x);
                     state.drag_offset =
                         rubber_band_offset(raw, state, &self.modes, self.selected_index());
+                    check_drag_haptic(state, &self.modes, self.selected_index());
                     // Trigger stage 2 on drag movement (or reverse a running collapse)
                     if !state.full_expanding || state.full_expand_start.is_none() {
                         start_full_expand(state);
@@ -1273,6 +1278,7 @@ fn reset_interaction_state(state: &mut CarouselState) {
     state.press_time = None;
     state.hovered = false;
     state.hovered_carousel = false;
+    state.drag_nearest_idx = None;
     start_full_collapse(state);
     if state.full_expand_t < 0.01 {
         start_collapse(state);
@@ -1285,6 +1291,21 @@ fn interrupt_animation(state: &mut CarouselState) {
         state.drag_offset = current_visual_offset(state);
         state.snap_start = None;
         state.pending_mode = None;
+    }
+}
+
+/// Check if the nearest mode changed during drag and fire haptic feedback.
+fn check_drag_haptic(state: &mut CarouselState, modes: &[CameraMode], selected_idx: usize) {
+    let vis_off = current_visual_offset(state);
+    let anchor = anchor_center(state, modes, selected_idx);
+    let nearest = nearest_mode_to_viewport_center(state, anchor, selected_idx, vis_off);
+
+    if state.drag_nearest_idx != Some(nearest) {
+        if state.drag_nearest_idx.is_some() {
+            // Only fire haptic after the first update (not on drag start)
+            crate::backends::haptic::vibrate(10);
+        }
+        state.drag_nearest_idx = Some(nearest);
     }
 }
 

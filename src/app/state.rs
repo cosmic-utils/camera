@@ -1369,6 +1369,8 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
+    /// Toggle haptic feedback
+    ToggleHapticFeedback,
 
     // ===== Motor/PTZ Controls =====
     /// Toggle motor controls picker visibility

@@ -50,6 +50,8 @@ impl AppModel {
             return self.handle_toggle_tools_menu();
         }
 
+        self.haptic_tap();
+
         // When switching away from Virtual mode with a playing video, pause it first
         if self.mode == CameraMode::Virtual
             && matches!(self.virtual_camera_file_source, Some(FileSource::Video(_)))

@@ -38,4 +38,5 @@
 
 pub mod audio;
 pub mod camera;
+pub mod haptic;
 pub mod virtual_camera;

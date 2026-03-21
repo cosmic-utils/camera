@@ -14,6 +14,13 @@ use std::sync::Arc;
 use tracing::{debug, error, info};
 
 impl AppModel {
+    /// Trigger haptic feedback if enabled and available.
+    pub(crate) fn haptic_tap(&self) {
+        if self.config.haptic_feedback {
+            crate::backends::haptic::vibrate(10);
+        }
+    }
+
     // =========================================================================
     // Camera Control Handlers
     // =========================================================================
@@ -123,6 +130,7 @@ impl AppModel {
     }
 
     pub(crate) fn handle_switch_camera(&mut self) -> Task<cosmic::Action<Message>> {
+        self.haptic_tap();
         info!(
             current_index = self.current_camera_index,
             "Received SwitchCamera message"
@@ -597,6 +605,23 @@ impl AppModel {
             && let Err(err) = self.config.write_entry(handler)
         {
             error!(?err, "Failed to save mirror preview setting");
+        }
+        Task::none()
+    }
+
+    pub(crate) fn handle_toggle_haptic_feedback(&mut self) -> Task<cosmic::Action<Message>> {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        self.config.haptic_feedback = !self.config.haptic_feedback;
+        info!(
+            haptic_feedback = self.config.haptic_feedback,
+            "Haptic feedback toggled"
+        );
+
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            error!(?err, "Failed to save haptic feedback setting");
         }
         Task::none()
     }

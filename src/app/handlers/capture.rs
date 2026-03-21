@@ -616,6 +616,7 @@ impl AppModel {
     pub(crate) fn handle_capture(&mut self) -> Task<cosmic::Action<Message>> {
         // Animate the correct button depending on recording state
         if self.recording.is_recording() {
+            self.haptic_tap();
             self.animate_photo_btn_scale(0.82);
         } else {
             self.animate_capture_scale(0.82);
@@ -916,6 +917,7 @@ impl AppModel {
     }
 
     pub(crate) fn handle_toggle_recording(&mut self) -> Task<cosmic::Action<Message>> {
+        self.haptic_tap();
         if self.recording.is_recording() {
             // Stopping: animate release (scale back up)
             self.animate_capture_scale(1.0);
@@ -1006,6 +1008,7 @@ impl AppModel {
 
     /// Photo mode: capture frame on press, start 300ms timer for quick-record.
     pub(crate) fn handle_capture_button_pressed(&mut self) -> Task<cosmic::Action<Message>> {
+        self.haptic_tap();
         use crate::app::state::QuickRecordState;
 
         // Only handle in Photo mode when idle
@@ -1073,6 +1076,7 @@ impl AppModel {
         if !self.quick_record.is_pressed() {
             return Task::none();
         }
+        self.haptic_tap();
         // Animate to recording scale
         self.animate_capture_scale(0.82);
 
@@ -1560,6 +1564,7 @@ impl AppModel {
     // =========================================================================
 
     pub(crate) fn handle_toggle_timelapse(&mut self) -> Task<cosmic::Action<Message>> {
+        self.haptic_tap();
         if self.timelapse.is_running() {
             self.animate_capture_scale(1.0);
         } else {

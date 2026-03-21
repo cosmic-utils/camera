@@ -298,6 +298,21 @@ impl AppModel {
                 .toggler(self.config.mirror_preview, |_| Message::ToggleMirrorPreview),
         );
 
+        // Haptic feedback section (only show if device has haptics)
+        let haptic_section = if crate::backends::haptic::is_available() {
+            Some(
+                widget::settings::section().add(
+                    widget::settings::item::builder(fl!("settings-haptic-feedback"))
+                        .description(fl!("settings-haptic-feedback-description"))
+                        .toggler(self.config.haptic_feedback, |_| {
+                            Message::ToggleHapticFeedback
+                        }),
+                ),
+            )
+        } else {
+            None
+        };
+
         // Composition guide section
         let current_guide_index = crate::config::CompositionGuide::ALL
             .iter()
@@ -363,19 +378,24 @@ impl AppModel {
             ]));
 
         // Combine all sections
-        let sections = vec![
+        let mut sections = vec![
             appearance_section.into(),
             camera_section.into(),
             photo_section.into(),
             timelapse_section.into(),
             video_section.into(),
             mirror_section.into(),
+        ];
+        if let Some(haptic) = haptic_section {
+            sections.push(haptic.into());
+        }
+        sections.extend([
             composition_guide_section.into(),
             virtual_camera_section.into(),
             bug_reports_section.into(),
             reset_section.into(),
             insights_section.into(),
-        ];
+        ]);
 
         let settings_content: Element<'_, Message> = widget::settings::view_column(sections).into();
 
