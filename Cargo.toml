@@ -73,5 +73,10 @@ features = [
     "xdg-portal",
 ]
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
 [dev-dependencies]
 naga = { version = "29.0.0", features = ["wgsl-in"] }
