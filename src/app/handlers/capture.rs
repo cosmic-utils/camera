@@ -1046,8 +1046,38 @@ impl AppModel {
 
         match std::mem::take(&mut self.quick_record) {
             QuickRecordState::Pressed { captured_frame, .. } => {
-                // Short tap: use the zero-shutter-lag frame captured at press time
+                // Short tap: route through timer/flash logic before capturing
                 self.quick_record = QuickRecordState::Idle;
+
+                // If timer countdown is active, abort it
+                if self.photo_timer_countdown.is_some() {
+                    return self.handle_abort_photo_timer();
+                }
+
+                // In Photo mode with timer set, start countdown
+                if self.mode == CameraMode::Photo
+                    && self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off
+                {
+                    let seconds = self.photo_timer_setting.seconds();
+                    info!(seconds, "Starting photo timer countdown");
+                    self.photo_timer_countdown = Some(seconds);
+                    self.photo_timer_tick_start = Some(std::time::Instant::now());
+                    return Self::delay_task(1000, Message::PhotoTimerTick);
+                }
+
+                // Screen flash (front camera) or hardware flash (back camera)
+                if self.flash_enabled && !self.flash_active {
+                    if self.use_hardware_flash() {
+                        info!("Flash enabled - turning on hardware flash before capture");
+                        self.turn_on_flash_hardware();
+                    } else {
+                        info!("Flash enabled - showing screen flash before capture");
+                        self.flash_active = true;
+                    }
+                    return Self::delay_task(1000, Message::FlashComplete);
+                }
+
+                // No timer or flash — use the zero-shutter-lag frame
                 self.capture_photo_with_frame(captured_frame)
             }
             QuickRecordState::Recording => {
