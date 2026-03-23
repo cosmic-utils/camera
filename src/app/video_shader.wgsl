@@ -162,17 +162,25 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = vec3<f32>(color_r.r, color.g, color_b.b);
     } else if (viewport.filter_mode == 14u) {
         // Pencil: Pencil sketch drawing effect (needs texture re-sampling for Sobel)
+        // When used with multi-pass pre-blur, input is already smoothed for clean edges.
         let tex_size = vec2<f32>(textureDimensions(texture_rgba));
         let texel_size = 1.0 / tex_size;
         let edge = sobel_edge_rgba(tex_coords, texel_size);
 
-        // Invert edge for pencil lines on white background
-        let pencil = 1.0 - edge * 2.0;
-        // Add subtle paper texture using shared hash function
-        let noise = hash(tex_coords * 500.0) * 0.05;
-        let paper = 0.95 + noise;
+        // Use smooth edge response for natural pencil pressure variation
+        let edge_strength = smoothstep(0.02, 0.25, edge);
+
+        // Invert: dark strokes on light paper
+        let pencil = 1.0 - edge_strength;
+
+        // Two-layer paper texture: coarse grain + symmetric fine noise
+        let coarse = hash(floor(tex_coords * tex_size * 0.5) * 0.7) * 0.04;
+        let fine = (hash(tex_coords * tex_size) - 0.5) * 0.06;
+        let paper = 0.96 + coarse + fine;
+
         let final_val = clamp(pencil * paper, 0.0, 1.0);
-        color = vec3<f32>(final_val, final_val, final_val);
+        // Slight warm tint for natural paper look
+        color = vec3<f32>(final_val, final_val * 0.98, final_val * 0.95);
     }
 
     // Calculate alpha for rounded corners

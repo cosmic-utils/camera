@@ -206,6 +206,7 @@ struct YuvTextures {
 pub struct VideoPipeline {
     pipeline_rgba: wgpu::RenderPipeline,
     pipeline_rgb_blur: wgpu::RenderPipeline, // RGB blur for multi-pass
+    pipeline_preblur: wgpu::RenderPipeline,  // Lightweight blur for filter pre-processing
     bind_group_layout_rgba: wgpu::BindGroupLayout,
     bind_group_layout_rgb: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -221,6 +222,12 @@ pub struct VideoPipeline {
     /// Set after the first 3-pass blur render. Subsequent frames skip the
     /// expensive blur passes and just blit the cached result.
     blur_cached: std::sync::atomic::AtomicBool,
+    // Filter pre-blur intermediate texture for multi-pass filters (e.g. Pencil)
+    // Full resolution — used to store the pre-blurred frame for spatial filters
+    filter_preblur_intermediate: std::sync::RwLock<Option<BlurIntermediateTexture>>,
+    // Bind group for sampling from the pre-blurred intermediate in pass 2.
+    // Uses the RGBA pipeline layout but references the intermediate texture.
+    preblur_binding: Option<FilterBinding>,
     // GPU timing tracking to detect and handle stalls
     last_upload_duration: std::sync::Mutex<std::time::Duration>,
     frames_skipped: std::sync::atomic::AtomicU32,
@@ -384,6 +391,16 @@ impl PrimitiveTrait for VideoPrimitive {
                         pipeline.output_format,
                     );
                 }
+                // For filters that need pre-blur, ensure the intermediate texture exists
+                if self.filter_type.needs_preblur() && self.video_id != VIDEO_ID_BLUR {
+                    pipeline.ensure_filter_preblur_intermediate(
+                        device,
+                        frame.width,
+                        frame.height,
+                        pipeline.output_format,
+                    );
+                }
+
                 pipeline.upload(device, queue, frame);
 
                 let upload_time = upload_start.elapsed();
@@ -482,6 +499,79 @@ impl PrimitiveTrait for VideoPrimitive {
                     );
                 }
 
+                // Update filter pre-blur intermediate viewport + create binding if needed.
+                // The preblur intermediate already has mirror/rotation/crop baked in
+                // from the preblur pass, so the second pass uses identity transforms
+                // but keeps the filter_mode and screen viewport settings.
+                if self.filter_type.needs_preblur()
+                    && self.video_id != VIDEO_ID_BLUR
+                    && let Some(intermediate) = pipeline
+                        .filter_preblur_intermediate
+                        .read()
+                        .unwrap()
+                        .as_ref()
+                {
+                    // Create preblur binding if it doesn't exist yet
+                    if pipeline.preblur_binding.is_none() {
+                        let pb_viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                            label: Some("camera preblur filter viewport buffer"),
+                            size: std::mem::size_of::<ViewportUniform>() as u64,
+                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+
+                        let pb_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("camera preblur filter bind group"),
+                            layout: &pipeline.bind_group_layout_rgba,
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: wgpu::BindingResource::TextureView(
+                                        &intermediate.view,
+                                    ),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 2,
+                                    resource: pb_viewport_buffer.as_entire_binding(),
+                                },
+                            ],
+                        });
+
+                        pipeline.preblur_binding = Some(FilterBinding {
+                            bind_group: pb_bind_group,
+                            viewport_buffer: pb_viewport_buffer,
+                        });
+                    }
+
+                    // Update the preblur binding's viewport uniform.
+                    // The intermediate already has transforms baked in, so use
+                    // identity transforms but keep filter_mode and screen viewport.
+                    if let Some(pb_binding) = pipeline.preblur_binding.as_ref() {
+                        let pb_uniform = ViewportUniform {
+                            viewport_size: [width, height],
+                            content_fit_mode: 0, // Contain — intermediate is already transformed
+                            filter_mode,
+                            corner_radius: self.corner_radius,
+                            mirror_horizontal: 0, // Already applied in preblur pass
+                            uv_offset: [0.0, 0.0], // Already baked into intermediate
+                            uv_scale: [1.0, 1.0],
+                            crop_uv_min: [0.0, 0.0], // Already cropped in preblur
+                            crop_uv_max: [1.0, 1.0],
+                            zoom_level: 1.0, // Already zoomed in preblur
+                            rotation: 0,     // Already rotated in preblur
+                        };
+                        queue.write_buffer(
+                            &pb_binding.viewport_buffer,
+                            0,
+                            bytemuck::cast_slice(&[pb_uniform]),
+                        );
+                    }
+                }
+
                 // Update intermediate texture viewport buffers for blur passes
                 // intermediate_1: Contain mode (no cropping) for pass 2
                 // intermediate_2: Cover mode with screen viewport for final pass 3
@@ -560,6 +650,7 @@ impl PrimitiveTrait for VideoPrimitive {
         _pipeline.render(
             self.video_id,
             filter_mode,
+            self.filter_type.needs_preblur(),
             encoder,
             target,
             clip_bounds,
@@ -739,6 +830,43 @@ impl VideoPipeline {
             cache: None,
         });
 
+        // ===== Filter Pre-blur Pipeline (lightweight Gaussian for multi-pass filters) =====
+        // Reuses the same bind group layout as the main RGBA pipeline (texture + sampler + viewport)
+        let shader_preblur = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("camera preblur shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("video_shader_preblur.wgsl").into()),
+        });
+
+        let pipeline_preblur = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("camera preblur pipeline"),
+            layout: Some(&pipeline_layout_rgba),
+            vertex: wgpu::VertexState {
+                module: &shader_preblur,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_preblur,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview: None,
+            cache: None,
+        });
+
         // Shared sampler for all pipelines
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("camera video sampler"),
@@ -845,6 +973,7 @@ impl VideoPipeline {
         Self {
             pipeline_rgba,
             pipeline_rgb_blur,
+            pipeline_preblur,
             bind_group_layout_rgba,
             bind_group_layout_rgb,
             sampler,
@@ -853,6 +982,8 @@ impl VideoPipeline {
             blur_intermediate_1: std::sync::RwLock::new(None),
             blur_intermediate_2: std::sync::RwLock::new(None),
             blur_cached: std::sync::atomic::AtomicBool::new(false),
+            filter_preblur_intermediate: std::sync::RwLock::new(None),
+            preblur_binding: None,
             last_upload_duration: std::sync::Mutex::new(std::time::Duration::ZERO),
             frames_skipped: std::sync::atomic::AtomicU32::new(0),
             yuv_compute_pipeline: Some(yuv_compute_pipeline),
@@ -1753,6 +1884,86 @@ impl VideoPipeline {
         }
     }
 
+    /// Create or update the filter pre-blur intermediate texture.
+    ///
+    /// Unlike the transition blur intermediates (which are 1/4 resolution), this
+    /// runs at full resolution to preserve detail for spatial filters like Pencil.
+    fn ensure_filter_preblur_intermediate(
+        &mut self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) {
+        let needs_recreation = {
+            let intermediate = self.filter_preblur_intermediate.read().unwrap();
+            match intermediate.as_ref() {
+                Some(i) => i.width != width || i.height != height,
+                None => true,
+            }
+        };
+
+        if needs_recreation {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("camera filter preblur intermediate"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("camera filter preblur viewport buffer"),
+                size: std::mem::size_of::<ViewportUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            // Bind group for the preblur pass itself (reads source, controlled by
+            // the normal FilterBinding). We only need a bind group for sampling
+            // FROM the intermediate — stored in the BlurIntermediateTexture.
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("camera filter preblur bind group"),
+                layout: &self.bind_group_layout_rgba,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: viewport_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+            *self.filter_preblur_intermediate.write().unwrap() = Some(BlurIntermediateTexture {
+                view,
+                bind_group,
+                viewport_buffer,
+                width,
+                height,
+            });
+
+            // Invalidate preblur binding since the texture changed
+            self.preblur_binding = None;
+        }
+    }
+
     /// Render the video primitive.
     ///
     /// # Arguments
@@ -1762,10 +1973,13 @@ impl VideoPipeline {
     /// * `target` - Render target texture view
     /// * `clip_bounds` - Clipped bounds for scissor rect (visible portion after scroll clipping)
     /// * `widget_bounds` - Full widget bounds for viewport (x, y, width, height)
+    /// * `needs_preblur` - Whether this filter needs a pre-blur pass
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         video_id: u64,
         filter_mode: u32,
+        needs_preblur: bool,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         clip_bounds: &Rectangle<u32>,
@@ -1924,6 +2138,82 @@ impl VideoPipeline {
                     render_pass.set_pipeline(&self.pipeline_rgb_blur);
                     render_pass.set_bind_group(0, Some(&intermediate_2.bind_group), &[]);
                     render_pass.draw(0..3, 0..1);
+                }
+            } else if needs_preblur {
+                // Multi-pass rendering: pre-blur → filter
+                let intermediate_opt = self.filter_preblur_intermediate.read().unwrap();
+                if let Some(intermediate) = intermediate_opt.as_ref() {
+                    // Pass 1: Render source through lightweight blur → intermediate
+                    {
+                        let mut render_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("camera filter preblur pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &intermediate.view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                    depth_slice: None,
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                        render_pass.set_pipeline(&self.pipeline_preblur);
+                        render_pass.set_bind_group(0, Some(&binding.bind_group), &[]);
+                        render_pass.draw(0..3, 0..1);
+                    }
+
+                    // Pass 2: Render from pre-blurred intermediate with filter → screen
+                    // Use the preblur bind group which samples from the intermediate texture.
+                    // Fall back to single-pass from source if binding not ready yet.
+                    let pass2_bind_group = self
+                        .preblur_binding
+                        .as_ref()
+                        .map(|b| &b.bind_group)
+                        .unwrap_or(&binding.bind_group);
+
+                    {
+                        let mut render_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("camera video render pass (from preblur)"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: target,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                    depth_slice: None,
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+
+                        render_pass.set_viewport(
+                            widget_bounds.0,
+                            widget_bounds.1,
+                            widget_bounds.2,
+                            widget_bounds.3,
+                            0.0,
+                            1.0,
+                        );
+
+                        render_pass.set_scissor_rect(
+                            clip_bounds.x,
+                            clip_bounds.y,
+                            clip_bounds.width,
+                            clip_bounds.height,
+                        );
+
+                        render_pass.set_pipeline(&self.pipeline_rgba);
+                        render_pass.set_bind_group(0, Some(pass2_bind_group), &[]);
+                        render_pass.draw(0..3, 0..1);
+                    }
                 }
             } else {
                 // Single-pass RGBA rendering for live preview

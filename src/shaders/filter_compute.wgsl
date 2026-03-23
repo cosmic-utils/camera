@@ -73,12 +73,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         color = vec3<f32>(color_r.r, color.g, color_b.b);
     } else if (params.filter_mode == 14u) {
         // Pencil: Pencil sketch drawing effect
+        // When used with multi-pass pre-blur, input is already smoothed for clean edges.
         let edge = sobel_edge(tex_coords, texel_size);
-        let pencil = 1.0 - edge * 2.0;
-        let noise = hash(tex_coords * 500.0) * 0.05;
-        let paper = 0.95 + noise;
+
+        // Smooth edge response for natural pencil pressure variation
+        // Higher threshold than preview path since compute has no pre-blur pass
+        let edge_strength = smoothstep(0.05, 0.30, edge);
+
+        // Dark strokes on light paper
+        let pencil = 1.0 - edge_strength;
+
+        // Two-layer paper texture: coarse grain + symmetric fine noise
+        let coarse = hash(floor(tex_coords * vec2<f32>(f32(params.width), f32(params.height)) * 0.5) * 0.7) * 0.04;
+        let fine = (hash(tex_coords * vec2<f32>(f32(params.width), f32(params.height))) - 0.5) * 0.06;
+        let paper = 0.96 + coarse + fine;
+
         let final_val = clamp(pencil * paper, 0.0, 1.0);
-        color = vec3<f32>(final_val, final_val, final_val);
+        // Slight warm tint for natural paper look
+        color = vec3<f32>(final_val, final_val * 0.98, final_val * 0.95);
     }
 
     // Pack RGBA into u32 (RGBA8 format)

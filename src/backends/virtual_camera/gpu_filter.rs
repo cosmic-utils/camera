@@ -24,26 +24,44 @@ struct FilterParams {
     _padding: u32,
 }
 
+/// Blur parameters for pre-blur compute shader
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct BlurParams {
+    width: u32,
+    height: u32,
+    _padding: [u32; 2],
+}
+
 /// GPU filter renderer for virtual camera output
 ///
 /// Applies filters directly on RGBA textures for maximum simplicity and efficiency.
+/// Supports multi-pass filters (pre-blur → filter) for spatial operations.
 pub struct GpuFilterRenderer {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
     // RGBA input texture
     texture_rgba: Option<wgpu::Texture>,
+    // Pre-blur intermediate texture (storage + texture binding)
+    preblur_texture: Option<wgpu::Texture>,
     // RGBA output buffer (storage buffer for compute shader output)
     output_buffer: Option<wgpu::Buffer>,
     // Staging buffer for CPU readback
     staging_buffer: Option<wgpu::Buffer>,
     // Compute pipeline
     pipeline: wgpu::ComputePipeline,
+    // Pre-blur compute pipeline
+    preblur_pipeline: wgpu::ComputePipeline,
     // Bind group layout
     bind_group_layout: wgpu::BindGroupLayout,
+    // Pre-blur bind group layout
+    preblur_bind_group_layout: wgpu::BindGroupLayout,
     // Sampler
     sampler: wgpu::Sampler,
     // Uniform buffer
     uniform_buffer: wgpu::Buffer,
+    // Pre-blur uniform buffer
+    preblur_uniform_buffer: wgpu::Buffer,
     // Current dimensions
     width: u32,
     height: u32,
@@ -162,16 +180,94 @@ impl GpuFilterRenderer {
             mapped_at_creation: false,
         });
 
+        // ===== Pre-blur compute pipeline =====
+        let preblur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("vcam_preblur_shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../../shaders/filter_preblur_compute.wgsl").into(),
+            ),
+        });
+
+        let preblur_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("vcam_preblur_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let preblur_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("vcam_preblur_pipeline_layout"),
+                bind_group_layouts: &[&preblur_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let preblur_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("vcam_preblur_pipeline"),
+            layout: Some(&preblur_pipeline_layout),
+            module: &preblur_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let preblur_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vcam_preblur_uniform"),
+            size: std::mem::size_of::<BlurParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Ok(Self {
             device,
             queue,
             texture_rgba: None,
+            preblur_texture: None,
             output_buffer: None,
             staging_buffer: None,
             pipeline,
+            preblur_pipeline,
             bind_group_layout,
+            preblur_bind_group_layout,
             sampler,
             uniform_buffer,
+            preblur_uniform_buffer,
             width: 0,
             height: 0,
         })
@@ -200,6 +296,22 @@ impl GpuFilterRenderer {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        }));
+
+        // Pre-blur intermediate texture (storage + texture binding)
+        self.preblur_texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("vcam_preblur_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         }));
 
@@ -266,7 +378,7 @@ impl GpuFilterRenderer {
         );
 
         // Create texture view
-        let view = texture_rgba.create_view(&wgpu::TextureViewDescriptor::default());
+        let input_view = texture_rgba.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Update uniform buffer
         let params = FilterParams {
@@ -278,13 +390,78 @@ impl GpuFilterRenderer {
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&params));
 
+        // Create command encoder
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("vcam_filter_encoder"),
+            });
+
+        let workgroups_x = frame.width.div_ceil(16);
+        let workgroups_y = frame.height.div_ceil(16);
+
+        // For multi-pass filters, run pre-blur first and use its output as filter input
+        let filter_input_view = if filter.needs_preblur() {
+            let preblur_texture = self.preblur_texture.as_ref().unwrap();
+            let preblur_view = preblur_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let blur_params = BlurParams {
+                width: frame.width,
+                height: frame.height,
+                _padding: [0; 2],
+            };
+            self.queue.write_buffer(
+                &self.preblur_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&blur_params),
+            );
+
+            let preblur_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("vcam_preblur_bind_group"),
+                layout: &self.preblur_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&input_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&preblur_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.preblur_uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            });
+
+            {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("vcam_preblur_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.preblur_pipeline);
+                pass.set_bind_group(0, Some(&preblur_bind_group), &[]);
+                pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
+            }
+
+            preblur_view
+        } else {
+            input_view
+        };
+
+        // Main filter pass
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("vcam_filter_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&filter_input_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -301,14 +478,6 @@ impl GpuFilterRenderer {
             ],
         });
 
-        // Create command encoder
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("vcam_filter_encoder"),
-            });
-
-        // Run compute pass
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("apply_filter_pass"),
@@ -316,8 +485,6 @@ impl GpuFilterRenderer {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, Some(&bind_group), &[]);
-            let workgroups_x = frame.width.div_ceil(16);
-            let workgroups_y = frame.height.div_ceil(16);
             pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
         }
 

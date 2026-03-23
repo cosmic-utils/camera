@@ -1214,6 +1214,16 @@ impl FilterType {
         }
     }
 
+    /// Whether this filter needs a pre-blur pass for better quality.
+    ///
+    /// Multi-pass filters get a Gaussian blur applied to the source before
+    /// the main filter runs. This reduces sensor noise and produces cleaner
+    /// results for filters that rely on spatial operations like edge detection.
+    #[inline]
+    pub fn needs_preblur(&self) -> bool {
+        matches!(self, FilterType::Pencil)
+    }
+
     /// Reconstruct a FilterType from a GPU shader filter code.
     ///
     /// Returns `Standard` for unknown codes.
