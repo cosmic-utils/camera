@@ -87,11 +87,11 @@ dev *args:
 
 # Run with debug logs
 run *args:
-    env RUST_LOG=camera=info RUST_BACKTRACE=full cargo run --release {{args}}
+    env RUST_LOG=camera=info RUST_BACKTRACE=full cargo run --profile release-fast {{args}}
 
 # Run with verbose debug logs
 run-debug *args:
-    env RUST_LOG=camera=debug,info RUST_BACKTRACE=full cargo run --release {{args}}
+    env RUST_LOG=camera=debug,info RUST_BACKTRACE=full cargo run --profile release-fast {{args}}
 
 # ============================================================================
 # Resource generation
