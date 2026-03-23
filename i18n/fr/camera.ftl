@@ -7,10 +7,11 @@ page-id = Page { $num }
 git-description = Commit Git {$hash} le {$date}
 
 # Sélecteur de mode
-mode-video = VIDÉO
-mode-photo = PHOTO
-mode-timelapse = ACCÉLÉRÉ
-mode-virtual = VIRTUEL
+mode-video = Vidéo
+mode-photo = Photo
+mode-timelapse = Accéléré
+timelapse-saving = Enregistrement de la vidéo...
+mode-virtual = Virtuel
 
 # Caméra virtuelle
 virtual-camera-title = Caméra virtuelle (expérimentale)
@@ -45,6 +46,8 @@ settings-video-quality = Qualité vidéo
 settings-manual-override = Mode manuel
 settings-mirror-preview = Aperçu miroir
 settings-mirror-preview-description = Inverser l'aperçu de la caméra horizontalement
+settings-haptic-feedback = Retour haptique
+settings-haptic-feedback-description = Vibrations lors de la prise de vue, du changement de mode et du changement d'appareil photo
 settings-reset-all = Réinitialiser tous les paramètres
 settings-bug-reports = Signalement de bugs
 settings-stats-for-nerds = Statistiques pour les experts
