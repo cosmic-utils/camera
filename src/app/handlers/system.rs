@@ -414,14 +414,24 @@ impl AppModel {
         Task::none()
     }
 
-    pub(crate) fn handle_generate_bug_report(&self) -> Task<cosmic::Action<Message>> {
+    pub(crate) fn handle_generate_bug_report(&mut self) -> Task<cosmic::Action<Message>> {
         info!("Generating bug report...");
+
+        // Ensure insights are up-to-date (normally only refreshed when the
+        // Insights drawer is open, so they may be stale/empty here).
+        let _ = self.handle_update_insights_metrics();
 
         let video_devices = self.available_cameras.clone();
         let audio_devices = self.available_audio_devices.clone();
         let video_encoders = self.available_video_encoders.clone();
-        let selected_encoder_index = self.current_video_encoder_index;
         let save_folder_name = self.config.save_folder_name.clone();
+        let insights = self.insights.clone();
+        let config = self.config.clone();
+        let snapshot = crate::bug_report::AppStateSnapshot {
+            current_camera_index: self.current_camera_index,
+            current_audio_device_index: self.current_audio_device_index,
+            current_video_encoder_index: self.current_video_encoder_index,
+        };
 
         Task::perform(
             async move {
@@ -429,9 +439,10 @@ impl AppModel {
                     &video_devices,
                     &audio_devices,
                     &video_encoders,
-                    selected_encoder_index,
-                    None,
                     &save_folder_name,
+                    &insights,
+                    &config,
+                    &snapshot,
                 )
                 .await
                 .map(|p| p.display().to_string())
@@ -825,6 +836,7 @@ impl AppModel {
                 self.insights.meta_lens_position = meta.lens_position;
                 self.insights.meta_lux = meta.lux;
                 self.insights.meta_focus_fom = meta.focus_fom;
+                self.insights.frame_metadata = Some(meta.clone());
             }
         }
     }

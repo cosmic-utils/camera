@@ -38,7 +38,7 @@ pub mod frame_processor;
 mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
-mod insights;
+pub mod insights;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;

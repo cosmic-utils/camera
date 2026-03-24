@@ -77,6 +77,9 @@ pub struct InsightsState {
     pub meta_focus_fom: Option<i32>,
     /// Whether libcamera metadata is present at all
     pub has_libcamera_metadata: bool,
+    /// Full libcamera FrameMetadata snapshot (includes fields not shown in UI:
+    /// sensor_timestamp, colour_correction_matrix, af/ae/awb state)
+    pub frame_metadata: Option<crate::backends::camera::types::FrameMetadata>,
 
     // Recording pipeline info (populated while recording)
     /// Recording pipeline diagnostics (None when not recording)
