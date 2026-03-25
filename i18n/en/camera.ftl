@@ -181,10 +181,10 @@ settings-composition-guide-description = Overlay guide lines on the camera previ
 guide-none = None
 guide-rule-of-thirds = Rule of Thirds
 guide-phi-grid = Phi Grid
-guide-spiral-top-left = Spiral ↖
-guide-spiral-top-right = Spiral ↗
-guide-spiral-bottom-left = Spiral ↙
-guide-spiral-bottom-right = Spiral ↘
+guide-spiral-top-left = Golden Ratio ↖
+guide-spiral-top-right = Golden Ratio ↗
+guide-spiral-bottom-left = Golden Ratio ↙
+guide-spiral-bottom-right = Golden Ratio ↘
 guide-diagonal = Diagonals
 guide-crosshair = Crosshair
 
