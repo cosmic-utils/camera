@@ -48,6 +48,23 @@ impl AppModel {
             AppTheme::Light => 2,
         };
 
+        // Default mode index (matches visible dropdown entries which may exclude Virtual)
+        let visible_default_modes: Vec<crate::app::state::CameraMode> = {
+            let mut modes = vec![
+                crate::app::state::CameraMode::Photo,
+                crate::app::state::CameraMode::Video,
+                crate::app::state::CameraMode::Timelapse,
+            ];
+            if self.config.virtual_camera_enabled {
+                modes.push(crate::app::state::CameraMode::Virtual);
+            }
+            modes
+        };
+        let current_default_mode_index = visible_default_modes
+            .iter()
+            .position(|m| *m == self.config.default_mode)
+            .unwrap_or(0);
+
         // Appearance section
         let appearance_section = widget::settings::section()
             .title(fl!("settings-appearance"))
@@ -57,6 +74,15 @@ impl AppModel {
                     Some(current_theme_index),
                     Message::SetAppTheme,
                 )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-default-mode"))
+                    .description(fl!("settings-default-mode-description"))
+                    .control(widget::dropdown(
+                        &self.default_mode_dropdown_options,
+                        Some(current_default_mode_index),
+                        Message::SelectDefaultMode,
+                    )),
             );
 
         // Camera section

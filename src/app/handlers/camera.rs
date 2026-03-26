@@ -647,6 +647,14 @@ impl AppModel {
             self.mode = CameraMode::Photo;
         }
 
+        // If disabling and default_mode was Virtual, reset to Photo
+        if !self.config.virtual_camera_enabled && self.config.default_mode == CameraMode::Virtual {
+            self.config.default_mode = CameraMode::Photo;
+        }
+
+        // Update dropdown to show/hide Virtual option
+        self.update_default_mode_dropdown();
+
         if let Some(handler) = self.config_handler.as_ref()
             && let Err(err) = self.config.write_entry(handler)
         {

@@ -142,6 +142,19 @@ impl AppModel {
         }
     }
 
+    /// Update default mode dropdown options (conditionally includes Virtual)
+    pub fn update_default_mode_dropdown(&mut self) {
+        self.default_mode_dropdown_options = vec![
+            crate::fl!("mode-photo"),
+            crate::fl!("mode-video"),
+            crate::fl!("mode-timelapse"),
+        ];
+        if self.config.virtual_camera_enabled {
+            self.default_mode_dropdown_options
+                .push(crate::fl!("mode-virtual"));
+        }
+    }
+
     /// Update all dropdown options based on current active format
     pub fn update_all_dropdowns(&mut self) {
         self.update_mode_options();

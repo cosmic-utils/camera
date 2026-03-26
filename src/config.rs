@@ -288,10 +288,12 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 16]
+#[version = 17]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
+    /// Default camera mode on launch
+    pub default_mode: crate::app::CameraMode,
     /// Folder name for saving captures (photos go to XDG Pictures, videos go to XDG Videos)
     pub save_folder_name: String,
     /// Last used camera device path
@@ -332,6 +334,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             app_theme: AppTheme::default(), // Default to System theme
+            default_mode: crate::app::CameraMode::default(), // Default to Photo
             save_folder_name: crate::constants::DEFAULT_SAVE_FOLDER.to_string(),
             last_camera_path: None,
             video_settings: HashMap::new(),

@@ -122,6 +122,35 @@ impl AppModel {
         cosmic::command::set_theme(app_theme.theme())
     }
 
+    pub(crate) fn handle_select_default_mode(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::app::state::CameraMode;
+
+        // Build the same visible modes list as the dropdown
+        let mut visible_modes = vec![CameraMode::Photo, CameraMode::Video, CameraMode::Timelapse];
+        if self.config.virtual_camera_enabled {
+            visible_modes.push(CameraMode::Virtual);
+        }
+
+        let mode = match visible_modes.get(index) {
+            Some(&m) => m,
+            None => return Task::none(),
+        };
+
+        info!(?mode, "Setting default launch mode");
+        self.config.default_mode = mode;
+
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            error!(?err, "Failed to save default mode setting");
+        }
+
+        Task::none()
+    }
+
     pub(crate) fn handle_portal_color_scheme_changed(
         &mut self,
         is_dark: bool,

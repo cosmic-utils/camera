@@ -327,13 +327,15 @@ impl cosmic::Application for AppModel {
         });
         let has_preview_source = preview_file_source.is_some();
         // Construct the app model with the runtime's core.
+        let initial_mode = config.default_mode;
+        let virtual_camera_enabled = config.virtual_camera_enabled;
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
             about,
             config,
             config_handler,
-            mode: CameraMode::Photo,
+            mode: initial_mode,
             carousel_button_slide: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
             quick_record: crate::app::state::QuickRecordState::Idle,
             capture_scale_from: 1.0,
@@ -471,6 +473,13 @@ impl cosmic::Application for AppModel {
                 fl!("guide-diagonal"),
                 fl!("guide-crosshair"),
             ],
+            default_mode_dropdown_options: {
+                let mut opts = vec![fl!("mode-photo"), fl!("mode-video"), fl!("mode-timelapse")];
+                if virtual_camera_enabled {
+                    opts.push(fl!("mode-virtual"));
+                }
+                opts
+            },
             timelapse: TimelapseState::default(),
             timelapse_interval_dropdown_options: crate::config::TimelapseInterval::ALL
                 .iter()

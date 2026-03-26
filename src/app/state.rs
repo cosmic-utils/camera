@@ -796,6 +796,8 @@ pub struct AppModel {
     pub audio_encoder_dropdown_options: Vec<String>,
     /// Composition guide dropdown options
     pub composition_guide_dropdown_options: Vec<String>,
+    /// Default mode dropdown options (Photo, Video, Timelapse, Virtual)
+    pub default_mode_dropdown_options: Vec<String>,
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
@@ -859,14 +861,27 @@ impl Default for TransitionState {
 }
 
 /// Camera modes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum CameraMode {
+    #[default]
     Photo,
     Video,
     /// Virtual camera mode - streams filtered video to a virtual camera
     Virtual,
     /// Timelapse mode - captures photos at a configurable interval
     Timelapse,
+}
+
+impl CameraMode {
+    /// All available camera modes
+    pub const ALL: [CameraMode; 4] = [
+        CameraMode::Photo,
+        CameraMode::Video,
+        CameraMode::Timelapse,
+        CameraMode::Virtual,
+    ];
 }
 
 /// File source for virtual camera streaming
@@ -1547,6 +1562,8 @@ pub enum Message {
     UpdateConfig(Config),
     /// Set application theme (System, Dark, Light)
     SetAppTheme(usize),
+    /// Set default camera mode on launch
+    SelectDefaultMode(usize),
     /// XDG portal color scheme changed (true = dark, false = light)
     PortalColorSchemeChanged(bool),
     /// Select audio input device
