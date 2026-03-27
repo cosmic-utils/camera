@@ -787,16 +787,22 @@ impl AppModel {
             None
         };
 
+        // Use the actual negotiated format from the preview stream, not the
+        // user-selected format. libcamera may negotiate a different pixel format
+        // than what was selected (e.g., user selects YUYV but libcamera uses MJPEG
+        // or NV12 for the ViewFinder stream).
+        let actual_stream_format = self
+            .insights
+            .preview_stream
+            .as_ref()
+            .map(|s| s.pixel_format.as_str());
+
         let gpu_input_format = if let Some(ref fmt) = mjpeg_decoded_fmt {
             fmt.as_str()
         } else if mjpeg_decoder.is_some() {
             "I420"
         } else {
-            self.insights
-                .preview_stream
-                .as_ref()
-                .map(|s| s.pixel_format.as_str())
-                .unwrap_or(&format.pixel_format)
+            actual_stream_format.unwrap_or(&format.pixel_format)
         };
 
         let wgpu_processing = match gpu_input_format {
@@ -820,7 +826,10 @@ impl AppModel {
             .framerate
             .map(|fps| format!("{} fps", fps))
             .unwrap_or_else(|| "N/A".to_string());
-        self.insights.format_chain.native_format = format.pixel_format.clone();
+        // Use actual negotiated format from stream, not user-selected format
+        self.insights.format_chain.native_format = actual_stream_format
+            .unwrap_or(&format.pixel_format)
+            .to_string();
         self.insights.format_chain.wgpu_processing = wgpu_processing;
 
         if let Some(ref decoded) = mjpeg_decoded_fmt {
