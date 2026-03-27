@@ -18,8 +18,8 @@
     </linearGradient>
   </defs>
 
-  <!-- Background rounded square (~80% of canvas = 102x102, centered) -->
-  <rect x="13" y="13" width="102" height="102" rx="25.5" fill="url(#bg)"/>
+  <!-- Background rounded square (~91% of canvas = 116x116, centered) -->
+  <rect x="6" y="6" width="116" height="116" rx="29" fill="url(#bg)"/>
 
   <!-- Camera body (scaled ~0.91x from center 64,64) -->
   <path d="M 31.2 37 L 42.8 37 L 47.4 48 L 80.6 48 L 85.2 37 L 96.8 37 C 100.4 37 103.6 40.2 103.6 43.8 L 103.6 91.2 C 103.6 94.8 100.4 98 96.8 98 L 31.2 98 C 27.6 98 24.4 94.8 24.4 91.2 L 24.4 43.8 C 24.4 40.2 27.6 37 31.2 37 Z" fill="url(#camera)"/>

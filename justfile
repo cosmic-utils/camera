@@ -108,7 +108,7 @@ generate-icons:
         exit 1
     fi
     # Generate PNG icons for each size
-    for size in 16 24 32 48 64 128 256; do
+    for size in 16 24 32 48 64 128 256 512 1024; do
         DIR="{{icons-src}}/${size}x${size}/apps"
         mkdir -p "$DIR"
         magick -background none -density 384 "$SVG" -resize ${size}x${size} "$DIR/{{APPID}}.png"
@@ -144,7 +144,7 @@ install:
     install -Dm0644 {{desktop-src}} {{desktop-dst}}
     install -Dm0644 {{metainfo-src}} {{metainfo-dst}}
     install -Dm0644 "{{icons-src}}/scalable/apps/{{APPID}}.svg" "{{icons-dst}}/scalable/apps/{{APPID}}.svg"
-    for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256; do \
+    for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512 1024x1024; do \
         install -Dm0644 "{{icons-src}}/$size/apps/{{APPID}}.png" "{{icons-dst}}/$size/apps/{{APPID}}.png"; \
     done
 
@@ -152,7 +152,7 @@ install:
 uninstall:
     rm -f {{bin-dst}} {{desktop-dst}} {{metainfo-dst}}
     rm -f "{{icons-dst}}/scalable/apps/{{APPID}}.svg"
-    for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256; do \
+    for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512 1024x1024; do \
         rm -f "{{icons-dst}}/$size/apps/{{APPID}}.png"; \
     done
 
