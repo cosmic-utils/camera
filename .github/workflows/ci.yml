@@ -287,6 +287,14 @@ jobs:
           cd /home/builder/apkbuild
           sudo -Hu builder abuild -r
 
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: apk-x86_64
+          path: /home/builder/packages/*/x86_64/camera-*.apk
+          if-no-files-found: error
+          retention-days: 5
+
   flatpak-x86_64:
     name: Flatpak (x86_64)
     runs-on: ubuntu-latest
