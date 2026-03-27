@@ -8,7 +8,7 @@
 //!
 //! # Handler Modules
 //!
-//! - `handlers::ui`: UI navigation, pickers, theatre mode, tools menu
+//! - `handlers::ui`: UI navigation, pickers, tools menu
 //! - `handlers::exposure`: Exposure and camera control settings
 //! - `handlers::color`: Color adjustment controls
 //! - `handlers::camera`: Camera selection, frame handling, transitions
@@ -33,8 +33,7 @@ impl AppModel {
             Message::ToggleContextPage(page) => self.handle_toggle_context_page(page),
             Message::ToggleFormatPicker => self.handle_toggle_format_picker(),
             Message::CloseFormatPicker => self.handle_close_format_picker(),
-            Message::ToggleTheatreMode => self.handle_toggle_theatre_mode(),
-            Message::TheatreToggleUI => self.handle_theatre_toggle_ui(),
+            Message::ToggleUIVisibility => self.handle_toggle_ui_visibility(),
             Message::ToggleDeviceInfo => self.handle_toggle_device_info(),
 
             // ===== Tools Menu =====

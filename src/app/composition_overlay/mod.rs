@@ -7,7 +7,7 @@
 
 mod widget;
 
-use crate::app::state::{AppModel, CameraMode, Message};
+use crate::app::state::{AppModel, Message};
 use crate::app::video_widget::VideoContentFit;
 use crate::config::CompositionGuide;
 use cosmic::Element;
@@ -36,11 +36,7 @@ impl AppModel {
             return empty_overlay();
         };
 
-        let content_fit = if self.theatre.enabled {
-            VideoContentFit::Cover
-        } else {
-            VideoContentFit::Contain
-        };
+        let content_fit = VideoContentFit::Cover;
 
         // Match the video widget's effective dimensions:
         // 1. Apply sensor rotation (swap dimensions for 90°/270°)
@@ -51,21 +47,8 @@ impl AppModel {
             (frame.width as f32, frame.height as f32)
         };
 
-        // 2. Apply aspect ratio crop (Photo mode only, not in theatre mode)
-        let (fw, fh) = match self.mode {
-            CameraMode::Photo if !self.theatre.enabled && !self.current_frame_is_file_source => {
-                if let Some((u0, v0, u1, v1)) = self.photo_aspect_ratio.crop_uv_with_rotation(
-                    frame.width,
-                    frame.height,
-                    rotation,
-                ) {
-                    (((u1 - u0) * ew).round(), ((v1 - v0) * eh).round())
-                } else {
-                    (ew.round(), eh.round())
-                }
-            }
-            _ => (ew.round(), eh.round()),
-        };
+        // Preview always shows full sensor image (no crop)
+        let (fw, fh) = (ew.round(), eh.round());
 
         if fw < 1.0 || fh < 1.0 {
             return empty_overlay();

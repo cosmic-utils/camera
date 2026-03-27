@@ -20,7 +20,7 @@ use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{debug, info};
+use tracing::info;
 
 /// Flash icon SVG (lightning bolt)
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
@@ -231,15 +231,10 @@ impl AppModel {
         // Build top bar
         let top_bar = self.build_top_bar();
 
-        // Wrap preview in mouse area for theatre mode interactions
-        let camera_preview = if self.theatre.enabled {
-            // In theatre mode, toggle UI visibility on click/tap
-            widget::mouse_area(camera_preview)
-                .on_press(Message::TheatreToggleUI)
-                .into()
-        } else {
-            camera_preview
-        };
+        // Tap/click on preview toggles UI visibility
+        let camera_preview: Element<'_, Message> = widget::mouse_area(camera_preview)
+            .on_press(Message::ToggleUIVisibility)
+            .into();
 
         // Check if zoom label should be shown (only in Photo mode)
         let show_zoom_label = self.mode == CameraMode::Photo;
@@ -353,146 +348,64 @@ impl AppModel {
         // Bottom area: always show bottom bar (filter picker is now a sidebar overlay)
         let bottom_area: Element<'_, Message> = self.build_bottom_bar();
 
-        // Build content based on theatre mode
-        let content: Element<'_, Message> = if self.theatre.enabled {
-            // Theatre mode - camera preview as full background with UI overlaid
-            debug!(
-                "Building theatre mode layout (UI visible: {})",
-                self.theatre.ui_visible
-            );
+        // Immersive layout: camera preview fills the screen, all UI overlaid on top.
+        // Tap/click the preview to toggle UI visibility.
+        let content: Element<'_, Message> = if self.ui_visible {
+            // UI visible — overlay all controls on top of preview
+            let mut bottom_controls = widget::column().width(Length::Fill);
 
-            if self.theatre.ui_visible {
-                // Theatre mode with UI visible - overlay all UI on top of preview
-                // Use same layout structure as normal mode to prevent position jumps
-
-                // Bottom controls: zoom label + capture button + bottom area in a column
-                // Zoom label is added first (above capture button) with same 8px padding as normal mode
-                let mut bottom_controls = widget::column().width(Length::Fill);
-
-                // Add zoom label above capture button (same 8px margin as normal mode)
-                if show_zoom_label {
-                    bottom_controls = bottom_controls.push(
-                        widget::container(self.build_zoom_label())
-                            .width(Length::Fill)
-                            .center_x(Length::Fill)
-                            .padding([0, 0, 8, 0]),
-                    );
-                }
-
-                // Add video progress bar between preview and capture button (if streaming video)
-                if let Some(progress_bar) = self.build_video_progress_bar() {
-                    bottom_controls = bottom_controls.push(progress_bar);
-                }
-
-                bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
-
-                // Flash error popup for theatre mode (centered in preview area)
-                let flash_error_popup: Option<Element<'_, Message>> =
-                    if self.flash_error_popup.is_some() {
-                        Some(self.build_flash_error_popup())
-                    } else {
-                        None
-                    };
-
-                let mut theatre_stack = cosmic::iced::widget::stack![
-                    camera_preview,
-                    self.build_composition_overlay(),
-                    // QR overlay (custom widget calculates positions at render time)
-                    self.build_qr_overlay(),
-                    // Privacy cover warning overlay (centered)
-                    self.build_privacy_warning(),
-                    // Top bar aligned to top (no extra padding - row has its own padding)
-                    widget::container(top_bar)
-                        .width(Length::Fill)
-                        .align_y(cosmic::iced::alignment::Vertical::Top),
-                    // Bottom controls aligned to bottom
-                    widget::container(bottom_controls)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_y(cosmic::iced::alignment::Vertical::Bottom)
-                ];
-
-                if let Some(popup) = flash_error_popup {
-                    theatre_stack = theatre_stack.push(popup);
-                }
-
-                // Timer countdown overlay (centered on preview)
-                if let Some(remaining) = self.photo_timer_countdown {
-                    theatre_stack = theatre_stack.push(self.build_timer_overlay(remaining));
-                }
-
-                theatre_stack
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
-            } else {
-                // Theatre mode with UI hidden - show only full-screen preview with QR overlay and privacy warning
-                let mut hidden_stack = cosmic::iced::widget::stack![
-                    camera_preview,
-                    self.build_composition_overlay(),
-                    self.build_qr_overlay(),
-                    self.build_privacy_warning()
-                ];
-
-                if self.flash_error_popup.is_some() {
-                    hidden_stack = hidden_stack.push(self.build_flash_error_popup());
-                }
-
-                hidden_stack.width(Length::Fill).height(Length::Fill).into()
-            }
-        } else {
-            // Normal mode - traditional layout
-            // Preview with top bar, QR overlay, privacy warning, and optional filter name label overlaid
-            let mut preview_stack = cosmic::iced::widget::stack![
-                camera_preview,
-                self.build_composition_overlay(),
-                // QR overlay (custom widget calculates positions at render time)
-                self.build_qr_overlay(),
-                // Privacy cover warning overlay (centered)
-                self.build_privacy_warning(),
-                widget::container(top_bar)
-                    .width(Length::Fill)
-                    .align_y(cosmic::iced::alignment::Vertical::Top)
-            ];
-
-            // Flash permission error popup (centered in preview area)
-            if self.flash_error_popup.is_some() {
-                preview_stack = preview_stack.push(self.build_flash_error_popup());
-            }
-
-            // Timer countdown overlay (centered on preview)
-            if let Some(remaining) = self.photo_timer_countdown {
-                preview_stack = preview_stack.push(self.build_timer_overlay(remaining));
-            }
-
-            // Add zoom label overlapping bottom of preview (centered above capture button)
             if show_zoom_label {
-                preview_stack = preview_stack.push(
+                bottom_controls = bottom_controls.push(
                     widget::container(self.build_zoom_label())
                         .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(cosmic::iced::alignment::Horizontal::Center)
-                        .align_y(cosmic::iced::alignment::Vertical::Bottom)
+                        .center_x(Length::Fill)
                         .padding([0, 0, 8, 0]),
                 );
             }
 
-            let preview_with_overlays = preview_stack.width(Length::Fill).height(Length::Fill);
-
-            // Column layout: preview with overlays, optional progress bar, capture button area, bottom area
-            let mut main_column = widget::column()
-                .push(preview_with_overlays)
-                .width(Length::Fill)
-                .height(Length::Fill);
-
-            // Add video progress bar between preview and capture button (if streaming video)
             if let Some(progress_bar) = self.build_video_progress_bar() {
-                main_column = main_column.push(progress_bar);
+                bottom_controls = bottom_controls.push(progress_bar);
             }
 
-            main_column = main_column.push(capture_button_area).push(bottom_area);
+            bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
 
-            main_column.into()
+            let mut main_stack = cosmic::iced::widget::stack![
+                camera_preview,
+                self.build_composition_overlay(),
+                self.build_qr_overlay(),
+                self.build_privacy_warning(),
+                widget::container(top_bar)
+                    .width(Length::Fill)
+                    .align_y(cosmic::iced::alignment::Vertical::Top),
+                widget::container(bottom_controls)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_y(cosmic::iced::alignment::Vertical::Bottom)
+            ];
+
+            if self.flash_error_popup.is_some() {
+                main_stack = main_stack.push(self.build_flash_error_popup());
+            }
+
+            if let Some(remaining) = self.photo_timer_countdown {
+                main_stack = main_stack.push(self.build_timer_overlay(remaining));
+            }
+
+            main_stack.width(Length::Fill).height(Length::Fill).into()
+        } else {
+            // UI hidden — only preview with essential overlays
+            let mut hidden_stack = cosmic::iced::widget::stack![
+                camera_preview,
+                self.build_composition_overlay(),
+                self.build_qr_overlay(),
+                self.build_privacy_warning()
+            ];
+
+            if self.flash_error_popup.is_some() {
+                hidden_stack = hidden_stack.push(self.build_flash_error_popup());
+            }
+
+            hidden_stack.width(Length::Fill).height(Length::Fill).into()
         };
 
         // Wrap content in a stack so we can overlay the picker
@@ -734,7 +647,7 @@ impl AppModel {
                 );
             }
 
-            // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, theatre)
+            // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter)
             // Highlight when tools menu is open or any tool setting is non-default
             let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
             let tools_icon = widget::icon::from_svg_bytes(TOOLS_GRID_ICON).symbolic(true);
@@ -910,12 +823,7 @@ impl AppModel {
                 .into();
         };
 
-        // Determine content fit mode based on theatre state
-        let content_fit = if self.theatre.enabled {
-            VideoContentFit::Cover
-        } else {
-            VideoContentFit::Contain
-        };
+        let content_fit = VideoContentFit::Cover;
 
         let should_mirror = self.should_mirror_preview();
 
@@ -930,7 +838,7 @@ impl AppModel {
 
     /// Build the tools menu overlay
     ///
-    /// Shows timer, aspect ratio, exposure, filter, and theatre mode buttons
+    /// Shows timer, aspect ratio, exposure, filter buttons
     /// in a floating panel aligned to the top-right with large icon buttons in a 2-row grid.
     fn build_tools_menu(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
@@ -957,21 +865,17 @@ impl AppModel {
                 timer_active,
             ));
 
-            // Aspect ratio button (Photo mode only, disabled in theatre mode)
-            // Theatre mode always uses native resolution, so aspect ratio control is disabled
+            // Aspect ratio button (Photo mode only)
             let aspect_active = self.is_aspect_ratio_changed();
-            let aspect_enabled = !self.theatre.enabled;
             let native_ratio = self.current_frame.as_ref().and_then(|f| {
                 crate::app::state::PhotoAspectRatio::from_frame_dimensions(f.width, f.height)
             });
-            // In theatre mode, always show native icon since aspect ratio is ignored
-            let effective_ratio = if self.theatre.enabled {
-                crate::app::state::PhotoAspectRatio::Native
-            } else if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-                native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
-            } else {
-                self.photo_aspect_ratio
-            };
+            let effective_ratio =
+                if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
+                    native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
+                } else {
+                    self.photo_aspect_ratio
+                };
             let aspect_icon_bytes = match effective_ratio {
                 crate::app::state::PhotoAspectRatio::Native => ASPECT_NATIVE_ICON,
                 crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
@@ -980,12 +884,11 @@ impl AppModel {
                 crate::app::state::PhotoAspectRatio::Ratio1x1 => ASPECT_1_1_ICON,
             };
             let aspect_icon = widget::icon::from_svg_bytes(aspect_icon_bytes).symbolic(true);
-            buttons.push(self.build_tools_grid_button_with_enabled(
+            buttons.push(self.build_tools_grid_button(
                 aspect_icon,
                 fl!("tools-aspect"),
                 Message::CyclePhotoAspectRatio,
-                aspect_active && aspect_enabled, // Only show as active if enabled and changed
-                aspect_enabled,
+                aspect_active,
             ));
         }
 
@@ -1025,19 +928,6 @@ impl AppModel {
                 filter_active,
             ));
         }
-
-        // Theatre mode button
-        let theatre_icon = if self.theatre.enabled {
-            "view-restore-symbolic"
-        } else {
-            "view-fullscreen-symbolic"
-        };
-        buttons.push(self.build_tools_grid_button(
-            icon::from_name(theatre_icon).symbolic(true),
-            fl!("tools-theatre"),
-            Message::ToggleTheatreMode,
-            self.theatre.enabled,
-        ));
 
         // Distribute buttons into 2 rows
         let items_per_row = buttons.len().div_ceil(2); // Ceiling division
@@ -1163,14 +1053,8 @@ impl AppModel {
         let exposure_active = self.is_exposure_changed();
         let color_active = self.is_color_changed();
         let filter_active = self.selected_filter != FilterType::Standard;
-        let theatre_active = self.theatre.enabled;
 
-        timer_active
-            || aspect_active
-            || exposure_active
-            || color_active
-            || filter_active
-            || theatre_active
+        timer_active || aspect_active || exposure_active || color_active || filter_active
     }
 
     /// Check if aspect ratio is cropped (not using native ratio)

@@ -62,7 +62,7 @@ use cosmic::{Element, Task};
 pub use state::{
     AppFlags, AppModel, BurstModeStage, BurstModeState, CameraMode, ContextPage, FileSource,
     FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, PrewarmResults, RecordingState,
-    TheatreState, TimelapseState, VirtualCameraState,
+    TimelapseState, VirtualCameraState,
 };
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
@@ -380,7 +380,7 @@ impl cosmic::Application for AppModel {
                 model
             },
             base_exposure_time: None,
-            theatre: TheatreState::default(),
+            ui_visible: true,
             burst_mode: BurstModeState::default(),
             auto_detected_frame_count: 1, // Start with 1 (no HDR+) until first brightness evaluation
             hdr_override_disabled: false,

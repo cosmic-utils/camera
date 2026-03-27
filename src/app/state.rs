@@ -356,47 +356,6 @@ impl std::fmt::Debug for IdleInhibitGuard {
     }
 }
 
-/// Theatre mode state
-///
-/// Consolidates theatre mode UI visibility state.
-#[derive(Debug, Clone)]
-pub struct TheatreState {
-    /// Theatre mode enabled
-    pub enabled: bool,
-    /// UI currently visible
-    pub ui_visible: bool,
-}
-
-impl Default for TheatreState {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            ui_visible: true,
-        }
-    }
-}
-
-impl TheatreState {
-    /// Enter theatre mode
-    pub fn enter(&mut self) {
-        self.enabled = true;
-        self.ui_visible = true;
-    }
-
-    /// Exit theatre mode
-    pub fn exit(&mut self) {
-        self.enabled = false;
-        self.ui_visible = true;
-    }
-
-    /// Toggle UI visibility
-    pub fn toggle_ui(&mut self) {
-        if self.enabled {
-            self.ui_visible = !self.ui_visible;
-        }
-    }
-}
-
 /// Burst mode state for multi-frame burst capture
 ///
 /// Tracks the state of burst mode photo capture and processing.
@@ -697,8 +656,8 @@ pub struct AppModel {
     /// Base exposure time (in 100µs units) captured when entering manual mode
     /// Used to calculate EV-based adjustments in non-advanced mode
     pub base_exposure_time: Option<i32>,
-    /// Theatre mode state (enabled, UI visibility, auto-hide)
-    pub theatre: TheatreState,
+    /// UI controls visibility (tap preview to toggle)
+    pub ui_visible: bool,
     /// Burst mode state (enabled, capture/processing progress)
     pub burst_mode: BurstModeState,
     /// Auto-detected frame count based on current scene brightness (1-8)
@@ -1302,10 +1261,8 @@ pub enum Message {
     ToggleFormatPicker,
     /// Close format picker
     CloseFormatPicker,
-    /// Toggle theatre mode
-    ToggleTheatreMode,
-    /// Toggle UI visibility in theatre mode
-    TheatreToggleUI,
+    /// Toggle UI controls visibility (tap preview)
+    ToggleUIVisibility,
     /// Toggle device info panel visibility
     ToggleDeviceInfo,
 

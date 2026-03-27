@@ -2,7 +2,7 @@
 
 //! UI Navigation handlers
 //!
-//! Handles context pages, pickers, theatre mode, and tools menu.
+//! Handles context pages, pickers, and tools menu.
 
 use crate::app::state::{AppModel, ContextPage, Message};
 use cosmic::Task;
@@ -63,26 +63,12 @@ impl AppModel {
         Task::none()
     }
 
-    pub(crate) fn handle_toggle_theatre_mode(&mut self) -> Task<cosmic::Action<Message>> {
-        if self.theatre.enabled {
-            info!("Exiting theatre mode");
-            self.theatre.exit();
-        } else {
-            info!("Entering theatre mode");
-            self.theatre.enter();
-        }
-        Task::none()
-    }
-
-    pub(crate) fn handle_theatre_toggle_ui(&mut self) -> Task<cosmic::Action<Message>> {
-        self.theatre.toggle_ui();
-        if !self.theatre.ui_visible {
+    pub(crate) fn handle_toggle_ui_visibility(&mut self) -> Task<cosmic::Action<Message>> {
+        self.ui_visible = !self.ui_visible;
+        if !self.ui_visible {
             self.close_all_pickers();
         }
-        info!(
-            visible = self.theatre.ui_visible,
-            "Theatre mode: UI toggled"
-        );
+        info!(visible = self.ui_visible, "UI visibility toggled");
         Task::none()
     }
 
