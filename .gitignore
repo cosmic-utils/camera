@@ -21,3 +21,4 @@ repo
 flatpak-cargo-generator.py
 *.flatpak
 test-recordings/
+apk-out/

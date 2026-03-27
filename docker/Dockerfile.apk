@@ -1,0 +1,29 @@
+# Alpine APK build environment
+FROM alpine:edge
+
+RUN apk add --no-cache \
+    alpine-sdk sudo git \
+    cargo \
+    clang-libclang \
+    cmake \
+    cosmic-icons \
+    eudev-dev \
+    glib-dev \
+    gst-plugins-bad-dev \
+    gst-plugins-base-dev \
+    gstreamer-dev \
+    just \
+    libcamera-dev \
+    libinput-dev \
+    libseat-dev \
+    libxkbcommon-dev \
+    nasm \
+    pkgconf \
+    samurai \
+    wayland-dev
+
+RUN adduser -D builder && \
+    addgroup builder abuild && \
+    echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    sudo -Hu builder abuild-keygen -a -n && \
+    cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/

@@ -322,5 +322,69 @@ flatpak-deps arch="":
     sudo flatpak install -y --noninteractive flathub com.system76.Cosmic.BaseApp//stable $ARCH_FLAG
     echo "Flatpak dependencies installed!"
 
-# Full clean (cargo + vendor + flatpak)
-clean-all: clean clean-vendor flatpak-clean
+# ============================================================================
+# Alpine APK recipes
+# ============================================================================
+
+# Build Alpine APK package (optionally specify arch, e.g. aarch64)
+# Cross-compiles first, then packages the pre-built binary in an Alpine container.
+apk-build arch="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    arch="{{arch}}"
+    if [ -z "$arch" ]; then
+        arch=$(uname -m)
+    fi
+
+    # Map arch to Rust target triple
+    case "$arch" in
+        aarch64) rust_target="aarch64-unknown-linux-musl" ;;
+        x86_64)  rust_target="x86_64-unknown-linux-musl" ;;
+        *)       echo "Unsupported arch: $arch"; exit 1 ;;
+    esac
+
+    echo "Cross-compiling for $rust_target (release-fast)..."
+    cross build --target "$rust_target" --profile release-fast
+
+    binary="target/$rust_target/release-fast/camera"
+    [ -f "$binary" ] || { echo "Error: binary not found at $binary"; exit 1; }
+
+    echo "Packaging APK for $arch..."
+    platform="linux/$arch"
+    [ "$arch" = "x86_64" ] && platform="linux/amd64"
+    image_tag="camera-apk-$arch"
+    VERSION=$(grep "^version" Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+
+    mkdir -p apk-out
+    podman build --platform "$platform" -t "$image_tag" -f docker/Dockerfile.apk .
+
+    podman run --rm --platform "$platform" \
+        -v "$(pwd)":/src:ro \
+        -v "$(pwd)/apk-out":/out \
+        -v "$(pwd)/$binary":/prebuilt/camera:ro \
+        "$image_tag" sh -c '
+        set -e
+        VERSION="'"$VERSION"'"
+
+        mkdir -p /home/builder/apkbuild
+        sed "s/@@VERSION@@/$VERSION/g" /src/.github/APKBUILD.prebuilt.template \
+            > /home/builder/apkbuild/APKBUILD
+        chown -R builder:builder /home/builder/apkbuild
+
+        cd /home/builder/apkbuild
+        sudo -Hu builder abuild -r
+
+        mkdir -p /out
+        find /home/builder/packages -name "camera-*.apk" ! -name "*-doc-*" ! -name "*-dev-*" -exec cp {} /out/ \;
+        echo "APK built successfully:"
+        ls -la /out/
+    '
+    echo "Output in apk-out/"
+    ls -la apk-out/
+
+# Clean APK build artifacts
+apk-clean:
+    rm -rf apk-out
+
+# Full clean (cargo + vendor + flatpak + apk)
+clean-all: clean clean-vendor flatpak-clean apk-clean
