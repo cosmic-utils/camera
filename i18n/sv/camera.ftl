@@ -29,6 +29,8 @@ settings-theme = Tema
 match-desktop = Matcha skrivbordet
 dark = Mörkt
 light = Ljust
+settings-default-mode = Standard läge
+settings-default-mode-description = Kamera läge att använda när programmet startar
 settings-camera = Kamera
 settings-video = Video
 settings-device = Enhet
@@ -284,6 +286,13 @@ insights-meta-na = Inte tillgängligt
 settings-timelapse = Tidsförlopp
 settings-timelapse-interval = Intervall
 settings-timelapse-interval-description = Tid mellan på varandra följande fototagningar
+
+# Insikter - V4L2-format
+insights-v4l2-formats = V4L2 Enhetsformat
+insights-v4l2-no-device = Ingen V4L2-enhet
+insights-v4l2-in-libcamera = Tillgänglig i libcamera
+insights-v4l2-active-in-libcamera = Aktiv i libcamera
+insights-v4l2-not-in-libcamera = Inte tillgänglig i libcamera
 
 # Insikter - Fånga
 insights-capture = Fånga
