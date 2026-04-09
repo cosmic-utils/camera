@@ -288,7 +288,7 @@ settings-timelapse-interval = Intervall
 settings-timelapse-interval-description = Tid mellan på varandra följande fototagningar
 
 # Insikter - V4L2-format
-insights-v4l2-formats = V4L2 Enhetsformat
+insights-v4l2-formats = V4L2 enhetsformat
 insights-v4l2-no-device = Ingen V4L2-enhet
 insights-v4l2-in-libcamera = Tillgänglig i libcamera
 insights-v4l2-active-in-libcamera = Aktiv i libcamera
