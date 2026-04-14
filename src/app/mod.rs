@@ -39,6 +39,7 @@ mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
 pub mod insights;
+mod keybind;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
@@ -1497,6 +1498,8 @@ impl cosmic::Application for AppModel {
         } else {
             Subscription::none()
         };
+
+        let keybind_sub = key_subscription(self.mode);
 
         Subscription::batch([
             config_sub,
