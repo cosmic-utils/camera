@@ -43,28 +43,28 @@ use cosmic::iced::keyboard::key::Named;
 /// **Returns** a subscription to key events mapped similarly as GNOME Camera's for now
 pub fn key_subscription() -> Subscription<Message> {
     fn event_to_functionality(
-        event: cosmic::iced::Event,
+        event: Event,
         _status: cosmic::iced::event::Status,
         _window: cosmic::iced::window::Id,
     ) -> Option<Message> {
-        let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event else {
+        let Event::Keyboard(Event::KeyPressed { key, modifiers, .. }) = event else {
             return None;
         };
 
         match &key {
-            Named::Key(Named::F1)
+            Key::Named(Named::F1)
                 if !modifiers.control() && !modifiers.logo() && !modifiers.alt() =>
             {
                 Some(Message::ToggleContextPage(ContextPage::About))
             }
 
             // TODO: couldn't capture mode, need to think about it
-            Named::Key(Named::Enter)
+            Key::Named(Named::Enter)
                 if !modifiers.control() && !modifiers.logo() && !modifiers.alt() =>
             {
                 Some(Message::Capture)
             }
-            Named::Key(Named::Enter)
+            Key::Named(Named::Enter)
                 if modifiers.control() && !modifiers.logo() && !modifiers.alt() =>
             {
                 Some(Message::StartRecordingAfterDelay)

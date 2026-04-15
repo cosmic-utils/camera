@@ -52,6 +52,7 @@ mod video_widget;
 mod view;
 
 // Re-export public API
+use crate::app::keybind::key_subscription;
 use crate::config::Config;
 use crate::fl;
 use cosmic::app::context_drawer;
