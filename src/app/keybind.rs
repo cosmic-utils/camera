@@ -5,37 +5,39 @@ use crate::app::ContextPage;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::key::Named;
 
+//TODO: HashMap for reconfigurable ones
+
 /// Keybinding are currently hardcoded as follows:
 ///
-/// //TODO: HashMap for reconfigurable ones
-///
-/// F1 => about
-/// Enter => take a picture or start/stop recording video
-/// Ctrl + Enter => start recording after delay
-/// a => toggles auto focus
-/// c => toggles color picker
-/// e => toggles exposure picker
-/// f => toggles flash
-/// g => opens gallery
-/// n => next mode
-/// m => toggle audio recording or mute/unmute
-/// p => toggle motor picker
-/// q => toggle QR detection
-/// r => toggle save burst RAW
-/// s => switches camera
-/// t => toggles timelapse
-/// u => toggles theatre UI
-/// v => toggles virtual camera
-///   => toggles play/pause
-/// Ctrl + a => cycles aspect ratio
-/// Ctrl + f => toggles format picker
-/// Ctrl + q => currently noop //TODO: close app
-/// Ctrl + r => reset settings
-/// Ctrl + t => toggles theatre mode
-/// Ctrl + + => zoom in
-/// Ctrl + - => zoom out
-/// Ctrl + 0 => reset zoom
-/// Ctrl + , => opens/closes settings
+/// | Character | Binding |
+/// |-----------|---------|
+/// | F1 |			=> about |
+/// | Enter |		=> take a picture or start/stop recording |
+/// | Ctrl + Enter |=> start recording after delay |
+/// | a |			=> toggles auto focus |
+/// | c |			=> toggles color picker |
+/// | e |			=> toggles exposure picker |
+/// | f |			=> toggles flash |
+/// | g |			=> opens gallery |
+/// | n |			=> next mode |
+/// | m |			=> toggle audio recording or mute/unmute |
+/// | p |			=> toggle motor picker |
+/// | q |			=> toggle QR detection |
+/// | r |			=> toggle save burst RAW |
+/// | s |			=> switches camera |
+/// | t |			=> toggles timelapse |
+/// | u |			=> toggles theatre UI |
+/// | v |			=> toggles virtual camera |
+/// |   |			=> toggles play/pause |
+/// | Ctrl + a |	=> cycles aspect ratio |
+/// | Ctrl + f |	=> toggles format picker |
+/// | Ctrl + q |	=> currently noop //TODO: close app |
+/// | Ctrl + r |	=> reset settings |
+/// | Ctrl + t |	=> toggles theatre mode |
+/// | Ctrl + + |	=> zoom in |
+/// | Ctrl + - |	=> zoom out |
+/// | Ctrl + 0 |	=> reset zoom |
+/// | Ctrl + , |	=> opens/closes settings |
 ///
 /// **Returns** a subscription to key events mapped similarly as GNOME Camera's for now
 pub fn key_subscription(mode: CameraMode) -> Subscription<Message> {
@@ -86,7 +88,7 @@ pub fn key_subscription(mode: CameraMode) -> Subscription<Message> {
 					" " => Some(Message::ToggleVideoPlayPause()),
 			        _ => None,
 				}
-        }
+        	}
         }
     })
 }
