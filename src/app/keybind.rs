@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::app::ContextPage;
-use crate::{Message, Subscription};
+use crate::Message;
+use crate::app::{ContextPage, Subscription};
 use cosmic::iced::Event;
+use cosmic::iced::keyboard;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::key::Named;
 
@@ -43,11 +44,11 @@ use cosmic::iced::keyboard::key::Named;
 /// **Returns** a subscription to key events mapped similarly as GNOME Camera's for now
 pub fn key_subscription() -> Subscription<Message> {
     fn event_to_functionality(
-        event: Event,
+        event: cosmic::iced::Event,
         _status: cosmic::iced::event::Status,
         _window: cosmic::iced::window::Id,
     ) -> Option<Message> {
-        let Event::Keyboard(Event::KeyPressed { key, modifiers, .. }) = event else {
+        let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event else {
             return None;
         };
 
@@ -106,6 +107,7 @@ pub fn key_subscription() -> Subscription<Message> {
                     _ => None,
                 }
             }
+            _ => None,
         }
     }
     cosmic::iced::event::listen_raw(event_to_functionality)
