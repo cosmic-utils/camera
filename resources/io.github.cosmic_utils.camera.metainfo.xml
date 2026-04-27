@@ -17,7 +17,7 @@
       provides a clean and intuitive interface that stays out of your way.
     </p>
     <p xml:lang="cs">
-      Aplikace kamery od třetí strany pro desktopové prostředí COSMIC™.
+      Aplikace kamery od třetí strany pro prostředí COSMIC™.
       Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód,
       aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
     </p>
@@ -574,6 +574,14 @@
     <keyword>recording</keyword>
     <keyword>capture</keyword>
     <keyword>cosmic</keyword>
+    <keyword xml:lang="cs">kamera</keyword>
+    <keyword xml:lang="cs">fotoaparát</keyword>
+    <keyword xml:lang="cs">webkamera</keyword>
+    <keyword xml:lang="cs">fotografie</keyword>
+    <keyword xml:lang="cs">video</keyword>
+    <keyword xml:lang="cs">nahrávka</keyword>
+    <keyword xml:lang="cs">záznam</keyword>
+    <keyword xml:lang="cs">cosmic</keyword>
     <keyword xml:lang="uk">камера</keyword>
     <keyword xml:lang="uk">вебкамера</keyword>
     <keyword xml:lang="uk">знімок</keyword>
