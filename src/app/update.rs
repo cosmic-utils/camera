@@ -8,7 +8,7 @@
 //!
 //! # Handler Modules
 //!
-//! - `handlers::ui`: UI navigation, pickers, theatre mode, tools menu
+//! - `handlers::ui`: UI navigation, pickers, tools menu
 //! - `handlers::exposure`: Exposure and camera control settings
 //! - `handlers::color`: Color adjustment controls
 //! - `handlers::camera`: Camera selection, frame handling, transitions
@@ -33,8 +33,6 @@ impl AppModel {
             Message::ToggleContextPage(page) => self.handle_toggle_context_page(page),
             Message::ToggleFormatPicker => self.handle_toggle_format_picker(),
             Message::CloseFormatPicker => self.handle_close_format_picker(),
-            Message::ToggleTheatreMode => self.handle_toggle_theatre_mode(),
-            Message::TheatreToggleUI => self.handle_theatre_toggle_ui(),
             Message::ToggleDeviceInfo => self.handle_toggle_device_info(),
 
             // ===== Tools Menu =====
@@ -192,6 +190,34 @@ impl AppModel {
             Message::ZoomIn => self.handle_zoom_in(),
             Message::ZoomOut => self.handle_zoom_out(),
             Message::ResetZoom => self.handle_reset_zoom(),
+            Message::TogglePreviewFit => {
+                // Snapshot the animated values before toggling so a
+                // mid-animation reversal starts from where the eye currently
+                // is, not from the prior endpoint.
+                let from = self.capture_fit_state();
+                self.preview_fit_to_view = !self.preview_fit_to_view;
+                self.config.preview_fit_to_view = self.preview_fit_to_view;
+                self.persist_config_async();
+                self.start_fit_animation(from)
+            }
+            Message::FitAnimationTick => self.tick_animation_until(
+                crate::app::view::FIT_ANIMATION_DURATION,
+                Message::FitAnimationTick,
+                self.fit_animation.map(|a| a.start.elapsed()),
+                |s| s.fit_animation = None,
+            ),
+            Message::ZoomAnimationTick => self.tick_animation_until(
+                crate::app::view::ZOOM_ANIMATION_DURATION,
+                Message::ZoomAnimationTick,
+                self.zoom_animation.map(|a| a.start.elapsed()),
+                |s| s.zoom_animation = None,
+            ),
+            Message::WindowClose => {
+                std::process::exit(0);
+            }
+            Message::WindowMinimize => self.core.minimize(None),
+            Message::WindowToggleMaximize => self.core.toggle_maximize(None),
+            Message::WindowDrag => self.core.drag(None),
             Message::PinchZoom(level) => self.handle_pinch_zoom(level),
             Message::PhotoSaved(result) => self.handle_photo_saved(result),
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),

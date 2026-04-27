@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Aspect-ratio icon — 9:16 (portrait orientation companion of aspect-16-9).
+  See aspect-native.svg for the shared layout grammar.
+  Glyph positions: "9" x=5  ":" x=10  "1" x=12.5  "6" x=14.5
+                   (text width 14, centered on x=12)
+-->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Open-corner frame -->
+  <line x1="6"  y1="2"  x2="22" y2="2"  stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="22" y1="2"  x2="22" y2="18" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="22" x2="18" y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="6"  x2="2"  y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <!-- "9": top, upper-left, middle, full-right, bottom -->
+  <rect x="5"    y="8"     width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="5"    y="8"     width="1.5" height="3.25" fill="#FFFFFF"/>
+  <rect x="5"    y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="7.5"  y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
+  <rect x="5"    y="14.5"  width="4"   height="1.5"  fill="#FFFFFF"/>
+  <!-- ":" -->
+  <rect x="10"   y="9.75"  width="1.5" height="1.5"  fill="#FFFFFF"/>
+  <rect x="10"   y="12.75" width="1.5" height="1.5"  fill="#FFFFFF"/>
+  <!-- "1" -->
+  <rect x="12.5" y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
+  <!-- "6": top, full-left, middle, lower-right, bottom -->
+  <rect x="14.5" y="8"     width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="14.5" y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
+  <rect x="14.5" y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="17"   y="12.75" width="1.5" height="3.25" fill="#FFFFFF"/>
+  <rect x="14.5" y="14.5"  width="4"   height="1.5"  fill="#FFFFFF"/>
+</svg>

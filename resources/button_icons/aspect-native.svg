@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Aspect-ratio icon — Native (no crop).
+
+  All five aspect-ratio icons share this layout:
+    - 24×24 viewBox, open-corner square frame at x=2..22 / y=2..22
+      (stroke 2, round line-caps); the top-left and bottom-right corners
+      have 4-unit gaps so the frame reads as "open".
+    - Glyph grid inside the frame: stroke-1.5 rectangles in an 8 px-tall
+      band (y=8..16). Digit cell width is 4 px (1.5 px for "1"). Colon =
+      two 1.5×1.5 dots at y=9.75 and y=12.75 (symmetric around y=12, off
+      the middle bar). Inter-glyph gap is 1 unit; the whole text block is
+      centered on x=12.
+    - Native has no glyphs — the empty frame signals "no crop".
+-->
 <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <!-- Square with open corners at top-left and bottom-right -->
-  <!-- Top edge (gap at left) -->
-  <line x1="7" y1="4" x2="20" y2="4" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Right edge (gap at bottom) -->
-  <line x1="20" y1="4" x2="20" y2="17" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Bottom edge (gap at right) -->
-  <line x1="4" y1="20" x2="17" y2="20" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Left edge (gap at top) -->
-  <line x1="4" y1="7" x2="4" y2="20" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Native = empty inside -->
+  <!-- Open-corner frame -->
+  <line x1="6"  y1="2"  x2="22" y2="2"  stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="22" y1="2"  x2="22" y2="18" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="22" x2="18" y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="6"  x2="2"  y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
 </svg>

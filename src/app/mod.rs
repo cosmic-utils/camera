@@ -62,7 +62,7 @@ use cosmic::{Element, Task};
 pub use state::{
     AppFlags, AppModel, BurstModeStage, BurstModeState, CameraMode, ContextPage, FileSource,
     FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, PrewarmResults, RecordingState,
-    TheatreState, TimelapseState, VirtualCameraState,
+    TimelapseState, VirtualCameraState,
 };
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
@@ -329,6 +329,7 @@ impl cosmic::Application for AppModel {
         // Construct the app model with the runtime's core.
         let initial_mode = config.default_mode;
         let initial_aspect_ratio = config.photo_aspect_ratio;
+        let initial_preview_fit = config.preview_fit_to_view;
         let virtual_camera_enabled = config.virtual_camera_enabled;
         let mut app = AppModel {
             core,
@@ -345,9 +346,6 @@ impl cosmic::Application for AppModel {
             photo_btn_scale_from: 1.0,
             photo_btn_scale_to: 1.0,
             photo_btn_anim_start: None,
-            bottom_bar_opacity_target: 1.0,
-            bottom_bar_opacity_from: 1.0,
-            bottom_bar_fade_start: None,
             recording: RecordingState::default(),
             virtual_camera: VirtualCameraState::default(),
             virtual_camera_file_source: preview_file_source,
@@ -381,7 +379,6 @@ impl cosmic::Application for AppModel {
                 model
             },
             base_exposure_time: None,
-            theatre: TheatreState::default(),
             burst_mode: BurstModeState::default(),
             auto_detected_frame_count: 1, // Start with 1 (no HDR+) until first brightness evaluation
             hdr_override_disabled: false,
@@ -409,6 +406,9 @@ impl cosmic::Application for AppModel {
             photo_timer_tick_start: None,
             photo_aspect_ratio: initial_aspect_ratio,
             zoom_level: 1.0,
+            zoom_animation: None,
+            preview_fit_to_view: initial_preview_fit,
+            fit_animation: None,
             last_bug_report_path: None,
             last_media_path: None,
             gallery_thumbnail: None,
@@ -487,6 +487,8 @@ impl cosmic::Application for AppModel {
                 .map(|i| i.display_name().to_string())
                 .collect(),
             device_info_visible: false,
+            screen_width: 0.0,
+            screen_height: 0.0,
             transition_state: crate::app::state::TransitionState::default(),
             // QR detection enabled by default
             qr_detection_enabled: true,
@@ -504,6 +506,8 @@ impl cosmic::Application for AppModel {
         app.core.window.context_is_overlay = true;
         // Disable content container to prevent layout gaps
         app.core.window.content_container = false;
+        // Always hide headerbar — custom window controls are in the top bar overlay
+        app.core.window.show_headerbar = false;
 
         // Update all dropdown options based on initial format
         app.update_mode_options();
@@ -679,44 +683,26 @@ impl cosmic::Application for AppModel {
         )
     }
 
-    /// Elements to pack at the start of the header bar.
-    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![]
+    /// Override the application style so window-control icons in our custom
+    /// title bar keep their foreground color when maximized. libcosmic's
+    /// default `style()` swaps `icon_color` to `bg_color` for maximized
+    /// windows, which `widget::button::icon` inherits as its ambient color.
+    fn style(&self) -> Option<cosmic::iced::theme::Style> {
+        let theme = cosmic::theme::active();
+        let cosmic = theme.cosmic();
+        Some(cosmic::iced::theme::Style {
+            background_color: cosmic::iced::Color::TRANSPARENT,
+            text_color: cosmic.on_bg_color().into(),
+            icon_color: cosmic.on_bg_color().into(),
+        })
     }
 
-    /// Elements to pack at the end of the header bar.
-    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        let is_disabled = self.transition_state.ui_disabled;
-
-        if is_disabled {
-            // Disabled buttons during transitions
-            let about_button = widget::button::icon(widget::icon::from_name("help-about-symbolic"));
-            let settings_button =
-                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"));
-            vec![
-                widget::container(about_button)
-                    .style(|_theme| widget::container::Style {
-                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                        ..Default::default()
-                    })
-                    .into(),
-                widget::container(settings_button)
-                    .style(|_theme| widget::container::Style {
-                        text_color: Some(cosmic::iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                        ..Default::default()
-                    })
-                    .into(),
-            ]
-        } else {
-            vec![
-                widget::button::icon(widget::icon::from_name("help-about-symbolic"))
-                    .on_press(Message::ToggleContextPage(ContextPage::About))
-                    .into(),
-                widget::button::icon(widget::icon::from_name("preferences-system-symbolic"))
-                    .on_press(Message::ToggleContextPage(ContextPage::Settings))
-                    .into(),
-            ]
-        }
+    /// Track the latest window dimensions so capture-time crop logic can
+    /// compute the visible content aspect ratio without reading from a
+    /// canvas-side global on the render thread.
+    fn on_window_resize(&mut self, _id: cosmic::iced::window::Id, width: f32, height: f32) {
+        self.screen_width = width;
+        self.screen_height = height;
     }
 
     /// Display a context drawer if the context page is requested.

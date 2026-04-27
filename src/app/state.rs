@@ -356,47 +356,6 @@ impl std::fmt::Debug for IdleInhibitGuard {
     }
 }
 
-/// Theatre mode state
-///
-/// Consolidates theatre mode UI visibility state.
-#[derive(Debug, Clone)]
-pub struct TheatreState {
-    /// Theatre mode enabled
-    pub enabled: bool,
-    /// UI currently visible
-    pub ui_visible: bool,
-}
-
-impl Default for TheatreState {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            ui_visible: true,
-        }
-    }
-}
-
-impl TheatreState {
-    /// Enter theatre mode
-    pub fn enter(&mut self) {
-        self.enabled = true;
-        self.ui_visible = true;
-    }
-
-    /// Exit theatre mode
-    pub fn exit(&mut self) {
-        self.enabled = false;
-        self.ui_visible = true;
-    }
-
-    /// Toggle UI visibility
-    pub fn toggle_ui(&mut self) {
-        if self.enabled {
-            self.ui_visible = !self.ui_visible;
-        }
-    }
-}
-
 /// Burst mode state for multi-frame burst capture
 ///
 /// Tracks the state of burst mode photo capture and processing.
@@ -633,12 +592,6 @@ pub struct AppModel {
     pub photo_btn_scale_from: f32,
     pub photo_btn_scale_to: f32,
     pub photo_btn_anim_start: Option<std::time::Instant>,
-    /// Bottom bar fade animation: target opacity (0.0 = hidden, 1.0 = visible)
-    pub bottom_bar_opacity_target: f32,
-    /// Bottom bar fade animation: opacity when animation started
-    pub bottom_bar_opacity_from: f32,
-    /// Bottom bar fade animation: timestamp when animation started
-    pub bottom_bar_fade_start: Option<std::time::Instant>,
     /// Recording state (idle, recording, or paused)
     pub recording: RecordingState,
     /// Virtual camera state (idle or streaming)
@@ -697,8 +650,6 @@ pub struct AppModel {
     /// Base exposure time (in 100µs units) captured when entering manual mode
     /// Used to calculate EV-based adjustments in non-advanced mode
     pub base_exposure_time: Option<i32>,
-    /// Theatre mode state (enabled, UI visibility, auto-hide)
-    pub theatre: TheatreState,
     /// Burst mode state (enabled, capture/processing progress)
     pub burst_mode: BurstModeState,
     /// Auto-detected frame count based on current scene brightness (1-8)
@@ -728,8 +679,16 @@ pub struct AppModel {
     pub photo_timer_tick_start: Option<Instant>,
     /// Photo aspect ratio (native, 4:3, 16:9, 1:1)
     pub photo_aspect_ratio: PhotoAspectRatio,
-    /// Current zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
+    /// Current (settled) zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
     pub zoom_level: f32,
+    /// In-flight zoom transition, or `None` when settled on `zoom_level`.
+    /// Set by the zoom-reset button; pinch / step zoom set `zoom_level`
+    /// directly and clear this so they remain real-time.
+    pub zoom_animation: Option<ZoomAnimation>,
+    /// Show entire frame (Contain mode) instead of filling the window (Cover mode)
+    pub preview_fit_to_view: bool,
+    /// In-flight fit/fill transition, or `None` when settled on `preview_fit_to_view`.
+    pub fit_animation: Option<FitAnimation>,
     /// Path to last generated bug report
     pub last_bug_report_path: Option<String>,
     /// Path to the most recently saved photo or video (for gallery pre-selection)
@@ -801,6 +760,13 @@ pub struct AppModel {
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
+    /// Latest window/canvas dimensions (logical pixels), set by
+    /// `Application::on_window_resize`. Used by capture-time crop logic
+    /// to compute the visible content aspect ratio. Both default to 0.0
+    /// before the first resize event; consumers fall back to 16:9.
+    pub screen_width: f32,
+    pub screen_height: f32,
+
     /// Transition state for camera/settings changes
     pub transition_state: TransitionState,
 
@@ -831,6 +797,68 @@ pub struct AppModel {
     // ===== Insights Drawer =====
     /// Insights drawer diagnostic state
     pub insights: super::insights::InsightsState,
+}
+
+/// In-flight animation between Cover and Contain preview modes (and the
+/// associated bottom-bar scrim height, which differs between Photo and the
+/// other modes).
+///
+/// The targets are always `AppModel::settled_blend()` and
+/// `AppModel::settled_bottom_ui_height()`. By construction, callers mutate
+/// `self.mode` / `self.preview_fit_to_view` before installing a new
+/// animation, and neither field changes mid-animation (a re-trigger replaces
+/// the whole struct), so both settled values are stable throughout playback.
+/// Snapshot of all values that animate through a fit/fill transition,
+/// captured by callers before they mutate `self.mode` or
+/// `self.preview_fit_to_view`. The animation interpolates linearly from
+/// every field toward its corresponding settled value via shared eased
+/// progress (`AppModel::fit_animation_eased`), so adding a fifth animated
+/// channel later is a one-place change here plus the matching
+/// `AppModel::capture_fit_state` reader.
+#[derive(Debug, Clone, Copy)]
+pub struct FitFrom {
+    /// Blend value at the moment the animation started (for mid-animation reversals).
+    pub blend: f32,
+    /// Top-bar scrim / shader bar at the moment the animation started.
+    /// 0 in View mode, `TOP_BAR_HEIGHT` otherwise. Drives the canvas scrim,
+    /// the shader's `bar_top_px`, and the composition guide's content rect.
+    pub top_ui_height: f32,
+    /// Bottom-bar scrim / shader bar at the moment the animation started.
+    /// 0 in View mode (the preview takes the full window in fit/fill);
+    /// the bottom carousel renders on top of the live preview without a scrim.
+    pub bottom_ui_height: f32,
+    /// Height of the empty placeholder above the bottom bar at the moment
+    /// the animation started. 0 in View (capture button hidden, fit/zoom
+    /// row sits flush above the carousel); the capture-area height
+    /// otherwise. Drives the column layout above the bottom bar.
+    pub capture_area_height: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FitAnimation {
+    /// When the animation began.
+    pub start: Instant,
+    /// Snapshot captured at animation start. Each channel interpolates
+    /// from this value toward the current settled value.
+    pub from: FitFrom,
+    /// Set when the source or destination of this animation is the
+    /// `View` mode (i.e. when the capture-area / scrim heights cross 0).
+    /// The view-mode rendering paths (capture-button slot, etc.) consult
+    /// this rather than comparing animated heights against settled values
+    /// so the contract is explicit.
+    pub is_view_boundary: bool,
+}
+
+/// In-flight zoom transition driven by the zoom-reset button. The target
+/// is always `AppModel::zoom_level` (the settled value); pinch and step
+/// zoom set the target directly without an animation, clearing this so
+/// they stay real-time.
+#[derive(Debug, Clone, Copy)]
+pub struct ZoomAnimation {
+    /// When the animation began.
+    pub start: Instant,
+    /// Zoom level at the moment the animation started.
+    pub from: f32,
 }
 
 /// State for smooth blur transitions when changing camera settings
@@ -872,16 +900,34 @@ pub enum CameraMode {
     Virtual,
     /// Timelapse mode - captures photos at a configurable interval
     Timelapse,
+    /// View mode — minimal-UI live preview. No capture controls; only the
+    /// mode carousel, fit/fill toggle, and zoom button are shown, and the
+    /// top/bottom UI scrim is fully transparent.
+    View,
 }
 
 impl CameraMode {
     /// All available camera modes
-    pub const ALL: [CameraMode; 4] = [
+    pub const ALL: [CameraMode; 5] = [
         CameraMode::Photo,
         CameraMode::Video,
         CameraMode::Timelapse,
         CameraMode::Virtual,
+        CameraMode::View,
     ];
+
+    /// Whether this mode renders a minimal-chrome live preview (no capture
+    /// or recording controls, transparent scrim). Currently just `View`.
+    pub fn is_view_only(self) -> bool {
+        matches!(self, CameraMode::View)
+    }
+
+    /// Whether this mode supports the fit-to-view (Contain) preview toggle
+    /// and the manual zoom controls. Photo lets you frame a photo; View
+    /// just lets you inspect the feed.
+    pub fn supports_fit_and_zoom(self) -> bool {
+        matches!(self, CameraMode::Photo | CameraMode::View)
+    }
 }
 
 /// File source for virtual camera streaming
@@ -1020,28 +1066,21 @@ impl PhotoAspectRatio {
         Self::from_frame_dimensions(width, height).unwrap_or(PhotoAspectRatio::Native)
     }
 
-    /// Cycle to next aspect ratio, skipping Native if it matches a defined ratio
-    pub fn next_for_frame(&self, frame_width: u32, frame_height: u32) -> Self {
-        let native_matches_defined =
-            Self::from_frame_dimensions(frame_width, frame_height).is_some();
-
+    /// Cycle to next aspect ratio: Native → 4:3 → 16:9 → 2:1 → 1:1 → Native
+    pub fn next_for_frame(&self, _frame_width: u32, _frame_height: u32) -> Self {
         match self {
             PhotoAspectRatio::Native => PhotoAspectRatio::Ratio4x3,
             PhotoAspectRatio::Ratio4x3 => PhotoAspectRatio::Ratio16x9,
             PhotoAspectRatio::Ratio16x9 => PhotoAspectRatio::Ratio2x1,
             PhotoAspectRatio::Ratio2x1 => PhotoAspectRatio::Ratio1x1,
-            PhotoAspectRatio::Ratio1x1 => {
-                if native_matches_defined {
-                    // Skip Native, go directly to 4:3
-                    PhotoAspectRatio::Ratio4x3
-                } else {
-                    PhotoAspectRatio::Native
-                }
-            }
+            PhotoAspectRatio::Ratio1x1 => PhotoAspectRatio::Native,
         }
     }
 
-    /// Get the aspect ratio as a float (width / height), or None for native
+    /// Get the aspect ratio as a float (width / height) in *sensor* /
+    /// landscape orientation, or None for Native. Used by the GPU shader
+    /// (which works in texture space and rotates separately) and as the
+    /// canonical, orientation-independent value for capture math.
     pub fn ratio(&self) -> Option<f32> {
         match self {
             PhotoAspectRatio::Native => None,
@@ -1052,10 +1091,31 @@ impl PhotoAspectRatio {
         }
     }
 
-    /// Calculate crop rectangle for a given frame size
-    /// Returns (x, y, width, height) for the crop region
-    pub fn crop_rect(&self, frame_width: u32, frame_height: u32) -> (u32, u32, u32, u32) {
-        let Some(target_ratio) = self.ratio() else {
+    /// Aspect ratio in *display* orientation: when the screen is portrait,
+    /// the user sees the rotated frame, so a "2:1" preference reads as 1:2
+    /// on screen. Display-space callers (canvas overlay, capture-time
+    /// crop_for_cover_mode, composition guide, icon picker) must use this
+    /// to stay consistent with what the rotated preview shows.
+    pub fn display_ratio(&self, is_portrait: bool) -> Option<f32> {
+        let r = self.ratio()?;
+        Some(if is_portrait { 1.0 / r } else { r })
+    }
+
+    /// Calculate crop rectangle for a given frame size.
+    /// Returns (x, y, width, height) for the crop region.
+    ///
+    /// `frame_width` / `frame_height` are in *display* orientation
+    /// (rotation-swapped) and `is_portrait` flips the target ratio so a
+    /// "2:1" pref crops the screen-portrait frame to a 1:2 region. Callers
+    /// in the capture path swap the result back to sensor orientation
+    /// before applying it to the raw sensor frame.
+    pub fn crop_rect(
+        &self,
+        frame_width: u32,
+        frame_height: u32,
+        is_portrait: bool,
+    ) -> (u32, u32, u32, u32) {
+        let Some(target_ratio) = self.display_ratio(is_portrait) else {
             return (0, 0, frame_width, frame_height);
         };
 
@@ -1074,8 +1134,12 @@ impl PhotoAspectRatio {
         }
     }
 
-    /// Calculate crop UV coordinates for shader use
-    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range
+    /// Calculate crop UV coordinates for shader use.
+    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range, in *texture* space.
+    ///
+    /// The shader's screen→texture rotation runs before this `mix(crop_min,
+    /// crop_max, tex)`, so crop UVs are rotation-independent and computed on
+    /// the original sensor dimensions and ratio.
     pub fn crop_uv(&self, frame_width: u32, frame_height: u32) -> Option<(f32, f32, f32, f32)> {
         let Some(target_ratio) = self.ratio() else {
             return None; // Native - no cropping
@@ -1110,66 +1174,6 @@ impl PhotoAspectRatio {
             (width, height)
         };
         Self::default_for_frame(effective_width, effective_height)
-    }
-
-    /// Calculate crop UV coordinates for shader use, accounting for sensor rotation
-    ///
-    /// The GPU shader rotation transforms screen UV → texture UV, then
-    /// `mix(crop_min, crop_max, tex)` restricts sampling to a sub-region.
-    /// Since the `mix` operates in texture space (original sensor orientation),
-    /// the crop UVs must also be in texture space.
-    ///
-    /// For 90°/270° rotations the screen axes are swapped relative to the
-    /// texture.  A "4:3" label on a portrait phone means the photo is 3:4
-    /// (w < h on screen), but the texture crop that achieves this has the
-    /// same 4:3 ratio in landscape texture space.  So we always compute
-    /// the crop on the original texture dimensions with the original ratio.
-    ///
-    /// Returns (u_min, v_min, u_max, v_max) in 0-1 range (texture space)
-    pub fn crop_uv_with_rotation(
-        &self,
-        frame_width: u32,
-        frame_height: u32,
-        _rotation: crate::backends::camera::types::SensorRotation,
-    ) -> Option<(f32, f32, f32, f32)> {
-        // Crop is always computed in texture space (original sensor dimensions).
-        // The shader rotation handles the screen ↔ texture coordinate mapping,
-        // so the crop UVs are rotation-independent.
-        self.crop_uv(frame_width, frame_height)
-    }
-
-    /// Calculate crop rectangle accounting for sensor rotation
-    ///
-    /// For photo processing, crop is applied BEFORE rotation. Aspect ratio
-    /// labels like "4:3" always refer to the longer side first, so on a
-    /// portrait display "4:3" means 3:4 (w < h). Since the crop happens
-    /// on the original landscape sensor, we apply the same 4:3 ratio to
-    /// the landscape frame — after 90°/270° rotation, the result becomes
-    /// portrait 3:4 as expected.
-    pub fn crop_rect_with_rotation(
-        &self,
-        frame_width: u32,
-        frame_height: u32,
-        _rotation: crate::backends::camera::types::SensorRotation,
-    ) -> (u32, u32, u32, u32) {
-        // Crop is always computed in sensor space (original dimensions).
-        // The rotation applied afterwards naturally produces the correct
-        // display orientation (e.g. 4:3 landscape → 3:4 portrait after 90° rotation).
-        self.crop_rect(frame_width, frame_height)
-    }
-
-    /// Returns the crop rect for this aspect ratio, or None for Native (no crop)
-    pub fn optional_crop_rect_with_rotation(
-        &self,
-        frame_width: u32,
-        frame_height: u32,
-        rotation: crate::backends::camera::types::SensorRotation,
-    ) -> Option<(u32, u32, u32, u32)> {
-        if *self == PhotoAspectRatio::Native {
-            None
-        } else {
-            Some(self.crop_rect_with_rotation(frame_width, frame_height, rotation))
-        }
     }
 }
 
@@ -1302,10 +1306,6 @@ pub enum Message {
     ToggleFormatPicker,
     /// Close format picker
     CloseFormatPicker,
-    /// Toggle theatre mode
-    ToggleTheatreMode,
-    /// Toggle UI visibility in theatre mode
-    TheatreToggleUI,
     /// Toggle device info panel visibility
     ToggleDeviceInfo,
 
@@ -1495,6 +1495,20 @@ pub enum Message {
     ZoomOut,
     /// Reset zoom to 1.0
     ResetZoom,
+    /// Toggle between Cover (fill) and Contain (fit) preview mode
+    TogglePreviewFit,
+    /// Animation tick for fit/fill transition
+    FitAnimationTick,
+    /// Animation tick for the zoom-reset transition
+    ZoomAnimationTick,
+    /// Window control: close
+    WindowClose,
+    /// Window control: minimize
+    WindowMinimize,
+    /// Window control: toggle maximize
+    WindowToggleMaximize,
+    /// Window control: start drag
+    WindowDrag,
     /// Pinch-to-zoom: set absolute zoom level from touch gesture
     PinchZoom(f32),
     /// Photo was saved successfully with the given file path

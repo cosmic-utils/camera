@@ -24,117 +24,97 @@ use cosmic::widget;
 use slide_h::SlideH;
 
 /// Fixed height for bottom bar to match filter picker
-const BOTTOM_BAR_HEIGHT: f32 = 74.0;
+pub const BOTTOM_BAR_HEIGHT: f32 = 74.0;
 
-/// Duration of bottom bar fade animation in milliseconds
-const FADE_DURATION_MS: f32 = 450.0;
+/// Shared horizontal layout used by the bottom bar (gallery / mode-carousel /
+/// camera-switcher) and the recording-state capture row (spacer / stop circle
+/// / photo button). The shape `[left] [Fill] [center] [Fill] [right]` keeps
+/// the two layouts visually aligned column-for-column.
+pub fn three_col_row<'a>(
+    left: Element<'a, Message>,
+    center: Element<'a, Message>,
+    right: Element<'a, Message>,
+    padding: impl Into<cosmic::iced::Padding>,
+) -> Element<'a, Message> {
+    let fill = || {
+        widget::Space::new()
+            .width(Length::Fill)
+            .height(Length::Shrink)
+    };
+    widget::row()
+        .push(left)
+        .push(fill())
+        .push(center)
+        .push(fill())
+        .push(right)
+        .padding(padding)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .into()
+}
 
 impl AppModel {
-    /// Start a bottom bar fade animation to the given target opacity.
-    pub fn start_bottom_bar_fade(&mut self, target: f32) {
-        let current = self.bottom_bar_current_opacity();
-        self.bottom_bar_opacity_from = current;
-        self.bottom_bar_opacity_target = target;
-        self.bottom_bar_fade_start = Some(std::time::Instant::now());
-    }
-
-    /// Get the current interpolated bottom bar opacity.
-    pub fn bottom_bar_current_opacity(&self) -> f32 {
-        if let Some(start) = self.bottom_bar_fade_start {
-            let elapsed = start.elapsed().as_secs_f32() * 1000.0;
-            let t = (elapsed / FADE_DURATION_MS).min(1.0);
-            let eased = 1.0 - (1.0 - t).powi(3); // ease-out cubic
-            let opacity = self.bottom_bar_opacity_from
-                + (self.bottom_bar_opacity_target - self.bottom_bar_opacity_from) * eased;
-            opacity.clamp(0.0, 1.0)
-        } else {
-            self.bottom_bar_opacity_target
-        }
-    }
-
     /// Build the complete bottom bar widget
     ///
     /// Assembles gallery button, mode switcher, and camera switcher
     /// into a centered horizontal layout. The carousel visually extends
     /// beyond its layout bounds during expansion; SlideH slides the
     /// buttons outward in sync (reading from a shared atomic every frame).
-    /// During recording, an overlay fades the bar out and blocks input.
+    /// During recording, timelapse, quick-record, virtual-camera streaming,
+    /// or a photo-timer countdown, the children are replaced with empty
+    /// space of the same fixed height so the surrounding layout stays put.
     pub fn build_bottom_bar(&self) -> Element<'_, Message> {
-        let spacing = cosmic::theme::spacing();
-        let slide = std::sync::Arc::clone(&self.carousel_button_slide);
+        let bar_hidden = self.recording.is_recording()
+            || self.quick_record.is_recording()
+            || self.timelapse.is_active()
+            || self.virtual_camera.is_streaming()
+            || self.photo_timer_countdown.is_some();
 
-        // Use Fill gaps so the row adapts to any screen width.
-        // The carousel extends visually beyond its 150px layout via
-        // render_bounds, and SlideH handles button positioning.
-        let centered_row = widget::row()
-            .push(SlideH::new(self.build_gallery_button(), slide.clone(), 1.0))
-            .push(
+        let inner: Element<'_, Message> = if bar_hidden {
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fixed(BOTTOM_BAR_HEIGHT))
+                .into()
+        } else if self.mode.is_view_only() {
+            // View mode: just the mode carousel — no gallery, no camera
+            // switcher — but keep the same three-column shape so the carousel
+            // sits at the same horizontal position as in the other modes.
+            let spacing = cosmic::theme::spacing();
+            let side = || -> Element<'_, Message> {
                 widget::Space::new()
-                    .width(Length::Fill)
-                    .height(Length::Shrink),
+                    .width(Length::Fixed(
+                        crate::constants::ui::PLACEHOLDER_BUTTON_WIDTH,
+                    ))
+                    .height(Length::Shrink)
+                    .into()
+            };
+            three_col_row(
+                side(),
+                self.build_mode_switcher(),
+                side(),
+                [0, spacing.space_m],
             )
-            .push(self.build_mode_switcher())
-            .push(
-                widget::Space::new()
-                    .width(Length::Fill)
-                    .height(Length::Shrink),
+        } else {
+            let spacing = cosmic::theme::spacing();
+            let slide = std::sync::Arc::clone(&self.carousel_button_slide);
+            // The carousel extends visually beyond its layout via render_bounds,
+            // and SlideH slides the side buttons in sync with the expansion.
+            three_col_row(
+                SlideH::new(self.build_gallery_button(), slide.clone(), 1.0).into(),
+                self.build_mode_switcher(),
+                SlideH::new(self.build_camera_switcher(), slide, -1.0).into(),
+                [0, spacing.space_m],
             )
-            .push(SlideH::new(self.build_camera_switcher(), slide, -1.0))
-            .padding([0, spacing.space_m])
-            .align_y(Alignment::Center);
+        };
 
-        let bar = widget::container(centered_row)
+        widget::container(inner)
             .width(Length::Fill)
             .height(Length::Fixed(BOTTOM_BAR_HEIGHT))
             .center_y(BOTTOM_BAR_HEIGHT)
             .style(|_theme| widget::container::Style {
                 background: Some(Background::Color(Color::TRANSPARENT)),
                 ..Default::default()
-            });
-
-        let opacity = self.bottom_bar_current_opacity();
-
-        let is_active = self.recording.is_recording()
-            || self.quick_record.is_recording()
-            || self.timelapse.is_active()
-            || self.virtual_camera.is_streaming();
-
-        // Always use the stack layout to avoid layout thrashing during animation.
-        // The overlay is transparent when fully visible and blocks input when fading.
-        let fade_alpha = (1.0 - opacity).max(0.0);
-        let theme = cosmic::theme::active();
-        let win_bg = theme.cosmic().bg_color();
-        let blocks_input = is_active || opacity < 1.0;
-
-        let overlay_container = widget::container(widget::Space::new())
-            .width(Length::Fill)
-            .height(Length::Fixed(BOTTOM_BAR_HEIGHT))
-            .style(move |_theme| widget::container::Style {
-                background: if fade_alpha > 0.001 {
-                    Some(Background::Color(Color::from_rgba(
-                        win_bg.red,
-                        win_bg.green,
-                        win_bg.blue,
-                        fade_alpha,
-                    )))
-                } else {
-                    None
-                },
-                ..Default::default()
-            });
-
-        let overlay: Element<'_, Message> = if blocks_input {
-            widget::mouse_area(overlay_container)
-                .on_press(Message::Noop)
-                .on_release(Message::Noop)
-                .into()
-        } else {
-            overlay_container.into()
-        };
-
-        cosmic::iced::widget::stack![bar, overlay]
-            .width(Length::Fill)
-            .height(Length::Fixed(BOTTOM_BAR_HEIGHT))
+            })
             .into()
     }
 }

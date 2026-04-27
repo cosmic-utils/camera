@@ -10,6 +10,7 @@ git-description = Commit de Git {$hash} en {$date}
 mode-video = VIDEO
 mode-photo = FOTO
 mode-virtual = VIRTUAL
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Cámara virtual (experimental)

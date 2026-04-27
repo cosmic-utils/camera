@@ -8,7 +8,6 @@
 mod widget;
 
 use crate::app::state::{AppModel, CameraMode, Message};
-use crate::app::video_widget::VideoContentFit;
 use crate::config::CompositionGuide;
 use cosmic::Element;
 use cosmic::iced::Length;
@@ -24,9 +23,10 @@ fn empty_overlay<'a>() -> Element<'a, Message> {
 impl AppModel {
     /// Build the composition guide overlay element.
     ///
-    /// Computes the same effective frame dimensions as the video widget
-    /// (accounting for sensor rotation and aspect ratio crop) so that
-    /// guide lines align with the visible video content.
+    /// Passes the live state needed to compute the visible-video rectangle
+    /// at draw time so the guide tracks fit/fill state, the photo aspect-
+    /// ratio crop, and the bottom-bar scrim height (which differs by mode
+    /// and animates across mode switches).
     pub fn build_composition_overlay(&self) -> Element<'_, Message> {
         if self.config.composition_guide == CompositionGuide::None {
             return empty_overlay();
@@ -36,46 +36,39 @@ impl AppModel {
             return empty_overlay();
         };
 
-        let content_fit = if self.theatre.enabled {
-            VideoContentFit::Cover
-        } else {
-            VideoContentFit::Contain
-        };
-
-        // Match the video widget's effective dimensions:
-        // 1. Apply sensor rotation (swap dimensions for 90°/270°)
         let rotation = self.current_frame_rotation;
-        let (ew, eh) = if rotation.swaps_dimensions() {
+        let (rotated_w, rotated_h) = if rotation.swaps_dimensions() {
             (frame.height as f32, frame.width as f32)
         } else {
             (frame.width as f32, frame.height as f32)
         };
-
-        // 2. Apply aspect ratio crop (Photo mode only, not in theatre mode)
-        let (fw, fh) = match self.mode {
-            CameraMode::Photo if !self.theatre.enabled && !self.current_frame_is_file_source => {
-                if let Some((u0, v0, u1, v1)) = self.photo_aspect_ratio.crop_uv_with_rotation(
-                    frame.width,
-                    frame.height,
-                    rotation,
-                ) {
-                    (((u1 - u0) * ew).round(), ((v1 - v0) * eh).round())
-                } else {
-                    (ew.round(), eh.round())
-                }
-            }
-            _ => (ew.round(), eh.round()),
-        };
-
-        if fw < 1.0 || fh < 1.0 {
+        if rotated_w < 1.0 || rotated_h < 1.0 {
             return empty_overlay();
         }
 
+        // Aspect-ratio crop applies in Photo mode only; non-Native ratios
+        // produce a sub-rect in Cover and a different letterbox in Contain.
+        // Use the *display*-oriented ratio so the guide aligns with the
+        // rotated preview on portrait windows.
+        let aspect_crop_ratio =
+            if self.mode == CameraMode::Photo && !self.current_frame_is_file_source {
+                self.photo_aspect_ratio
+                    .display_ratio(self.screen_is_portrait())
+            } else {
+                None
+            };
+
         widget::composition_canvas(
             self.config.composition_guide,
-            fw as u32,
-            fh as u32,
-            content_fit,
+            rotated_w,
+            rotated_h,
+            aspect_crop_ratio,
+            self.cover_blend(),
+            // Pass the *animated* top/bottom heights so the guide tracks
+            // the scrim through Photo↔View transitions; in View the bars
+            // settle at 0 and the guide aligns with the full window.
+            self.top_ui_height(),
+            self.bottom_ui_height(),
         )
     }
 }

@@ -82,12 +82,10 @@ impl AppModel {
                 crate::app::video_primitive::VIDEO_ID_NORMAL
             };
 
-            // Use Cover mode (fill/zoom) in theatre mode, Contain mode (letterbox) otherwise
-            let content_fit = if self.theatre.enabled {
-                VideoContentFit::Cover
-            } else {
-                VideoContentFit::Contain
-            };
+            // Always use Cover layout — the shader interpolates between Cover and
+            // Contain via the cover_blend value for smooth animated transitions.
+            let cover_blend = self.cover_blend();
+            let content_fit = VideoContentFit::Cover;
 
             let filter_mode = self.selected_filter;
 
@@ -101,28 +99,24 @@ impl AppModel {
             };
             let rotation = sensor_rotation.gpu_rotation_code();
 
-            // Calculate crop UV for aspect ratio (only in Photo mode, not in theatre mode)
-            // Theatre mode always uses native resolution for full-screen display
-            // File sources should always use native aspect ratio (no camera-based cropping)
-            // Use rotation-aware crop since GPU shader rotates after sampling
+            // Always pass the target Contain crop for Photo mode.  The shader
+            // interpolates the crop region toward the full texture as `cover_blend`
+            // approaches 1.0, so Cover mode and mid-animation frames degenerate to
+            // the uncropped view without a discrete snap.
             let crop_uv = match self.mode {
-                crate::app::state::CameraMode::Photo
-                    if !self.theatre.enabled && !self.current_frame_is_file_source =>
-                {
-                    self.photo_aspect_ratio.crop_uv_with_rotation(
-                        frame.width,
-                        frame.height,
-                        sensor_rotation,
-                    )
+                crate::app::state::CameraMode::Photo if !self.current_frame_is_file_source => {
+                    self.photo_aspect_ratio.crop_uv(frame.width, frame.height)
                 }
                 _ => None,
             };
 
-            // Apply zoom only in Photo mode
-            let (zoom_level, scroll_zoom_enabled) = match self.mode {
-                crate::app::state::CameraMode::Photo => (self.zoom_level, true),
-                _ => (1.0, false),
-            };
+            // Read the animated zoom in every mode so a Photo→non-Photo
+            // mode switch eases the zoom back to 1× instead of snapping.
+            // Settled `zoom_level` is reset to 1.0 by `handle_set_mode`,
+            // so this is only ever != 1.0 mid-animation. Scroll/pinch zoom
+            // are gated on modes that support manual zoom (Photo, View).
+            let zoom_level = self.current_zoom_level();
+            let scroll_zoom_enabled = self.mode.supports_fit_and_zoom();
 
             let video_elem = video_widget::video_widget(
                 frame.clone(),
@@ -136,6 +130,9 @@ impl AppModel {
                     crop_uv,
                     zoom_level,
                     scroll_zoom_enabled,
+                    cover_blend: Some(cover_blend),
+                    bar_top_px: self.top_ui_height(),
+                    bar_bottom_px: self.bottom_ui_height(),
                 },
             );
 

@@ -167,6 +167,11 @@ pub struct ModeCarousel<'a> {
     disabled: bool,
     /// Shared button inward slide (written here every frame, read by SlideH draw)
     slide_shared: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// When true and the carousel is fully collapsed, the rounded background
+    /// shrinks to the active pill's width so the visible chip is exactly the
+    /// pill — no extra padding around it. Used in View mode where the
+    /// carousel stands alone without sibling buttons.
+    fit_to_pill_when_collapsed: bool,
 }
 
 impl<'a> ModeCarousel<'a> {
@@ -176,6 +181,7 @@ impl<'a> ModeCarousel<'a> {
         on_select: impl Fn(CameraMode) -> Message + 'a,
         disabled: bool,
         slide_shared: std::sync::Arc<std::sync::atomic::AtomicU32>,
+        fit_to_pill_when_collapsed: bool,
     ) -> Self {
         Self {
             modes,
@@ -183,6 +189,7 @@ impl<'a> ModeCarousel<'a> {
             on_select: Box::new(on_select),
             disabled,
             slide_shared,
+            fit_to_pill_when_collapsed,
         }
     }
 
@@ -398,16 +405,39 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
         // Button slide is computed in update() via compute_button_slide()
         // to avoid side effects in draw().
 
-        // Expand rendering area proportionally to expansion animations
-        let render_bounds = if extend > 0.0 {
+        // Expand rendering area proportionally to expansion animations.
+        // When `fit_to_pill_when_collapsed` is set (View mode), the
+        // background shrinks toward the active pill as the carousel
+        // collapses, so the visible chip matches the pill exactly when
+        // settled and grows to the full layout bounds while expanded.
+        // Use the same `visual_offset` the pill itself uses so the chip
+        // sits exactly where the pill is drawn.
+        let collapsed_bounds = if self.fit_to_pill_when_collapsed && state.pill_initialized {
+            let pill_x = bounds.x + state.pill_center + visual_offset - state.pill_width / 2.0;
             Rectangle {
-                x: bounds.x - extend,
+                x: pill_x,
                 y: bounds.y,
-                width: bounds.width + extend * 2.0,
+                width: state.pill_width,
                 height: bounds.height,
             }
         } else {
             bounds
+        };
+        let render_bounds = if extend > 0.0 {
+            // Lerp from the collapsed (pill-sized) bounds to the full layout
+            // bounds as `expand` (stage 1) progresses, then stretch outward
+            // by `extend` so labels and fade zones get room.
+            let t = expand.clamp(0.0, 1.0);
+            let base_x = collapsed_bounds.x + (bounds.x - collapsed_bounds.x) * t;
+            let base_w = collapsed_bounds.width + (bounds.width - collapsed_bounds.width) * t;
+            Rectangle {
+                x: base_x - extend,
+                y: bounds.y,
+                width: base_w + extend * 2.0,
+                height: bounds.height,
+            }
+        } else {
+            collapsed_bounds
         };
 
         // Compute corner radius once — shared by background and fade overlays.
@@ -903,6 +933,7 @@ fn mode_label(mode: CameraMode) -> String {
         CameraMode::Video => fl!("mode-video"),
         CameraMode::Timelapse => fl!("mode-timelapse"),
         CameraMode::Virtual => fl!("mode-virtual"),
+        CameraMode::View => fl!("mode-view"),
     }
 }
 

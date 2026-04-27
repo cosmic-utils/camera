@@ -19,7 +19,6 @@ mod widget;
 
 use crate::app::frame_processor::{QrAction, QrDetection};
 use crate::app::state::Message;
-use crate::app::video_widget::VideoContentFit;
 use cosmic::Element;
 use cosmic::iced::{Color, Length};
 
@@ -35,16 +34,24 @@ const MIN_OVERLAY_SIZE: f32 = 60.0;
 /// Gap between QR box and action button
 const BUTTON_GAP: f32 = 8.0;
 
-/// Build the QR overlay layer using a custom widget
+/// Build the QR overlay layer using a custom widget.
 ///
-/// This creates an overlay element that renders boxes around detected QR codes
-/// and action buttons below them. The widget handles coordinate transformation
-/// at render time to correctly position elements over the video content.
+/// Renders boxes around detected QR codes and action buttons below them. The
+/// widget transforms the detection's normalized (0-1) frame coordinates to
+/// screen pixels at render time, lerping between the Cover and Contain
+/// preview endpoints by `cover_blend` so the boxes track the live preview
+/// through a fit/fill transition.
+///
+/// `top_bar_h` / `bottom_bar_h` are the animated UI bar heights — in Contain
+/// mode the video is letterboxed inside the content area between them, so
+/// those values are needed to know where the visible video actually sits.
 pub fn build_qr_overlay<'a>(
     detections: &[QrDetection],
     frame_width: u32,
     frame_height: u32,
-    content_fit: VideoContentFit,
+    cover_blend: f32,
+    top_bar_h: f32,
+    bottom_bar_h: f32,
     mirrored: bool,
 ) -> Element<'a, Message> {
     if detections.is_empty() {
@@ -54,12 +61,13 @@ pub fn build_qr_overlay<'a>(
             .into();
     }
 
-    // Use the custom overlay widget that handles positioning at render time
     widget::QrOverlayWidget::new(
         detections.to_vec(),
         frame_width,
         frame_height,
-        content_fit,
+        cover_blend,
+        top_bar_h,
+        bottom_bar_h,
         mirrored,
     )
     .into()
@@ -82,51 +90,67 @@ pub fn get_action_color(action: &QrAction) -> Color {
     }
 }
 
-/// Calculate the video content bounds within a container
+/// Calculate the visible video bounds within a container, animated through
+/// the fit/fill transition.
 ///
-/// Returns (offset_x, offset_y, video_width, video_height) for the actual
-/// video content area within the container, accounting for letterboxing.
+/// Returns `(offset_x, offset_y, video_width, video_height)` — the rectangle
+/// the live preview actually occupies on screen. Lerps between two endpoints
+/// by `cover_blend`:
+/// - **Cover** (`cover_blend = 1`): the video fills the entire container.
+/// - **Contain** (`cover_blend = 0`): the video is letterboxed inside the
+///   content area between `top_bar_h` and `bottom_bar_h`, with the sensor
+///   aspect preserved.
 ///
-/// Note: The VideoWidget is wrapped in a centering container that aligns it
-/// horizontally and vertically within the available space. This function
-/// calculates the offset to match that centering.
+/// QR detections (which use normalized 0-1 frame coordinates) scale into
+/// this rectangle, so the on-screen boxes track the live preview through a
+/// Photo↔fit-to-view transition.
 pub fn calculate_video_bounds(
     container_width: f32,
     container_height: f32,
     frame_width: u32,
     frame_height: u32,
-    content_fit: VideoContentFit,
+    cover_blend: f32,
+    top_bar_h: f32,
+    bottom_bar_h: f32,
 ) -> (f32, f32, f32, f32) {
-    let frame_aspect = frame_width as f32 / frame_height as f32;
-    let container_aspect = container_width / container_height;
+    let frame_aspect = if frame_height > 0 {
+        frame_width as f32 / frame_height as f32
+    } else {
+        1.0
+    };
 
-    match content_fit {
-        VideoContentFit::Contain => {
-            // VideoWidget sizes its layout to match aspect ratio, and the
-            // centering container positions it in the center of available space.
-            let (video_width, video_height) = if frame_aspect > container_aspect {
-                // Frame is wider - fit to width
-                let video_width = container_width;
-                let video_height = container_width / frame_aspect;
-                (video_width, video_height)
-            } else {
-                // Frame is taller - fit to height
-                let video_height = container_height;
-                let video_width = container_height * frame_aspect;
-                (video_width, video_height)
-            };
+    // Cover endpoint: fill entire container.
+    let cover = (0.0, 0.0, container_width, container_height);
 
-            // Calculate centering offset (the container centers the video widget)
-            let offset_x = (container_width - video_width) / 2.0;
-            let offset_y = (container_height - video_height) / 2.0;
+    // Contain endpoint: letterbox the sensor aspect inside the content area
+    // between the UI bars.
+    let content_y = top_bar_h;
+    let content_h = (container_height - top_bar_h - bottom_bar_h).max(0.0);
+    let content_w = container_width;
+    let contain = if content_h > 0.0 && content_w > 0.0 {
+        let content_aspect = content_w / content_h;
+        let (vw, vh) = if frame_aspect > content_aspect {
+            (content_w, content_w / frame_aspect)
+        } else {
+            (content_h * frame_aspect, content_h)
+        };
+        (
+            (content_w - vw) / 2.0,
+            content_y + (content_h - vh) / 2.0,
+            vw,
+            vh,
+        )
+    } else {
+        cover
+    };
 
-            (offset_x, offset_y, video_width, video_height)
-        }
-        VideoContentFit::Cover => {
-            // Fill entire container
-            (0.0, 0.0, container_width, container_height)
-        }
-    }
+    let t = cover_blend.clamp(0.0, 1.0);
+    (
+        contain.0 + (cover.0 - contain.0) * t,
+        contain.1 + (cover.1 - contain.1) * t,
+        contain.2 + (cover.2 - contain.2) * t,
+        contain.3 + (cover.3 - contain.3) * t,
+    )
 }
 
 /// Transform normalized QR detection coordinates to screen coordinates

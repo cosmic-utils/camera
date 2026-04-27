@@ -17,6 +17,10 @@ const RADIUS_XL_REFERENCE_SIZE: f32 = 48.0;
 /// Size ratio of the photo-during-recording button relative to the main capture button.
 const PHOTO_BTN_SIZE_RATIO: f32 = 0.55;
 
+/// Outer size (width and height) of the capture button at scale 1.0.
+/// Exposed so the bottom-bar scrim can match the actual capture-button area.
+pub const CAPTURE_BUTTON_OUTER_SIZE: f32 = ui::CAPTURE_BUTTON_INNER + (RING_GAP + RING_WIDTH) * 2.0;
+
 /// Get the theme-based corner radius for a given element size.
 /// Scales the cosmic theme's radius_xl proportionally to the element size,
 /// capped so it never exceeds a full circle.
@@ -185,6 +189,9 @@ impl AppModel {
                 }
                 CameraMode::Video => destructive,
                 CameraMode::Timelapse => destructive,
+                // View hides the capture button entirely; this color is
+                // only used if the build path is reached, which it isn't.
+                CameraMode::View => accent,
                 CameraMode::Virtual => {
                     if self.virtual_camera.is_streaming() {
                         Color::from_rgb(0.1, 0.7, 0.2)
@@ -229,6 +236,10 @@ impl AppModel {
                 CameraMode::Video => Message::ToggleRecording,
                 CameraMode::Virtual => Message::ToggleVirtualCamera,
                 CameraMode::Timelapse => Message::ToggleTimelapse,
+                // View mode hides the capture button entirely (see
+                // `view::capture_button_only`); this branch is unreachable
+                // in practice but needs to compile.
+                CameraMode::View => Message::Noop,
             };
             let mut area = widget::mouse_area(circle)
                 .on_press(press_message)

@@ -44,9 +44,22 @@ impl AppModel {
     }
 
     pub(crate) fn handle_set_mode(&mut self, mode: CameraMode) -> Task<cosmic::Action<Message>> {
+        // Tapping the active mode chip a second time is the gesture that
+        // opens the tools menu. The carousel sends `SetMode(self.mode)` in
+        // that case rather than a separate message, so this branch is the
+        // entry point for the double-tap shortcut — not a no-op.
         if self.mode == mode {
             return self.handle_toggle_tools_menu();
         }
+
+        // Snapshot the animated values before mutating self.mode so the
+        // cross-mode-boundary transition animates smoothly instead of
+        // snapping. The View mode boundary changes the top scrim, bottom
+        // scrim and capture-area placeholder; the Photo↔non-Photo boundary
+        // changes the bottom scrim. Zoom is captured separately because
+        // it's driven by an independent animation.
+        let from_fit = self.capture_fit_state();
+        let from_zoom = self.current_zoom_level();
 
         self.haptic_tap();
 
@@ -99,6 +112,30 @@ impl AppModel {
         self.zoom_level = 1.0; // Reset zoom when switching modes
         self.select_format_from_cache(mode);
 
+        // Kick off a fit/fill animation if any animated value differs from
+        // where the eye currently is. start_fit_animation handles the no-op
+        // case and reuses any in-flight tick chain.
+        let fit_anim_task = self.start_fit_animation(from_fit);
+
+        // If we just left Photo mode while zoomed, animate the zoom back to
+        // 1× so the preview eases out instead of snapping. zoom_level was
+        // already set to 1.0 above; we just need to install the animation
+        // and schedule a tick.
+        let zoom_anim_task = if (from_zoom - 1.0).abs() > 0.001 {
+            let was_idle = self.zoom_animation.is_none();
+            self.zoom_animation = Some(crate::app::state::ZoomAnimation {
+                start: std::time::Instant::now(),
+                from: from_zoom,
+            });
+            if was_idle {
+                Self::delay_task(16, Message::ZoomAnimationTick)
+            } else {
+                Task::none()
+            }
+        } else {
+            Task::none()
+        };
+
         // All modes use the same stream layout (ViewFinder+Raw), so no pipeline
         // restart is needed unless the format itself changed.
         if !file_source_active && self.active_format != old_format {
@@ -127,7 +164,7 @@ impl AppModel {
                 seek_position, "Restoring file source preview after mode switch"
             );
 
-            return Task::perform(
+            let preview_task = Task::perform(
                 async move {
                     use crate::backends::virtual_camera::{
                         get_video_duration, load_preview_frame, load_video_frame_at_position,
@@ -172,6 +209,7 @@ impl AppModel {
                     cosmic::Action::App(Message::FileSourcePreviewLoaded(frame, duration))
                 },
             );
+            return Task::batch([preview_task, fit_anim_task, zoom_anim_task]);
         }
 
         // Note: we don't call save_settings() here to avoid blocking the UI
@@ -180,10 +218,14 @@ impl AppModel {
 
         // Re-query exposure controls when pipeline restarts
         if self.active_format != old_format {
-            return self.query_exposure_controls_task();
+            return Task::batch([
+                self.query_exposure_controls_task(),
+                fit_anim_task,
+                zoom_anim_task,
+            ]);
         }
 
-        Task::none()
+        Task::batch([fit_anim_task, zoom_anim_task])
     }
 
     pub(crate) fn handle_select_mode(&mut self, index: usize) -> Task<cosmic::Action<Message>> {

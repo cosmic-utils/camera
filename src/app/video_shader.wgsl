@@ -10,7 +10,7 @@ var sampler_video: sampler;
 
 struct ViewportUniform {
     viewport_size: vec2<f32>,   // Full widget size
-    content_fit_mode: u32,      // 0 = Contain, 1 = Cover
+    content_fit_mode: f32,      // 0.0 = Contain, 1.0 = Cover (interpolated during animation)
     filter_mode: u32,           // Filter index (0-15)
     corner_radius: f32,         // Corner radius in pixels (0 = no rounding)
     mirror_horizontal: u32,     // 0 = normal, 1 = mirrored horizontally
@@ -20,6 +20,8 @@ struct ViewportUniform {
     crop_uv_max: vec2<f32>,     // Crop UV max (u_max, v_max) - normalized 0-1
     zoom_level: f32,            // Zoom level (1.0 = no zoom, 2.0 = 2x zoom)
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
+    bar_top_height: f32,        // Top bar height in pixels (for contain centering)
+    bar_bottom_height: f32,     // Bottom bar height in pixels
 }
 
 @group(0) @binding(2)
@@ -102,43 +104,60 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         tex_coords = vec2<f32>(tex_coords.y, 1.0 - tex_coords.x);
     }
 
-    // Apply crop UV mapping (aspect ratio cropping)
-    // Remap tex_coords from 0-1 range to crop_uv_min to crop_uv_max range
-    tex_coords = mix(viewport.crop_uv_min, viewport.crop_uv_max, tex_coords);
-
-    // Apply Cover mode adjustment if enabled
-    if (viewport.content_fit_mode == 1u) {
+    // Apply Cover/Contain blend (0.0 = Contain, 1.0 = Cover, intermediate = animating).
+    //
+    // The effective crop region is itself blended: at 1.0 it degenerates to the
+    // full texture (no crop), at 0.0 it is the full aspect-ratio crop.  This keeps
+    // the animated transition continuous — no discrete snap at the endpoints even
+    // when Cover and Contain would nominally show different regions.
+    let blend = viewport.content_fit_mode;
+    let effective_crop_min = mix(viewport.crop_uv_min, vec2<f32>(0.0, 0.0), blend);
+    let effective_crop_max = mix(viewport.crop_uv_max, vec2<f32>(1.0, 1.0), blend);
+    {
         // Get texture dimensions, accounting for rotation
-        // For 90/270 degree rotations, swap width and height since UV is already rotated
         let raw_tex_size = vec2<f32>(textureDimensions(texture_rgba));
         var tex_size = raw_tex_size;
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             tex_size = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
         }
+        // Effective dimensions after the (blended) crop
+        let crop_range = effective_crop_max - effective_crop_min;
+        let effective_tex = tex_size * crop_range;
 
-        // Calculate aspect ratios
-        let tex_aspect = tex_size.x / tex_size.y;
-        let viewport_aspect = viewport.viewport_size.x / viewport.viewport_size.y;
+        // Content area between UI bars (for contain centering)
+        let content_height = viewport.viewport_size.y - viewport.bar_top_height - viewport.bar_bottom_height;
+        let content_center_y = (viewport.bar_top_height + content_height * 0.5) / viewport.viewport_size.y;
 
-        // Calculate scale factor for "cover" behavior
-        var scale: vec2<f32>;
-        if (tex_aspect > viewport_aspect) {
-            // Texture is wider than viewport - fit height, crop sides
-            scale = vec2<f32>(viewport_aspect / tex_aspect, 1.0);
-        } else {
-            // Texture is taller than viewport - fit width, crop top/bottom
-            scale = vec2<f32>(1.0, tex_aspect / viewport_aspect);
-        }
+        // Zoom levels using the blended effective texture dimensions
+        let contain_zoom = min(viewport.viewport_size.x / effective_tex.x, content_height / effective_tex.y);
+        let cover_zoom = max(viewport.viewport_size.x / effective_tex.x, viewport.viewport_size.y / effective_tex.y);
 
-        // For 90/270 rotations, we're in rotated UV space where x and y are swapped
-        // So swap the scale factors to apply them to the correct axes
+        let zoom = mix(contain_zoom, cover_zoom, blend);
+        let center_y = mix(content_center_y, 0.5, blend);
+
+        var scale = vec2<f32>(
+            viewport.viewport_size.x / (effective_tex.x * zoom),
+            viewport.viewport_size.y / (effective_tex.y * zoom),
+        );
+        // For 90/270 rotations, swap scale factors since we're in rotated UV space
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             scale = vec2<f32>(scale.y, scale.x);
         }
 
-        // Adjust UV coordinates to center and scale the texture
-        tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
+        tex_coords = (tex_coords - vec2<f32>(0.5, center_y)) * scale + vec2<f32>(0.5, 0.5);
     }
+
+    // Discard letterbox *before* the crop remap.  The intermediate range [0,1]
+    // is the rendered image region; outside that range the crop remap can still
+    // produce an in-range texture UV (when `crop_min > 0`), so a post-remap check
+    // would silently stretch the crop across the letterbox.
+    if (tex_coords.x < 0.0 || tex_coords.x > 1.0 || tex_coords.y < 0.0 || tex_coords.y > 1.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+
+    // Apply the blended crop remap.  Uses the same `effective_crop_*` as the zoom
+    // above so the [0,1] intermediate maps onto the same region the zoom sized for.
+    tex_coords = mix(effective_crop_min, effective_crop_max, tex_coords);
 
     // Apply digital zoom (center crop)
     // At zoom_level 2.0, show only center 50% of the image

@@ -10,6 +10,7 @@ git-description = Git подаване {$hash} на {$date}
 mode-video = ВИДЕО
 mode-photo = СНИМКИ
 mode-virtual = ВИРТУАЛНО
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Виртуална камера (експериментално)
