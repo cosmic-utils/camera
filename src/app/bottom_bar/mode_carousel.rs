@@ -674,65 +674,65 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
 
         match event {
             // === Touch events ===
-            Event::Touch(touch::Event::FingerPressed { id, position }) => {
-                if visual_bounds(bounds, state).contains(*position) && state.active_finger.is_none()
-                {
-                    interrupt_animation(state);
-                    start_expand(state);
-                    // Interrupt any running stage 2 collapse so it doesn't
-                    // fight with the new interaction
-                    if state.full_expand_start.is_some() && !state.full_expanding {
+            Event::Touch(touch::Event::FingerPressed { id, position })
+                if visual_bounds(bounds, state).contains(*position)
+                    && state.active_finger.is_none() =>
+            {
+                interrupt_animation(state);
+                start_expand(state);
+                // Interrupt any running stage 2 collapse so it doesn't
+                // fight with the new interaction
+                if state.full_expand_start.is_some() && !state.full_expanding {
+                    start_full_expand(state);
+                }
+                state.press_time = Some(Instant::now());
+                state.stage2_collapse_done = None;
+                state.hover_leave_time = None;
+                state.active_finger = Some(*id);
+                state.drag_start_x = Some(position.x);
+                state.drag_base_offset = state.drag_offset;
+                state.press_widget_x = position.x - bounds.x;
+                shell.capture_event();
+                shell.request_redraw(); // for hold detection timer
+            }
+            Event::Touch(touch::Event::FingerMoved { id, position })
+                if state.active_finger == Some(*id) =>
+            {
+                if let Some(start_x) = state.drag_start_x {
+                    let raw = state.drag_base_offset + (position.x - start_x);
+                    state.drag_offset =
+                        rubber_band_offset(raw, state, &self.modes, self.selected_index());
+                    check_drag_haptic(state, &self.modes, self.selected_index());
+                    // Trigger stage 2 on drag movement (or reverse a running collapse)
+                    if !state.full_expanding || state.full_expand_start.is_none() {
                         start_full_expand(state);
                     }
-                    state.press_time = Some(Instant::now());
-                    state.stage2_collapse_done = None;
-                    state.hover_leave_time = None;
-                    state.active_finger = Some(*id);
-                    state.drag_start_x = Some(position.x);
-                    state.drag_base_offset = state.drag_offset;
-                    state.press_widget_x = position.x - bounds.x;
-                    shell.capture_event();
-                    shell.request_redraw(); // for hold detection timer
                 }
+                shell.capture_event();
+                shell.request_redraw();
             }
-            Event::Touch(touch::Event::FingerMoved { id, position }) => {
-                if state.active_finger == Some(*id) {
-                    if let Some(start_x) = state.drag_start_x {
-                        let raw = state.drag_base_offset + (position.x - start_x);
-                        state.drag_offset =
-                            rubber_band_offset(raw, state, &self.modes, self.selected_index());
-                        check_drag_haptic(state, &self.modes, self.selected_index());
-                        // Trigger stage 2 on drag movement (or reverse a running collapse)
-                        if !state.full_expanding || state.full_expand_start.is_none() {
-                            start_full_expand(state);
-                        }
-                    }
-                    shell.capture_event();
-                    shell.request_redraw();
-                }
+            Event::Touch(touch::Event::FingerLifted { id, .. })
+                if state.active_finger == Some(*id) =>
+            {
+                reset_interaction_state(state);
+                handle_drag_end(
+                    state,
+                    &self.modes,
+                    self.selected_index(),
+                    bounds.width,
+                    shell,
+                    &self.on_select,
+                );
+                shell.request_redraw();
+                shell.capture_event();
             }
-            Event::Touch(touch::Event::FingerLifted { id, .. }) => {
-                if state.active_finger == Some(*id) {
-                    reset_interaction_state(state);
-                    handle_drag_end(
-                        state,
-                        &self.modes,
-                        self.selected_index(),
-                        bounds.width,
-                        shell,
-                        &self.on_select,
-                    );
-                    shell.request_redraw();
-                    shell.capture_event();
-                }
-            }
-            Event::Touch(touch::Event::FingerLost { id, .. }) => {
-                if state.active_finger == Some(*id) {
-                    reset_interaction_state(state);
-                    start_snap_animation(state, 0.0);
-                    shell.request_redraw();
-                    shell.capture_event();
-                }
+            Event::Touch(touch::Event::FingerLost { id, .. })
+                if state.active_finger == Some(*id) =>
+            {
+                reset_interaction_state(state);
+                start_snap_animation(state, 0.0);
+                shell.request_redraw();
+                shell.capture_event();
             }
 
             // === Mouse events ===
@@ -832,61 +832,60 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
                     shell.request_redraw();
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if state.drag_start_x.is_some() && state.active_finger.is_none() {
-                    state.drag_start_x = None;
-                    // Check if cursor is still over carousel or adjacent buttons
-                    let over_carousel = cursor
-                        .position()
-                        .is_some_and(|p| visual_bounds(bounds, state).contains(p));
-                    let over_area = cursor
-                        .position()
-                        .is_some_and(|p| hover_bounds(bounds, state).contains(p));
-                    state.hovered = over_area;
-                    if over_carousel {
-                        // Over carousel — stay expanded, reset hold timer
-                        state.press_time = Some(Instant::now());
-                        state.stage2_collapse_done = None;
-                    } else if over_area {
-                        // Over button area — keep expanded, no new hold timer
-                        state.stage2_collapse_done = None;
-                        state.press_time = None;
-                    } else {
-                        state.press_time = None;
-                        start_full_collapse(state);
-                        if state.full_expand_t < 0.01 {
-                            start_collapse(state);
-                        }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                if state.drag_start_x.is_some() && state.active_finger.is_none() =>
+            {
+                state.drag_start_x = None;
+                // Check if cursor is still over carousel or adjacent buttons
+                let over_carousel = cursor
+                    .position()
+                    .is_some_and(|p| visual_bounds(bounds, state).contains(p));
+                let over_area = cursor
+                    .position()
+                    .is_some_and(|p| hover_bounds(bounds, state).contains(p));
+                state.hovered = over_area;
+                if over_carousel {
+                    // Over carousel — stay expanded, reset hold timer
+                    state.press_time = Some(Instant::now());
+                    state.stage2_collapse_done = None;
+                } else if over_area {
+                    // Over button area — keep expanded, no new hold timer
+                    state.stage2_collapse_done = None;
+                    state.press_time = None;
+                } else {
+                    state.press_time = None;
+                    start_full_collapse(state);
+                    if state.full_expand_t < 0.01 {
+                        start_collapse(state);
                     }
-                    handle_drag_end(
-                        state,
-                        &self.modes,
-                        self.selected_index(),
-                        bounds.width,
-                        shell,
-                        &self.on_select,
-                    );
                 }
+                handle_drag_end(
+                    state,
+                    &self.modes,
+                    self.selected_index(),
+                    bounds.width,
+                    shell,
+                    &self.on_select,
+                );
             }
 
             // === Scroll wheel ===
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+            Event::Mouse(mouse::Event::WheelScrolled { delta })
                 if cursor
                     .position()
-                    .is_some_and(|p| visual_bounds(bounds, state).contains(p))
-                {
-                    let scroll = match delta {
-                        mouse::ScrollDelta::Lines { x, .. } => *x,
-                        mouse::ScrollDelta::Pixels { x, .. } => *x / 50.0,
-                    };
-                    let idx = self.selected_index();
-                    if scroll < -0.5 && idx + 1 < self.modes.len() {
-                        shell.publish((self.on_select)(self.modes[idx + 1]));
-                    } else if scroll > 0.5 && idx > 0 {
-                        shell.publish((self.on_select)(self.modes[idx - 1]));
-                    }
-                    shell.capture_event();
+                    .is_some_and(|p| visual_bounds(bounds, state).contains(p)) =>
+            {
+                let scroll = match delta {
+                    mouse::ScrollDelta::Lines { x, .. } => *x,
+                    mouse::ScrollDelta::Pixels { x, .. } => *x / 50.0,
+                };
+                let idx = self.selected_index();
+                if scroll < -0.5 && idx + 1 < self.modes.len() {
+                    shell.publish((self.on_select)(self.modes[idx + 1]));
+                } else if scroll > 0.5 && idx > 0 {
+                    shell.publish((self.on_select)(self.modes[idx - 1]));
                 }
+                shell.capture_event();
             }
 
             _ => {}

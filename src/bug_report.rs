@@ -850,7 +850,7 @@ impl BugReportGenerator {
                 ));
                 let fourcc_trimmed = fmt.fourcc.trim();
                 let mut sorted_sizes = fmt.sizes.clone();
-                sorted_sizes.sort_by(|a, b| (b.width * b.height).cmp(&(a.width * a.height)));
+                sorted_sizes.sort_by_key(|b| std::cmp::Reverse(b.width * b.height));
                 for size in &sorted_sizes {
                     let in_libcamera = insights.libcamera_formats.iter().any(|lf| {
                         lf.width == size.width

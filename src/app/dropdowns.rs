@@ -131,7 +131,7 @@ impl AppModel {
                 .collect();
 
             // Sort by preference order
-            available_codecs.sort_by(|a, b| pixel_format_rank(&a.0).cmp(&pixel_format_rank(&b.0)));
+            available_codecs.sort_by_key(|a| pixel_format_rank(&a.0));
 
             self.codec_dropdown_options = available_codecs
                 .into_iter()
