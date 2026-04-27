@@ -39,6 +39,7 @@ mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
 pub mod insights;
+mod keybind;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
@@ -51,6 +52,7 @@ mod video_widget;
 mod view;
 
 // Re-export public API
+use crate::app::keybind::key_subscription;
 use crate::config::Config;
 use crate::fl;
 use cosmic::app::context_drawer;
@@ -1498,6 +1500,8 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        let keybind_sub = key_subscription();
+
         Subscription::batch([
             config_sub,
             camera_sub,
@@ -1510,6 +1514,7 @@ impl cosmic::Application for AppModel {
             brightness_eval_sub,
             insights_update_sub,
             portal_theme_sub,
+            keybind_sub,
         ])
     }
 
