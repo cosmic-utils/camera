@@ -374,9 +374,9 @@ dependencies = [
 
 [[package]]
 name = "ashpd"
-version = "0.13.9"
+version = "0.13.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13bdf0fd848239dcd5e64eeeee35dbc00378ebcc6f3aa4ead0a305eec83d0cfb"
+checksum = "3118453e020b8e3e0da25ef9a1d0d51d668874358af11aded9d91a8b9c25f323"
 dependencies = [
  "enumflags2",
  "futures-util",
@@ -932,7 +932,7 @@ dependencies = [
 name = "camera"
 version = "0.3.4"
 dependencies = [
- "ashpd 0.13.9",
+ "ashpd 0.13.10",
  "async-stream",
  "bytemuck",
  "chrono",
@@ -1053,9 +1053,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.0"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b193af5b67834b676abd72466a96c1024e6a6ad978a1f484bd90b85c94041351"
+checksum = "1ddb117e43bbf7dacf0a4190fef4d345b9bad68dfc649cb349e7d17d28428e51"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1075,9 +1075,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.0"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1110bd8a634a1ab8cb04345d8d878267d57c3cf1b38d91b71af6686408bbca6a"
+checksum = "f2ce8604710f6733aa641a2b3731eaa1e8b3d9973d5e3565da11800813f997a9"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3615,9 +3615,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "libcamera"
@@ -3984,9 +3984,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
+checksum = "50b7e5b27aa02a74bac8c3f23f448f8d87ff11f92d3aac1a6ed369ee08cc56c1"
 dependencies = [
  "libc",
  "log",
@@ -4283,7 +4283,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -4546,9 +4546,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "open"
-version = "5.3.3"
+version = "5.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43bb73a7fa3799b198970490a51174027ba0d4ec504b03cd08caf513d40024bc"
+checksum = "9f3bab717c29a857abf75fcef718d441ec7cb2725f937343c734740a985d37fd"
 dependencies = [
  "is-wsl",
  "libc",
@@ -6405,9 +6405,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.50.0"
+version = "1.52.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
+checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
 dependencies = [
  "bytes",
  "libc",
@@ -6423,9 +6423,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "2.6.1"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c55a2eff8b69ce66c84f85e1da1c233edc36ceb85a2058d11b0d6a3c7e7569c"
+checksum = "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6826,9 +6826,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.23.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ac8b6f42ead25368cf5b098aeb3dc8a1a2c05a3eee8a9a1a68c640edbfc79d9"
+checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
  "atomic",
  "getrandom 0.4.2",
@@ -8195,6 +8195,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "winnow"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee1708bef14716a11bae175f579062d4554d95be2c6829f518df847b7b3fdd0"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8432,9 +8441,9 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.14.0"
+version = "5.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca82f95dbd3943a40a53cfded6c2d0a2ca26192011846a1810c4256ef92c60bc"
+checksum = "c3bcbf15c8708d7fc1be0c993622e0a5cbd5e8b52bfa40afa4c3e0cd8d724ac1"
 dependencies = [
  "async-broadcast",
  "async-executor",
@@ -8460,7 +8469,7 @@ dependencies = [
  "uds_windows",
  "uuid",
  "windows-sys 0.61.2",
- "winnow 0.7.15",
+ "winnow 1.0.2",
  "zbus_macros",
  "zbus_names",
  "zvariant",
@@ -8492,9 +8501,9 @@ dependencies = [
 
 [[package]]
 name = "zbus_macros"
-version = "5.14.0"
+version = "5.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "897e79616e84aac4b2c46e9132a4f63b93105d54fe8c0e8f6bffc21fa8d49222"
+checksum = "51fa5406ad9175a8c825a931f8cf347116b531b3634fcb0b627c290f1f2516ff"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -8507,12 +8516,12 @@ dependencies = [
 
 [[package]]
 name = "zbus_names"
-version = "4.3.1"
+version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffd8af6d5b78619bab301ff3c560a5bd22426150253db278f164d6cf3b72c50f"
+checksum = "7074f3e50b894eac91750142016d30d0a89be8e67dbfd9704fb875825760e52d"
 dependencies = [
  "serde",
- "winnow 0.7.15",
+ "winnow 1.0.2",
  "zvariant",
 ]
 
@@ -8656,24 +8665,24 @@ dependencies = [
 
 [[package]]
 name = "zvariant"
-version = "5.10.0"
+version = "5.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5708299b21903bbe348e94729f22c49c55d04720a004aa350f1f9c122fd2540b"
+checksum = "c4db0ecb8987cf5e92653c57c098f7f0e39a03112edb796f4fe089fb7eaa14ff"
 dependencies = [
  "endi",
  "enumflags2",
  "serde",
  "url",
- "winnow 0.7.15",
+ "winnow 1.0.2",
  "zvariant_derive",
  "zvariant_utils",
 ]
 
 [[package]]
 name = "zvariant_derive"
-version = "5.10.0"
+version = "5.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b59b012ebe9c46656f9cc08d8da8b4c726510aef12559da3e5f1bf72780752c"
+checksum = "5b949b639ab1b4bed763aa7481ba0e368af68d8b55532f8ed4bec86a59f2ca98"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -8684,13 +8693,13 @@ dependencies = [
 
 [[package]]
 name = "zvariant_utils"
-version = "3.3.0"
+version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f75c23a64ef8f40f13a6989991e643554d9bef1d682a281160cf0c1bc389c5e9"
+checksum = "6d464f5733ffa07a3164d656f18533caace9d0638596721355d73256a410d691"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde",
  "syn 2.0.117",
- "winnow 0.7.15",
+ "winnow 1.0.2",
 ]

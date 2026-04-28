@@ -14,12 +14,12 @@ i18n-embed = { version = "0.16.0", features = [
     "desktop-requester",
 ] }
 i18n-embed-fl = "0.10.0"
-open = "5.3.3"
+open = "5.3.4"
 pollster = "0.4.0"
 rust-embed = "8.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 gstreamer = "0.25.1"
@@ -32,14 +32,14 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 dirs = "6.0.0"
 rqrr = "0.10.1"
 rfd = "0.17.2"
-zbus = "5.14.0"
+zbus = "5.15.0"
 # XDG portal integration for color-scheme detection on non-COSMIC desktops
-ashpd = { version = "0.13.9", default-features = false, features = ["tokio", "settings"] }
-uuid = { version = "1.23.0", features = ["v4"] }
-clap = { version = "4.6.0", features = ["derive"] }
+ashpd = { version = "0.13.10", default-features = false, features = ["tokio", "settings"] }
+uuid = { version = "1.23.1", features = ["v4"] }
+clap = { version = "4.6.1", features = ["derive"] }
 ratatui = "0.30.0"
 crossterm = "0.29.0"
-libc = "0.2.183"
+libc = "0.2.186"
 dng = "1.5.4"
 async-stream = "0.3.6"
 # Native libcamera bindings for direct camera access (bypasses GStreamer)
