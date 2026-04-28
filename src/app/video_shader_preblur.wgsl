@@ -19,7 +19,7 @@ var sampler_source: sampler;
 
 struct ViewportUniform {
     viewport_size: vec2<f32>,
-    content_fit_mode: u32,
+    content_fit_mode: f32,      // 0.0 = Contain, 1.0 = Cover
     filter_mode: u32,
     corner_radius: f32,
     mirror_horizontal: u32,
@@ -29,6 +29,8 @@ struct ViewportUniform {
     crop_uv_max: vec2<f32>,
     zoom_level: f32,
     rotation: u32,
+    bar_top_height: f32,
+    bar_bottom_height: f32,
 }
 
 @group(0) @binding(2)
@@ -67,27 +69,39 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         uv = vec2<f32>(uv.y, 1.0 - uv.x);
     }
 
-    uv = mix(viewport.crop_uv_min, viewport.crop_uv_max, uv);
-
-    // Apply Cover mode if enabled
-    if (viewport.content_fit_mode == 1u) {
+    // Cover/Contain blend with bar-aware centering and a blended crop region.
+    // See video_shader.wgsl for the rationale.
+    let blend = viewport.content_fit_mode;
+    let effective_crop_min = mix(viewport.crop_uv_min, vec2<f32>(0.0, 0.0), blend);
+    let effective_crop_max = mix(viewport.crop_uv_max, vec2<f32>(1.0, 1.0), blend);
+    {
         let raw_tex_size = vec2<f32>(textureDimensions(texture_source));
         var tex_size = raw_tex_size;
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             tex_size = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
         }
-        let tex_aspect = tex_size.x / tex_size.y;
-        let viewport_aspect = viewport.viewport_size.x / viewport.viewport_size.y;
-        var scale: vec2<f32>;
-        if (tex_aspect > viewport_aspect) {
-            scale = vec2<f32>(viewport_aspect / tex_aspect, 1.0);
-        } else {
-            scale = vec2<f32>(1.0, tex_aspect / viewport_aspect);
-        }
+        let crop_range = effective_crop_max - effective_crop_min;
+        let effective_tex = tex_size * crop_range;
+        let content_height = viewport.viewport_size.y - viewport.bar_top_height - viewport.bar_bottom_height;
+        let content_center_y = (viewport.bar_top_height + content_height * 0.5) / viewport.viewport_size.y;
+        let contain_zoom = min(viewport.viewport_size.x / effective_tex.x, content_height / effective_tex.y);
+        let cover_zoom = max(viewport.viewport_size.x / effective_tex.x, viewport.viewport_size.y / effective_tex.y);
+        let zoom = mix(contain_zoom, cover_zoom, blend);
+        let center_y = mix(content_center_y, 0.5, blend);
+        var scale = vec2<f32>(
+            viewport.viewport_size.x / (effective_tex.x * zoom),
+            viewport.viewport_size.y / (effective_tex.y * zoom),
+        );
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             scale = vec2<f32>(scale.y, scale.x);
         }
-        uv = (uv - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
+        uv = (uv - vec2<f32>(0.5, center_y)) * scale + vec2<f32>(0.5, 0.5);
+    }
+
+    // Discard letterbox before the crop remap — see video_shader.wgsl for the
+    // rationale (post-remap check can falsely keep fragments inside the crop).
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
 
     // Apply digital zoom
@@ -95,6 +109,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let inv_zoom = 1.0 / viewport.zoom_level;
         uv = (uv - vec2<f32>(0.5, 0.5)) * inv_zoom + vec2<f32>(0.5, 0.5);
     }
+
+    // Apply the blended crop remap
+    uv = mix(effective_crop_min, effective_crop_max, uv);
 
     // 13-tap Gaussian blur: center + 4 axis + 4 diagonal + 4 far axis
     // Weights approximate a Gaussian with sigma ~1.4, enough to smooth sensor noise.

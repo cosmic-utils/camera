@@ -365,6 +365,11 @@ impl AppModel {
 
     pub(crate) fn handle_reset_all_settings(&mut self) -> Task<cosmic::Action<Message>> {
         info!("Resetting all settings to defaults");
+        // Snapshot the pre-reset animated values so the fit/fill change
+        // animates rather than snaps when reset flips preview_fit_to_view
+        // (or drops out of View mode).
+        let from_fit = self.capture_fit_state();
+
         self.config = crate::config::Config::default();
 
         if let Some(handler) = self.config_handler.as_ref()
@@ -381,16 +386,26 @@ impl AppModel {
             std::sync::atomic::Ordering::Relaxed,
         );
         self.photo_aspect_ratio = self.config.photo_aspect_ratio;
+        self.preview_fit_to_view = self.config.preview_fit_to_view;
         self.zoom_level = 1.0;
+        // View is a passive UI mode (no capture controls). Reset shouldn't
+        // strand the user there — drop back to the configured default mode
+        // so the rest of the reset (capture controls, scrim, etc.) is
+        // actually visible.
+        if self.mode == crate::app::state::CameraMode::View {
+            self.mode = self.config.default_mode;
+        }
 
         // Reset camera exposure and color controls to defaults
         let exposure_task = self.handle_reset_exposure_settings();
         let color_task = self.handle_reset_color_settings();
+        let fit_anim_task = self.start_fit_animation(from_fit);
 
         self.update_all_dropdowns();
         Task::batch([
             exposure_task,
             color_task,
+            fit_anim_task,
             cosmic::command::set_theme(self.config.app_theme.theme()),
         ])
     }

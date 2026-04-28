@@ -73,10 +73,6 @@
       <li xml:lang="cs">Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
       <li xml:lang="uk">Віртуальна камера: використовуйте відфільтроване зображення в відеодзвінках та інших застосунках</li>
       <li xml:lang="zh-CN">虚拟相机：在视频通话和其他应用中使用带滤镜的摄像头画面</li>
-      <li>Theatre mode: fullscreen, distraction-free preview</li>
-      <li xml:lang="cs">Režim kina: celoobrazovkový náhled bez rušivých prvků</li>
-      <li xml:lang="uk">Театральний режим: повноекранний перегляд без відволікань</li>
-      <li xml:lang="zh-CN">剧院模式：全屏无干扰预览</li>
       <li>Multi-camera support: easily switch between cameras and microphones</li>
       <li xml:lang="cs">Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
       <li xml:lang="uk">Підтримка кількох камер: легко перемикайтеся між камерами та мікрофонами</li>
@@ -101,17 +97,11 @@
   </branding>
   <screenshots>
     <screenshot type="default">
-      <caption>Main camera view (Photo mode)</caption>
-      <caption xml:lang="cs">Náhled hlavní kamery (režim fotografie)</caption>
-      <caption xml:lang="uk">Основний вигляд камери (режим фото)</caption>
-      <caption xml:lang="zh-CN">主相机视图（照片模式）</caption>
+      <caption>Photo mode with tools menu</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
     </screenshot>
     <screenshot>
-      <caption>Main camera view (Photo mode)</caption>
-      <caption xml:lang="cs">Náhled hlavní kamery (režim fotografie)</caption>
-      <caption xml:lang="uk">Основний вигляд камери (режим фото)</caption>
-      <caption xml:lang="zh-CN">主相机视图（照片模式）</caption>
+      <caption>Photo mode on a Linux phone</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
     </screenshot>
     <screenshot>
@@ -141,27 +131,6 @@
       <caption xml:lang="uk">Розширені налаштування</caption>
       <caption xml:lang="zh-CN">高级设置</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
-    </screenshot>
-    <screenshot>
-      <caption>Virtual camera streaming</caption>
-      <caption xml:lang="cs">Přenos virtuální kamery</caption>
-      <caption xml:lang="uk">Трансляція віртуальної камери</caption>
-      <caption xml:lang="zh-CN">虚拟相机流媒体</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-007.png</image>
-    </screenshot>
-    <screenshot>
-      <caption>Theatre/fullscreen mode</caption>
-      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
-      <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
-      <caption xml:lang="zh-CN">剧院/全屏模式</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-008.png</image>
-    </screenshot>
-    <screenshot>
-      <caption>Theatre/fullscreen mode</caption>
-      <caption xml:lang="cs">Režim kina/celé obrazovky</caption>
-      <caption xml:lang="uk">Режим театру/повноекранний режим</caption>
-      <caption xml:lang="zh-CN">剧院/全屏模式</caption>
-      <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-009.png</image>
     </screenshot>
   </screenshots>
   <releases>

@@ -21,11 +21,13 @@ fn framerate_matches_config(framerate: Option<&Framerate>, config_fps: Option<u3
 
 impl AppModel {
     /// Whether the format picker should be hidden for the current mode.
-    /// Libcamera handles resolution automatically in Photo/Video/Timelapse modes.
+    /// Libcamera handles resolution automatically in Photo / Video /
+    /// Timelapse modes; View doesn't expose any resolution controls
+    /// either (it's a passive viewer with no top-bar buttons).
     pub fn is_format_picker_hidden(&self) -> bool {
         matches!(
             self.mode,
-            CameraMode::Photo | CameraMode::Video | CameraMode::Timelapse
+            CameraMode::Photo | CameraMode::Video | CameraMode::Timelapse | CameraMode::View
         )
     }
 
@@ -45,9 +47,14 @@ impl AppModel {
         }
     }
 
-    /// Ordered list of available camera modes.
+    /// Ordered list of available camera modes (left → right in the carousel).
     pub fn available_modes(&self) -> Vec<CameraMode> {
-        let mut modes = vec![CameraMode::Timelapse, CameraMode::Video, CameraMode::Photo];
+        let mut modes = vec![
+            CameraMode::Timelapse,
+            CameraMode::Video,
+            CameraMode::Photo,
+            CameraMode::View,
+        ];
         if self.config.virtual_camera_enabled {
             modes.push(CameraMode::Virtual);
         }
@@ -103,10 +110,11 @@ impl AppModel {
             pixel_format: format.pixel_format.clone(),
         };
 
-        // Store in per-camera settings based on current mode
-        // Virtual mode shares settings with Photo mode
+        // Store in per-camera settings based on current mode.
+        // Virtual / Timelapse / View share Photo's per-camera format slot
+        // (View is a passive viewer with no format choice of its own).
         let mode_name = match self.mode {
-            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse => {
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse | CameraMode::View => {
                 self.config
                     .photo_settings
                     .insert(camera.path.clone(), format_settings);
@@ -114,6 +122,7 @@ impl AppModel {
                     CameraMode::Photo => "Photo",
                     CameraMode::Virtual => "Virtual",
                     CameraMode::Timelapse => "Timelapse",
+                    CameraMode::View => "View",
                     _ => unreachable!(),
                 }
             }
@@ -206,7 +215,7 @@ impl AppModel {
             .unwrap_or_default();
 
         self.active_format = match mode {
-            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse => {
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse | CameraMode::View => {
                 self.select_photo_format(&camera_path)
             }
             CameraMode::Video => self.select_video_format(&camera_path),
@@ -229,10 +238,10 @@ impl AppModel {
         let backend = crate::backends::camera::create_backend();
         self.available_formats = backend.get_formats(camera, mode == CameraMode::Video);
 
-        // Format selection logic: both modes use saved settings, current format, or defaults
-        // Virtual mode uses the same format selection as Photo mode
+        // Format selection logic: both modes use saved settings, current format, or defaults.
+        // Virtual / Timelapse / View use the same format selection as Photo.
         self.active_format = match mode {
-            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse => {
+            CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse | CameraMode::View => {
                 self.select_photo_format(&camera_path)
             }
             CameraMode::Video => self.select_video_format(&camera_path),

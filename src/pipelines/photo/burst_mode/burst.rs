@@ -398,15 +398,11 @@ fn classify_from_histogram(metrics: &GpuBrightnessMetrics) -> (SceneBrightness, 
 
     // Boost confidence if shadows/highlights match expectation
     match base_brightness {
-        SceneBrightness::VeryBright => {
-            if metrics.highlight_fraction > 0.2 {
-                confidence += 0.05;
-            }
+        SceneBrightness::VeryBright if metrics.highlight_fraction > 0.2 => {
+            confidence += 0.05;
         }
-        SceneBrightness::VeryDark => {
-            if metrics.shadow_fraction > 0.3 {
-                confidence += 0.05;
-            }
+        SceneBrightness::VeryDark if metrics.shadow_fraction > 0.3 => {
+            confidence += 0.05;
         }
         _ => {}
     }

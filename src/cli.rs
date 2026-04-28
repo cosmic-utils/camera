@@ -57,7 +57,7 @@ pub fn list_cameras() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Sort by resolution (highest first)
-            resolutions.sort_by(|a, b| (b.0 * b.1).cmp(&(a.0 * a.1)));
+            resolutions.sort_by_key(|b| std::cmp::Reverse(b.0 * b.1));
 
             // Show top 3 resolutions
             let display_count = resolutions.len().min(3);

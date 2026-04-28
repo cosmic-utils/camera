@@ -6,9 +6,10 @@
 #
 # The script launches the camera app once per source image so you can manually
 # set up the required UI state and take a screenshot (e.g. with COSMIC Screenshot).
-# The app opens at 900x700 automatically when --preview-source is used.
+# The app opens at 900x700 automatically when --preview-source is used; phone-
+# aspect shots pass `--preview-window 400x880` so they launch at that size.
 #
-# After taking all screenshots, rename them to preview-001.png .. preview-010.png
+# After taking all screenshots, rename them to preview-001.png .. preview-006.png
 # and place them in the preview/ directory.
 
 set -euo pipefail
@@ -29,17 +30,17 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
     exit 1
 fi
 
-# Each entry: "preview_number:source_file:description"
+# Each entry: "preview_number:source_file:description[:WIDTHxHEIGHT]"
+# A trailing window size is optional; if omitted the app defaults to 900x700.
+# Phone-aspect shots use 400x880 (≈ 1:2.2, matching modern Linux phones like
+# the PinePhone Pro / Librem 5 / Volla).
 SHOTS=(
-    "001:0001.jpg:Photo mode (landscape)"
-    "002:0007.jpg:Photo mode (portrait)"
+    "001:0001.jpg:Photo mode with tools menu open (landscape)"
+    "002:0007.jpg:Photo mode on a Linux phone:400x880"
     "003:0006.jpg:Filter picker"
     "004:0003.jpg:Video recording"
     "005:0009.jpg:QR code detection"
     "006:0008.jpg:Settings panel"
-    "007:0004.jpg:Virtual camera"
-    "008:0002.jpg:Theatre mode"
-    "009:0002.jpg:Theatre mode (fullscreen)"
 )
 
 echo "=== Camera Preview Screenshot Helper ==="
@@ -52,7 +53,7 @@ echo "  3. Close the app to continue to the next image"
 echo ""
 
 for shot in "${SHOTS[@]}"; do
-    IFS=':' read -r num file desc <<< "$shot"
+    IFS=':' read -r num file desc size <<< "$shot"
     source_path="$SOURCE_DIR/$file"
 
     if [[ ! -f "$source_path" ]]; then
@@ -63,6 +64,9 @@ for shot in "${SHOTS[@]}"; do
     echo "--- preview-$num ---"
     echo "  Source: $file"
     echo "  Action: $desc"
+    if [[ -n "${size:-}" ]]; then
+        echo "  Window: ${size}"
+    fi
     echo ""
     read -rp "  Press Enter to launch (or 's' to skip, 'q' to quit): " choice
     case "$choice" in
@@ -70,10 +74,14 @@ for shot in "${SHOTS[@]}"; do
         q|Q) echo "  Quitting."; exit 0 ;;
     esac
 
-    "$CAMERA" --preview-source "$source_path" || true
+    if [[ -n "${size:-}" ]]; then
+        "$CAMERA" --preview-source "$source_path" --preview-window "$size" || true
+    else
+        "$CAMERA" --preview-source "$source_path" || true
+    fi
     echo ""
 done
 
 echo "=== Done ==="
-echo "Rename your screenshots to preview-001.png .. preview-010.png"
+echo "Rename your screenshots to preview-001.png .. preview-006.png"
 echo "and place them in: $SCRIPT_DIR/"

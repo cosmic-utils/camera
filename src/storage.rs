@@ -72,7 +72,7 @@ pub async fn load_latest_thumbnail(
     }
 
     // Sort by modification time (newest first)
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     let latest_path = entries.first()?.0.clone();
     let extension = latest_path

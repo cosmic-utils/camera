@@ -11,6 +11,7 @@ mode-video = 视频
 mode-photo = 照片
 mode-timelapse = 延时摄影
 mode-virtual = 虚拟
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = 虚拟相机（实验性）
@@ -137,7 +138,6 @@ tools-aspect = 宽高比
 tools-exposure = 曝光
 tools-color = 颜色
 tools-filter = 滤镜
-tools-theatre = 剧院
 
 # PTZ controls
 ptz-title = 相机控制

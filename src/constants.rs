@@ -153,7 +153,7 @@ pub mod ui {
     /// Overlay button/container background transparency (0.0 = transparent, 1.0 = opaque)
     ///
     /// Used for semi-transparent backgrounds on buttons and panels overlaid on the camera preview.
-    pub const OVERLAY_BACKGROUND_ALPHA: f32 = 0.6;
+    pub const OVERLAY_BACKGROUND_ALPHA: f32 = 0.7;
 
     /// Popup dialog background opacity (0.0 = transparent, 1.0 = opaque)
     ///

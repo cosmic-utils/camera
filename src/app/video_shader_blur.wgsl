@@ -9,7 +9,7 @@ var sampler_blur: sampler;
 
 struct ViewportUniform {
     viewport_size: vec2<f32>,   // Full widget size
-    content_fit_mode: u32,      // 0 = Contain, 1 = Cover
+    content_fit_mode: f32,      // 0.0 = Contain, 1.0 = Cover
     filter_mode: u32,           // Filter index (applied in Pass 1, 0 = none in later passes)
     corner_radius: f32,         // Unused in blur
     mirror_horizontal: u32,     // 0 = normal, 1 = mirrored horizontally
@@ -19,6 +19,8 @@ struct ViewportUniform {
     crop_uv_max: vec2<f32>,     // Crop UV max (u_max, v_max) - normalized 0-1
     zoom_level: f32,            // Unused in blur, but kept for struct compatibility
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
+    bar_top_height: f32,        // Top bar height in pixels
+    bar_bottom_height: f32,     // Bottom bar height in pixels
 }
 
 @group(0) @binding(2)
@@ -68,45 +70,54 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         tex_coords = vec2<f32>(tex_coords.y, 1.0 - tex_coords.x);
     }
 
-    // Apply crop UV mapping (aspect ratio cropping)
-    // Remap tex_coords from 0-1 range to crop_uv_min to crop_uv_max range
-    tex_coords = mix(viewport.crop_uv_min, viewport.crop_uv_max, tex_coords);
-
-    // Apply Cover mode adjustment if enabled
-    if (viewport.content_fit_mode == 1u) {
-        // Get texture dimensions, accounting for rotation
+    // Cover/Contain blend with bar-aware centering and a blended crop region.
+    // See video_shader.wgsl for the rationale — same model is used here so the
+    // blur texture tracks the main preview during the fit/fill animation.
+    let blend = viewport.content_fit_mode;
+    let effective_crop_min = mix(viewport.crop_uv_min, vec2<f32>(0.0, 0.0), blend);
+    let effective_crop_max = mix(viewport.crop_uv_max, vec2<f32>(1.0, 1.0), blend);
+    {
         let raw_tex_size = vec2<f32>(textureDimensions(texture_blur));
         var tex_size_dim = raw_tex_size;
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             tex_size_dim = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
         }
+        let crop_range = effective_crop_max - effective_crop_min;
+        let effective_tex = tex_size_dim * crop_range;
 
-        // Calculate aspect ratios
-        let tex_aspect = tex_size_dim.x / tex_size_dim.y;
-        let viewport_aspect = viewport.viewport_size.x / viewport.viewport_size.y;
+        let content_height = viewport.viewport_size.y - viewport.bar_top_height - viewport.bar_bottom_height;
+        let content_center_y = (viewport.bar_top_height + content_height * 0.5) / viewport.viewport_size.y;
+        let contain_zoom = min(viewport.viewport_size.x / effective_tex.x, content_height / effective_tex.y);
+        let cover_zoom = max(viewport.viewport_size.x / effective_tex.x, viewport.viewport_size.y / effective_tex.y);
+        let zoom = mix(contain_zoom, cover_zoom, blend);
+        let center_y = mix(content_center_y, 0.5, blend);
+        var scale = vec2<f32>(
+            viewport.viewport_size.x / (effective_tex.x * zoom),
+            viewport.viewport_size.y / (effective_tex.y * zoom),
+        );
 
-        // Calculate scale factor for "cover" behavior
-        var scale: vec2<f32>;
-        if (tex_aspect > viewport_aspect) {
-            scale = vec2<f32>(viewport_aspect / tex_aspect, 1.0);
-        } else {
-            scale = vec2<f32>(1.0, tex_aspect / viewport_aspect);
-        }
-
-        // For 90/270 rotations, swap scale factors since we're in rotated UV space
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             scale = vec2<f32>(scale.y, scale.x);
         }
 
-        // Adjust UV coordinates to center and scale the texture
-        tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * scale + vec2<f32>(0.5, 0.5);
+        tex_coords = (tex_coords - vec2<f32>(0.5, center_y)) * scale + vec2<f32>(0.5, 0.5);
     }
+
+    // Discard letterbox before the crop remap — see video_shader.wgsl for the
+    // rationale (post-remap check can falsely keep fragments inside the crop).
+    if (tex_coords.x < 0.0 || tex_coords.x > 1.0 || tex_coords.y < 0.0 || tex_coords.y > 1.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+
+    // Apply the blended crop remap
+    tex_coords = mix(effective_crop_min, effective_crop_max, tex_coords);
 
     // Get texture dimensions
     let tex_size = textureDimensions(texture_blur);
 
     // Blur settings — runs on 1/4 resolution textures so a moderate radius
     // gives a strong visual blur. 3 rings × 12 samples + center = 37 samples.
+
     let blur_radius = 16.0;
     let samples = 12;
 

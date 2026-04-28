@@ -2,9 +2,7 @@
 
 //! Canvas-based composition guide overlay widget
 
-use crate::app::qr_overlay::calculate_video_bounds;
 use crate::app::state::Message;
-use crate::app::video_widget::VideoContentFit;
 use crate::config::CompositionGuide;
 use cosmic::iced::{Color, Length, Point, Rectangle};
 use cosmic::widget::canvas;
@@ -14,11 +12,128 @@ const LINE_COLOR: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.4);
 const LINE_WIDTH: f32 = 1.5;
 const PHI: f32 = 1.618_034;
 
+/// Inputs needed to compute the visible-video rectangle at draw time. The
+/// rect depends on the canvas bounds (only known in `draw`), so we pass the
+/// state-dependent values through and resolve everything once we have them.
 struct GuideProgram {
     guide: CompositionGuide,
-    frame_width: u32,
-    frame_height: u32,
-    content_fit: VideoContentFit,
+    /// Sensor frame dimensions after applying rotation (so they describe the
+    /// preview's *displayed* orientation).
+    rotated_sensor_w: f32,
+    rotated_sensor_h: f32,
+    /// Photo aspect-ratio crop, if any (e.g. 4:3, 1:1). `None` means Native
+    /// — no crop, the visible area follows the screen / sensor aspect.
+    aspect_crop_ratio: Option<f32>,
+    /// Cover/Contain blend: 0.0 = Contain (letterboxed inside content area),
+    /// 1.0 = Cover (fills the canvas), interpolated during fit-animation.
+    cover_blend: f32,
+    /// Top UI bar height in pixels — eats into the content area in Contain.
+    top_bar_h: f32,
+    /// Bottom UI scrim height in pixels — likewise.
+    bottom_bar_h: f32,
+}
+
+impl GuideProgram {
+    /// Visible-video rectangle at the Cover endpoint, matching the area
+    /// the capture path actually crops to:
+    ///
+    /// - **Native** aspect: the content area between the top UI bar and the
+    ///   bottom-bar scrim. The video texture covers the full screen, but the
+    ///   bits behind the UI bars aren't captured.
+    /// - **Non-Native** aspect (e.g. 4:3, 1:1): the aspect ratio inscribed in
+    ///   the content area between the UI bars — the same rectangle the
+    ///   canvas crop overlay (`OverlayBackgroundProgram`) frames, so the
+    ///   guide lines align with the translucent crop bars exactly.
+    fn cover_rect(&self, bounds: Rectangle) -> Rectangle {
+        let content_y = bounds.y + self.top_bar_h;
+        let content_h = (bounds.height - self.top_bar_h - self.bottom_bar_h).max(0.0);
+        let content_w = bounds.width;
+        let content_rect = Rectangle {
+            x: bounds.x,
+            y: content_y,
+            width: content_w,
+            height: content_h,
+        };
+        match self.aspect_crop_ratio {
+            None => content_rect,
+            Some(ratio) if content_h > 0.0 && content_w > 0.0 => {
+                let content_aspect = content_w / content_h;
+                if ratio > content_aspect {
+                    // Letterbox top/bottom inside the content area.
+                    let h = content_w / ratio;
+                    Rectangle {
+                        x: bounds.x,
+                        y: content_y + (content_h - h) / 2.0,
+                        width: content_w,
+                        height: h,
+                    }
+                } else {
+                    // Pillarbox the sides inside the content area.
+                    let w = content_h * ratio;
+                    Rectangle {
+                        x: bounds.x + (content_w - w) / 2.0,
+                        y: content_y,
+                        width: w,
+                        height: content_h,
+                    }
+                }
+            }
+            Some(_) => content_rect,
+        }
+    }
+
+    /// Visible-video rectangle at the Contain endpoint. The image is
+    /// letterboxed inside the content area between the top UI bar and the
+    /// bottom-bar scrim. The aspect-crop ratio (when set) drives the
+    /// letterbox; otherwise the rotated sensor aspect does.
+    fn contain_rect(&self, bounds: Rectangle) -> Rectangle {
+        let content_y = bounds.y + self.top_bar_h;
+        let content_h = (bounds.height - self.top_bar_h - self.bottom_bar_h).max(0.0);
+        let content_w = bounds.width;
+        if content_h <= 0.0 || content_w <= 0.0 || self.rotated_sensor_h <= 0.0 {
+            return Rectangle {
+                x: bounds.x,
+                y: content_y,
+                width: 0.0,
+                height: 0.0,
+            };
+        }
+        let frame_aspect = self
+            .aspect_crop_ratio
+            .unwrap_or(self.rotated_sensor_w / self.rotated_sensor_h);
+        let content_aspect = content_w / content_h;
+        if frame_aspect > content_aspect {
+            let h = content_w / frame_aspect;
+            Rectangle {
+                x: bounds.x,
+                y: content_y + (content_h - h) / 2.0,
+                width: content_w,
+                height: h,
+            }
+        } else {
+            let w = content_h * frame_aspect;
+            Rectangle {
+                x: bounds.x + (content_w - w) / 2.0,
+                y: content_y,
+                width: w,
+                height: content_h,
+            }
+        }
+    }
+
+    /// Linearly interpolate the visible-video rectangle by `cover_blend` so
+    /// the guide tracks the preview through a fit/fill animation.
+    fn visible_rect(&self, bounds: Rectangle) -> Rectangle {
+        let cover = self.cover_rect(bounds);
+        let contain = self.contain_rect(bounds);
+        let t = self.cover_blend.clamp(0.0, 1.0);
+        Rectangle {
+            x: contain.x + (cover.x - contain.x) * t,
+            y: contain.y + (cover.y - contain.y) * t,
+            width: contain.width + (cover.width - contain.width) * t,
+            height: contain.height + (cover.height - contain.height) * t,
+        }
+    }
 }
 
 impl canvas::Program<Message, cosmic::Theme> for GuideProgram {
@@ -34,24 +149,19 @@ impl canvas::Program<Message, cosmic::Theme> for GuideProgram {
     ) -> Vec<canvas::Geometry<cosmic::Renderer>> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-        let (ox, oy, vw, vh) = calculate_video_bounds(
-            bounds.width,
-            bounds.height,
-            self.frame_width,
-            self.frame_height,
-            self.content_fit,
-        );
-
         let stroke = canvas::Stroke::default()
             .with_color(LINE_COLOR)
             .with_width(LINE_WIDTH);
 
-        let vb = Rectangle {
-            x: ox,
-            y: oy,
-            width: vw,
-            height: vh,
-        };
+        let vb = self.visible_rect(Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: bounds.width,
+            height: bounds.height,
+        });
+        if vb.width <= 0.0 || vb.height <= 0.0 {
+            return vec![frame.into_geometry()];
+        }
 
         frame.with_clip(vb, |frame| match self.guide {
             CompositionGuide::RuleOfThirds => {
@@ -242,17 +352,24 @@ fn draw_fibonacci_spiral(
 }
 
 /// Create a composition guide canvas element.
+#[allow(clippy::too_many_arguments)]
 pub fn composition_canvas<'a>(
     guide: CompositionGuide,
-    frame_width: u32,
-    frame_height: u32,
-    content_fit: VideoContentFit,
+    rotated_sensor_w: f32,
+    rotated_sensor_h: f32,
+    aspect_crop_ratio: Option<f32>,
+    cover_blend: f32,
+    top_bar_h: f32,
+    bottom_bar_h: f32,
 ) -> cosmic::Element<'a, Message> {
     cosmic::widget::Canvas::new(GuideProgram {
         guide,
-        frame_width,
-        frame_height,
-        content_fit,
+        rotated_sensor_w,
+        rotated_sensor_h,
+        aspect_crop_ratio,
+        cover_blend,
+        top_bar_h,
+        bottom_bar_h,
     })
     .width(Length::Fill)
     .height(Length::Fill)

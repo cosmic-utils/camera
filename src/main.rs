@@ -21,6 +21,30 @@ struct Cli {
     /// Supported formats: PNG, JPG, JPEG, WEBP (images) or MP4, WEBM, MKV (videos)
     #[arg(long, value_name = "FILE")]
     preview_source: Option<PathBuf>,
+
+    /// Override the preview-mode window size, formatted as `WIDTHxHEIGHT`
+    /// (e.g. `400x880` for a modern Linux-phone aspect). Only takes effect
+    /// alongside `--preview-source`. Defaults to 900x700.
+    #[arg(long, value_name = "WIDTHxHEIGHT", value_parser = parse_window_size)]
+    preview_window: Option<(f32, f32)>,
+}
+
+fn parse_window_size(s: &str) -> Result<(f32, f32), String> {
+    let (w, h) = s
+        .split_once('x')
+        .ok_or_else(|| "expected WIDTHxHEIGHT (e.g. 400x880)".to_string())?;
+    let width: f32 = w
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid width: {e}"))?;
+    let height: f32 = h
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid height: {e}"))?;
+    if width < 1.0 || height < 1.0 {
+        return Err("window dimensions must be positive".to_string());
+    }
+    Ok((width, height))
 }
 
 #[derive(Subcommand)]
@@ -124,11 +148,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Process { mode }) => match mode {
             ProcessMode::BurstMode { input, output } => cli::process_burst_mode(input, output),
         },
-        None => run_gui(cli.preview_source),
+        None => run_gui(cli.preview_source, cli.preview_window),
     }
 }
 
-fn run_gui(preview_source: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+fn run_gui(
+    preview_source: Option<PathBuf>,
+    preview_window: Option<(f32, f32)>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Start pre-warming on background threads BEFORE the iced event loop.
     // This overlaps GStreamer init, device enumeration, and camera discovery
     // with Wayland/wgpu setup (~280ms of framework time we'd otherwise waste).
@@ -198,10 +225,12 @@ fn run_gui(preview_source: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             .min_height(360.0),
     );
 
-    // When preview source is provided, set optimal window size for Flathub screenshots
-    // Flathub recommends 1000x700 or smaller for standard displays
+    // When a preview source is provided, set a fixed window size — defaults
+    // to 900x700 (Flathub's recommended standard-display size) but the user
+    // can override via `--preview-window WxH` to capture phone-aspect shots.
     if preview_source.is_some() {
-        settings = settings.size(cosmic::iced::Size::new(900.0, 700.0));
+        let (w, h) = preview_window.unwrap_or((900.0, 700.0));
+        settings = settings.size(cosmic::iced::Size::new(w, h));
     }
 
     // Create app flags with pre-warm handle

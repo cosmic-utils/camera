@@ -96,6 +96,45 @@ impl AppModel {
         )
     }
 
+    /// Generic 16 ms-tick driver shared by all animation tracks. Given the
+    /// animation's elapsed time (`None` when not animating), the duration,
+    /// the tick message to reschedule, and a callback that clears the
+    /// animation when it ends, return either the next tick or `Task::none`.
+    /// Keeps the per-track tick arms in `update.rs` to one expression each.
+    pub(crate) fn tick_animation_until(
+        &mut self,
+        duration: std::time::Duration,
+        tick: Message,
+        elapsed: Option<std::time::Duration>,
+        on_done: impl FnOnce(&mut Self),
+    ) -> Task<cosmic::Action<Message>> {
+        match elapsed {
+            Some(e) if e >= duration => {
+                on_done(self);
+                Task::none()
+            }
+            Some(_) => Self::delay_task(16, tick),
+            None => Task::none(),
+        }
+    }
+
+    /// Persist the current `Config` to disk on a blocking thread so the UI thread
+    /// doesn't stall on filesystem I/O.  Used by settings toggles (fit/fill,
+    /// aspect ratio, etc.) where the visible state has already been updated
+    /// in-memory and the on-disk write just needs to follow eventually.
+    pub(crate) fn persist_config_async(&self) {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+        let Some(handler) = self.config_handler.clone() else {
+            return;
+        };
+        let config = self.config.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(err) = config.write_entry(&handler) {
+                tracing::error!(?err, "Failed to persist config");
+            }
+        });
+    }
+
     /// Check if burst mode would be triggered based on current scene brightness
     ///
     /// Returns true if Auto mode would use more than 1 frame (actual burst capture)
@@ -186,12 +225,43 @@ impl AppModel {
 
         let rotation = self.current_camera_rotation();
 
-        // Calculate crop rectangle based on aspect ratio setting (accounting for rotation)
-        let crop_rect = self.photo_aspect_ratio.optional_crop_rect_with_rotation(
-            frame_arc.width,
-            frame_arc.height,
-            rotation,
-        );
+        // Calculate crop rectangle:
+        // - Cover mode: crop to screen-visible area, then apply aspect ratio
+        // - Fit mode: apply aspect ratio directly on the full frame
+        let (fw, fh) = if rotation.swaps_dimensions() {
+            (frame_arc.height, frame_arc.width)
+        } else {
+            (frame_arc.width, frame_arc.height)
+        };
+        let portrait = self.screen_is_portrait();
+        let crop_rect = {
+            let (x, y, w, h) = if self.preview_fit_to_view {
+                self.photo_aspect_ratio.crop_rect(fw, fh, portrait)
+            } else {
+                // Map the on-screen frame rect (the same one the canvas
+                // crop overlay highlights) back to sensor coords via the
+                // preview's Cover scaling. This stays aligned with what
+                // the user sees inside the crop bars even when the UI
+                // bars are asymmetric (top 47 vs bottom ~174) — a
+                // sensor-centered crop would drift off-axis here.
+                crate::app::view::cover_capture_crop(
+                    fw,
+                    fh,
+                    self.screen_width,
+                    self.screen_height,
+                    self.settled_top_ui_height(),
+                    self.settled_bottom_ui_height(),
+                    self.photo_aspect_ratio.display_ratio(portrait),
+                )
+            };
+            if rotation.swaps_dimensions() {
+                Some((y, x, h, w))
+            } else if x == 0 && y == 0 && w == fw && h == fh {
+                None
+            } else {
+                Some((x, y, w, h))
+            }
+        };
 
         // Get the encoding format from config
         let encoding_format: crate::pipelines::photo::EncodingFormat =
@@ -246,8 +316,19 @@ impl AppModel {
         let rotation = self.current_camera_rotation();
 
         // For raw stream capture, use native aspect ratio (no crop from preview)
-        // The raw frame may have a different aspect ratio than the preview
+        // The raw frame may have a different aspect ratio than the preview.
+        // Snapshot every value the cover-crop math needs so the spawned task
+        // doesn't have to borrow `self`. The cover map (screen dims + UI bar
+        // heights + display ratio) lets the saved photo match the on-screen
+        // framed rect — see `cover_capture_crop`.
         let photo_aspect_ratio = self.photo_aspect_ratio;
+        let preview_fit_to_view = self.preview_fit_to_view;
+        let portrait = self.screen_is_portrait();
+        let cover_screen_w = self.screen_width;
+        let cover_screen_h = self.screen_height;
+        let cover_top_h = self.settled_top_ui_height();
+        let cover_bottom_h = self.settled_bottom_ui_height();
+        let cover_target_ratio = self.photo_aspect_ratio.display_ratio(portrait);
 
         let encoding_format: crate::pipelines::photo::EncodingFormat =
             self.config.photo_output_format.into();
@@ -282,11 +363,33 @@ impl AppModel {
                     "Raw frame captured from still stream"
                 );
 
-                let crop_rect = photo_aspect_ratio.optional_crop_rect_with_rotation(
-                    frame.width,
-                    frame.height,
-                    rotation,
-                );
+                let (rw, rh) = if rotation.swaps_dimensions() {
+                    (frame.height, frame.width)
+                } else {
+                    (frame.width, frame.height)
+                };
+                let crop_rect = {
+                    let (x, y, w, h) = if preview_fit_to_view {
+                        photo_aspect_ratio.crop_rect(rw, rh, portrait)
+                    } else {
+                        crate::app::view::cover_capture_crop(
+                            rw,
+                            rh,
+                            cover_screen_w,
+                            cover_screen_h,
+                            cover_top_h,
+                            cover_bottom_h,
+                            cover_target_ratio,
+                        )
+                    };
+                    if rotation.swaps_dimensions() {
+                        Some((y, x, h, w))
+                    } else if x == 0 && y == 0 && w == rw && h == rh {
+                        None
+                    } else {
+                        Some((x, y, w, h))
+                    }
+                };
 
                 let config = PostProcessingConfig {
                     filter_type,
@@ -487,13 +590,37 @@ impl AppModel {
 
         let rotation = self.current_camera_rotation();
 
-        // Calculate crop rectangle based on aspect ratio setting (accounting for rotation)
+        // Calculate crop rectangle based on preview mode and aspect ratio.
+        // Cover-mode crop is computed by inverse-mapping the on-screen
+        // framed rect back to sensor coords (`cover_capture_crop`) so the
+        // saved photo matches what the user sees inside the crop bars.
+        let portrait = self.screen_is_portrait();
         let crop_rect = if let Some(frame) = frames.first() {
-            self.photo_aspect_ratio.optional_crop_rect_with_rotation(
-                frame.width,
-                frame.height,
-                rotation,
-            )
+            let (rw, rh) = if rotation.swaps_dimensions() {
+                (frame.height, frame.width)
+            } else {
+                (frame.width, frame.height)
+            };
+            let (x, y, w, h) = if self.preview_fit_to_view {
+                self.photo_aspect_ratio.crop_rect(rw, rh, portrait)
+            } else {
+                crate::app::view::cover_capture_crop(
+                    rw,
+                    rh,
+                    self.screen_width,
+                    self.screen_height,
+                    self.settled_top_ui_height(),
+                    self.settled_bottom_ui_height(),
+                    self.photo_aspect_ratio.display_ratio(portrait),
+                )
+            };
+            if rotation.swaps_dimensions() {
+                Some((y, x, h, w))
+            } else if x == 0 && y == 0 && w == rw && h == rh {
+                None
+            } else {
+                Some((x, y, w, h))
+            }
         } else {
             None
         };
@@ -644,7 +771,6 @@ impl AppModel {
             info!(seconds, "Starting photo timer countdown");
             self.photo_timer_countdown = Some(seconds);
             self.photo_timer_tick_start = Some(std::time::Instant::now());
-            self.start_bottom_bar_fade(0.0);
             return Self::delay_task(1000, Message::PhotoTimerTick);
         }
 
@@ -790,14 +916,7 @@ impl AppModel {
         info!(aspect_ratio = ?self.photo_aspect_ratio, "Photo aspect ratio changed");
 
         self.config.photo_aspect_ratio = self.photo_aspect_ratio;
-        {
-            use cosmic::cosmic_config::CosmicConfigEntry;
-            if let Some(handler) = self.config_handler.as_ref()
-                && let Err(err) = self.config.write_entry(handler)
-            {
-                tracing::error!(?err, "Failed to save photo aspect ratio setting");
-            }
-        }
+        self.persist_config_async();
 
         Task::none()
     }
@@ -825,7 +944,6 @@ impl AppModel {
                 info!("Photo timer countdown complete - capturing");
                 self.photo_timer_countdown = None;
                 self.photo_timer_tick_start = None;
-                self.start_bottom_bar_fade(1.0);
                 self.animate_capture_scale(1.0);
                 // Check if flash is enabled
                 if self.flash_enabled && !self.flash_active {
@@ -855,7 +973,6 @@ impl AppModel {
             info!("Photo timer countdown aborted");
             self.photo_timer_countdown = None;
             self.photo_timer_tick_start = None;
-            self.start_bottom_bar_fade(1.0);
             self.animate_capture_scale(1.0);
         }
         Task::none()
@@ -867,6 +984,7 @@ impl AppModel {
         let new_zoom = (self.zoom_level * 1.02).min(10.0);
         if (new_zoom - self.zoom_level).abs() > 0.001 {
             self.zoom_level = new_zoom;
+            self.zoom_animation = None; // step zoom is real-time
             debug!(zoom = self.zoom_level, "Zoom in");
         }
         Task::none()
@@ -877,23 +995,40 @@ impl AppModel {
         let new_zoom = (self.zoom_level / 1.02).max(1.0);
         if (new_zoom - self.zoom_level).abs() > 0.001 {
             self.zoom_level = new_zoom;
+            self.zoom_animation = None; // step zoom is real-time
             debug!(zoom = self.zoom_level, "Zoom out");
         }
         Task::none()
     }
 
+    /// Reset the zoom level to 1× with an ease-out animation. If a tick chain
+    /// is already in flight (re-press during the animation), no new chain is
+    /// spawned — the existing one picks up the replaced animation, same
+    /// pattern as `start_fit_animation`.
     pub(crate) fn handle_reset_zoom(&mut self) -> Task<cosmic::Action<Message>> {
-        if (self.zoom_level - 1.0).abs() > 0.001 {
-            self.zoom_level = 1.0;
-            debug!("Zoom reset to 1.0");
+        let from = self.current_zoom_level();
+        if (from - 1.0).abs() <= 0.001 {
+            return Task::none();
         }
-        Task::none()
+        self.zoom_level = 1.0;
+        let was_idle = self.zoom_animation.is_none();
+        self.zoom_animation = Some(crate::app::state::ZoomAnimation {
+            start: std::time::Instant::now(),
+            from,
+        });
+        debug!(from, "Zoom reset to 1.0 (animated)");
+        if was_idle {
+            Self::delay_task(16, Message::ZoomAnimationTick)
+        } else {
+            Task::none()
+        }
     }
 
     pub(crate) fn handle_pinch_zoom(&mut self, level: f32) -> Task<cosmic::Action<Message>> {
         let new_zoom = level.clamp(1.0, 10.0);
         if (new_zoom - self.zoom_level).abs() > 0.001 {
             self.zoom_level = new_zoom;
+            self.zoom_animation = None; // pinch is real-time
         }
         Task::none()
     }
@@ -950,8 +1085,6 @@ impl AppModel {
             }
             self.recording = RecordingState::Idle;
             self.update_idle_inhibit();
-            // Fade bottom bar back in
-            self.start_bottom_bar_fade(1.0);
         } else {
             // Starting: validate before animating
             if self
@@ -968,8 +1101,6 @@ impl AppModel {
             }
             // Animate to recording size (after guards pass)
             self.animate_capture_scale(0.82);
-            // Fade bottom bar out
-            self.start_bottom_bar_fade(0.0);
             return Task::done(cosmic::Action::App(Message::StartRecordingAfterDelay));
         }
         Task::none()
@@ -991,8 +1122,6 @@ impl AppModel {
         self.recording = RecordingState::Idle;
         self.quick_record = crate::app::state::QuickRecordState::Idle;
         self.update_idle_inhibit();
-        // Restore bottom bar
-        self.start_bottom_bar_fade(1.0);
         // Turn off torch when recording ends
         self.turn_off_flash_hardware();
 
@@ -1081,7 +1210,6 @@ impl AppModel {
                     info!(seconds, "Starting photo timer countdown");
                     self.photo_timer_countdown = Some(seconds);
                     self.photo_timer_tick_start = Some(std::time::Instant::now());
-                    self.start_bottom_bar_fade(0.0);
                     return Self::delay_task(1000, Message::PhotoTimerTick);
                 }
 
@@ -1105,9 +1233,6 @@ impl AppModel {
                 self.animate_capture_scale(1.0);
                 // Long press ended: stop recording
                 self.quick_record = QuickRecordState::Idle;
-
-                // Fade bottom bar back in
-                self.start_bottom_bar_fade(1.0);
 
                 // Stop recording (same as toggle off)
                 if let Some(sender) = self.recording.take_stop_sender() {
@@ -1157,9 +1282,6 @@ impl AppModel {
             self.animate_capture_scale(1.0);
             return Task::none();
         }
-
-        // Fade out bottom bar (must be before borrowing camera/format from self)
-        self.start_bottom_bar_fade(0.0);
 
         let camera = &self.available_cameras[self.current_camera_index];
         let format = self.active_format.as_ref().unwrap();
@@ -1677,7 +1799,6 @@ impl AppModel {
             interval_ms,
             frame_sender: frame_tx,
         };
-        self.start_bottom_bar_fade(0.0);
 
         // Build output path
         let folder_name = self.config.save_folder_name.clone();
@@ -1762,7 +1883,6 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.timelapse = TimelapseState::Idle;
         self.update_idle_inhibit();
-        self.start_bottom_bar_fade(1.0);
         match result {
             Ok(path) => {
                 info!(path = %path, "Timelapse video saved");

@@ -12,7 +12,6 @@ use super::{
 };
 use crate::app::frame_processor::QrDetection;
 use crate::app::state::Message;
-use crate::app::video_widget::VideoContentFit;
 use cosmic::iced::advanced::widget::{Operation, Tree};
 use cosmic::iced::advanced::{Clipboard, Layout, Shell, Widget, layout, mouse, renderer};
 
@@ -25,7 +24,14 @@ pub struct QrOverlayWidget<'a> {
     detections: Vec<QrDetection>,
     frame_width: u32,
     frame_height: u32,
-    content_fit: VideoContentFit,
+    /// Animated Cover↔Contain blend (1.0 = Cover, 0.0 = Contain). The
+    /// visible video bounds lerp between the two endpoints by this value
+    /// so the QR boxes track the preview through a fit/fill transition.
+    cover_blend: f32,
+    /// Animated UI bar heights — needed in Contain mode to know where the
+    /// letterboxed video sits inside the content area.
+    top_bar_h: f32,
+    bottom_bar_h: f32,
     mirrored: bool,
     /// Child button elements (one per detection)
     buttons: Vec<Element<'a, Message, Theme, Renderer>>,
@@ -37,7 +43,9 @@ impl<'a> QrOverlayWidget<'a> {
         detections: Vec<QrDetection>,
         frame_width: u32,
         frame_height: u32,
-        content_fit: VideoContentFit,
+        cover_blend: f32,
+        top_bar_h: f32,
+        bottom_bar_h: f32,
         mirrored: bool,
     ) -> Self {
         // Create button elements for each detection
@@ -55,7 +63,9 @@ impl<'a> QrOverlayWidget<'a> {
             detections,
             frame_width,
             frame_height,
-            content_fit,
+            cover_blend,
+            top_bar_h,
+            bottom_bar_h,
             mirrored,
             buttons,
         }
@@ -114,7 +124,9 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
             size.height,
             self.frame_width,
             self.frame_height,
-            self.content_fit,
+            self.cover_blend,
+            self.top_bar_h,
+            self.bottom_bar_h,
         );
 
         // Pre-compute button positions to avoid borrow conflict with iter_mut
@@ -171,7 +183,9 @@ impl<'a> Widget<Message, Theme, Renderer> for QrOverlayWidget<'a> {
             bounds.height,
             self.frame_width,
             self.frame_height,
-            self.content_fit,
+            self.cover_blend,
+            self.top_bar_h,
+            self.bottom_bar_h,
         );
 
         // Draw QR detection boxes

@@ -175,7 +175,12 @@ impl AppModel {
                     .width(Length::Fill)
                     .height(Length::Shrink),
             )
-            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+            .padding([
+                crate::app::view::TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                spacing.space_xs,
+                0,
+                spacing.space_xs,
+            ]);
 
         widget::mouse_area(
             widget::container(picker_positioned)

@@ -42,6 +42,16 @@ pub enum VideoContentFit {
     Cover,
 }
 
+impl VideoContentFit {
+    /// Returns the shader blend value: 0.0 = Contain, 1.0 = Cover
+    pub fn blend(&self) -> f32 {
+        match self {
+            VideoContentFit::Contain => 0.0,
+            VideoContentFit::Cover => 1.0,
+        }
+    }
+}
+
 /// Configuration for creating a video widget
 #[derive(Debug, Clone)]
 pub struct VideoWidgetConfig {
@@ -63,6 +73,14 @@ pub struct VideoWidgetConfig {
     pub zoom_level: f32,
     /// Whether scroll wheel zoom is enabled
     pub scroll_zoom_enabled: bool,
+    /// Blend between Contain (0.0) and Cover (1.0) for animated transitions.
+    /// When `None`, uses `content_fit.blend()`.
+    pub cover_blend: Option<f32>,
+    /// Top UI bar height in pixels — used to center the preview between bars in Contain mode.
+    pub bar_top_px: f32,
+    /// Bottom UI bar height in pixels — matches the actual UI footprint
+    /// (capture button + bottom bar + optional zoom row).
+    pub bar_bottom_px: f32,
 }
 
 /// Video widget that renders camera frames using a custom GPU primitive
@@ -76,6 +94,10 @@ pub struct VideoWidget {
     scroll_zoom_enabled: bool,
     /// Current zoom level (passed through for pinch gesture reference)
     zoom_level: f32,
+    /// Shader blend: 0.0 = Contain, 1.0 = Cover
+    cover_blend: f32,
+    bar_top_px: f32,
+    bar_bottom_px: f32,
 }
 
 impl VideoWidget {
@@ -170,6 +192,11 @@ impl VideoWidget {
             content_fit: config.content_fit,
             scroll_zoom_enabled: config.scroll_zoom_enabled,
             zoom_level: config.zoom_level,
+            cover_blend: config
+                .cover_blend
+                .unwrap_or_else(|| config.content_fit.blend()),
+            bar_top_px: config.bar_top_px,
+            bar_bottom_px: config.bar_bottom_px,
         }
     }
 }
@@ -206,15 +233,13 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
                 let height_based_width = height * self.aspect_ratio;
 
                 if width_based_height <= height {
-                    // Width is the limiting factor
                     Size::new(width, width_based_height)
                 } else {
-                    // Height is the limiting factor
                     Size::new(height_based_width, height)
                 }
             }
             VideoContentFit::Cover => {
-                // Fill the entire container - the primitive will handle aspect ratio and cropping
+                // Fill the entire container - the shader handles Cover/Contain via blend
                 max_size
             }
         };
@@ -324,10 +349,15 @@ impl Widget<crate::app::Message, Theme, Renderer> for VideoWidget {
     ) {
         let bounds = layout.bounds();
 
-        // Update primitive with viewport size and content fit mode
-        // The shader will handle Cover mode by adjusting UV coordinates
-        self.primitive
-            .update_viewport(bounds.width, bounds.height, self.content_fit);
+        // Update primitive with viewport size, cover blend, and bar heights (both px).
+        // The shader interpolates UV coordinates and centering based on the blend value.
+        self.primitive.update_viewport(
+            bounds.width,
+            bounds.height,
+            self.cover_blend,
+            self.bar_top_px,
+            self.bar_bottom_px,
+        );
 
         // Draw the custom primitive using the wgpu renderer's primitive support
         renderer.draw_primitive(bounds, self.primitive.clone());

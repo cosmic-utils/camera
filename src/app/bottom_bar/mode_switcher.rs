@@ -23,6 +23,10 @@ impl AppModel {
             Message::SetMode,
             is_disabled,
             std::sync::Arc::clone(&self.carousel_button_slide),
+            // In View mode the carousel stands alone (no gallery / camera-
+            // switcher buttons next to it), so collapse the rounded chip
+            // to the active "View" pill when fully settled.
+            self.mode.is_view_only(),
         )
         .into()
     }

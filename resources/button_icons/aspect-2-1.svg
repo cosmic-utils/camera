@@ -1,23 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Aspect-ratio icon — 2:1.
+  See aspect-native.svg for the shared layout grammar.
+  Glyph positions: "2" x=7.5  ":" x=12.5  "1" x=15  (text width 9, centered on x=12)
+-->
 <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <!-- Square with open corners at top-left and bottom-right -->
-  <!-- Top edge (gap at left) -->
-  <line x1="7" y1="4" x2="20" y2="4" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Right edge (gap at bottom) -->
-  <line x1="20" y1="4" x2="20" y2="17" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Bottom edge (gap at right) -->
-  <line x1="4" y1="20" x2="17" y2="20" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- Left edge (gap at top) -->
-  <line x1="4" y1="7" x2="4" y2="20" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- "2" using rectangles -->
-  <rect x="6" y="9" width="3.5" height="1.2" fill="#FFFFFF"/>
-  <rect x="8.3" y="9" width="1.2" height="3.5" fill="#FFFFFF"/>
-  <rect x="6" y="11.5" width="3.5" height="1.2" fill="#FFFFFF"/>
-  <rect x="6" y="11.5" width="1.2" height="3.5" fill="#FFFFFF"/>
-  <rect x="6" y="14" width="3.5" height="1.2" fill="#FFFFFF"/>
-  <!-- Colon -->
-  <rect x="11" y="10" width="1.2" height="1.2" fill="#FFFFFF"/>
-  <rect x="11" y="13" width="1.2" height="1.2" fill="#FFFFFF"/>
-  <!-- "1" using rectangle -->
-  <rect x="15" y="9" width="1.2" height="6" fill="#FFFFFF"/>
+  <!-- Open-corner frame -->
+  <line x1="6"  y1="2"  x2="22" y2="2"  stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="22" y1="2"  x2="22" y2="18" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="22" x2="18" y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <line x1="2"  y1="6"  x2="2"  y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <!-- "2": top, upper-right, middle, lower-left, bottom -->
+  <rect x="7.5"  y="8"     width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="10"   y="8"     width="1.5" height="3.25" fill="#FFFFFF"/>
+  <rect x="7.5"  y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="7.5"  y="12.75" width="1.5" height="3.25" fill="#FFFFFF"/>
+  <rect x="7.5"  y="14.5"  width="4"   height="1.5"  fill="#FFFFFF"/>
+  <!-- ":" -->
+  <rect x="12.5" y="9.75"  width="1.5" height="1.5"  fill="#FFFFFF"/>
+  <rect x="12.5" y="12.75" width="1.5" height="1.5"  fill="#FFFFFF"/>
+  <!-- "1" -->
+  <rect x="15"   y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
 </svg>

@@ -330,6 +330,8 @@ pub struct Config {
     pub haptic_feedback: bool,
     /// Photo aspect ratio preference
     pub photo_aspect_ratio: crate::app::PhotoAspectRatio,
+    /// Show entire frame (Contain) instead of filling the window (Cover)
+    pub preview_fit_to_view: bool,
 }
 
 impl Default for Config {
@@ -357,6 +359,7 @@ impl Default for Config {
             timelapse_interval: TimelapseInterval::default(), // Default to 2 fps
             haptic_feedback: true, // Enable haptic feedback by default
             photo_aspect_ratio: crate::app::PhotoAspectRatio::default(),
+            preview_fit_to_view: false,
         }
     }
 }

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Aspect-ratio icon — 4:3.
+  Aspect-ratio icon — 3:4 (portrait orientation companion of aspect-4-3).
   See aspect-native.svg for the shared layout grammar.
-  Glyph positions: "4" x=6.25  ":" x=11.25  "3" x=13.75  (text width 11.5, centered on x=12)
+  Glyph positions: "3" x=6.25  ":" x=11.25  "4" x=13.75  (text width 11.5, centered on x=12)
 -->
 <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <!-- Open-corner frame -->
@@ -10,16 +10,16 @@
   <line x1="22" y1="2"  x2="22" y2="18" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
   <line x1="2"  y1="22" x2="18" y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
   <line x1="2"  y1="6"  x2="2"  y2="22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-  <!-- "4": upper-left, middle, full-right -->
-  <rect x="6.25"  y="8"     width="1.5" height="3.25" fill="#FFFFFF"/>
-  <rect x="6.25"  y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
+  <!-- "3": top, full-right, middle, bottom -->
+  <rect x="6.25"  y="8"     width="4"   height="1.5"  fill="#FFFFFF"/>
   <rect x="8.75"  y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
+  <rect x="6.25"  y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="6.25"  y="14.5"  width="4"   height="1.5"  fill="#FFFFFF"/>
   <!-- ":" -->
   <rect x="11.25" y="9.75"  width="1.5" height="1.5"  fill="#FFFFFF"/>
   <rect x="11.25" y="12.75" width="1.5" height="1.5"  fill="#FFFFFF"/>
-  <!-- "3": top, full-right, middle, bottom -->
-  <rect x="13.75" y="8"     width="4"   height="1.5"  fill="#FFFFFF"/>
-  <rect x="16.25" y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
+  <!-- "4": upper-left, middle, full-right -->
+  <rect x="13.75" y="8"     width="1.5" height="3.25" fill="#FFFFFF"/>
   <rect x="13.75" y="11.25" width="4"   height="1.5"  fill="#FFFFFF"/>
-  <rect x="13.75" y="14.5"  width="4"   height="1.5"  fill="#FFFFFF"/>
+  <rect x="16.25" y="8"     width="1.5" height="8"    fill="#FFFFFF"/>
 </svg>

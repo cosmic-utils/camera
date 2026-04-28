@@ -12,7 +12,6 @@
 use crate::app::bottom_bar::slide_h::SlideH;
 use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
-use crate::app::video_widget::VideoContentFit;
 use crate::constants::resolution_thresholds;
 use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA, POPUP_BACKGROUND_ALPHA};
 use crate::fl;
@@ -20,7 +19,7 @@ use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
 use cosmic::widget::{self, icon};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{debug, info};
+use tracing::info;
 
 /// Flash icon SVG (lightning bolt)
 const FLASH_ICON: &[u8] = include_bytes!("../../resources/button_icons/flash.svg");
@@ -36,12 +35,18 @@ const TIMER_5_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-5
 const TIMER_10_ICON: &[u8] = include_bytes!("../../resources/button_icons/timer-10.svg");
 /// Aspect ratio native icon SVG
 const ASPECT_NATIVE_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-native.svg");
-/// Aspect ratio 4:3 icon SVG
+/// Aspect ratio 4:3 icon SVG (landscape)
 const ASPECT_4_3_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-4-3.svg");
-/// Aspect ratio 16:9 icon SVG
+/// Aspect ratio 3:4 icon SVG (portrait companion of 4:3)
+const ASPECT_3_4_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-3-4.svg");
+/// Aspect ratio 16:9 icon SVG (landscape)
 const ASPECT_16_9_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-16-9.svg");
-/// Aspect ratio 2:1 (18:9) icon SVG
+/// Aspect ratio 9:16 icon SVG (portrait companion of 16:9)
+const ASPECT_9_16_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-9-16.svg");
+/// Aspect ratio 2:1 (18:9) icon SVG (landscape)
 const ASPECT_2_1_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-2-1.svg");
+/// Aspect ratio 1:2 icon SVG (portrait companion of 2:1)
+const ASPECT_1_2_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-1-2.svg");
 /// Aspect ratio 1:1 icon SVG
 const ASPECT_1_1_ICON: &[u8] = include_bytes!("../../resources/button_icons/aspect-1-1.svg");
 /// Exposure icon SVG
@@ -80,6 +85,349 @@ pub fn overlay_container_style(theme: &cosmic::Theme) -> widget::container::Styl
         },
         // Don't set text_color - let buttons use their native COSMIC theme colors
         ..Default::default()
+    }
+}
+
+/// Button class for chips that sit on the translucent overlay scrim:
+/// transparent background (the surrounding `overlay_container_style` provides
+/// the colour) with `on_bg_color` text/icon. Avoids `Button::Text`, which uses
+/// the accent colour for foreground.
+fn overlay_chip_button_class() -> cosmic::theme::Button {
+    use cosmic::iced::{Background, Color};
+    use cosmic::widget::button::Style;
+    let plain = |theme: &cosmic::Theme| -> Style {
+        let on = Color::from(theme.cosmic().on_bg_color());
+        Style {
+            text_color: Some(on),
+            icon_color: Some(on),
+            ..Style::new()
+        }
+    };
+    let with_overlay = |theme: &cosmic::Theme, alpha: f32| -> Style {
+        let cosmic = theme.cosmic();
+        let on = cosmic.on_bg_color();
+        Style {
+            background: Some(Background::Color(Color::from_rgba(
+                on.red, on.green, on.blue, alpha,
+            ))),
+            // Match the wrapper container's corner radius so the hover/press
+            // overlay rounds with the chip instead of drawing a sharp box.
+            border_radius: cosmic.corner_radii.radius_xl.into(),
+            text_color: Some(Color::from(on)),
+            icon_color: Some(Color::from(on)),
+            ..Style::new()
+        }
+    };
+    cosmic::theme::Button::Custom {
+        active: Box::new(move |_focused, theme| plain(theme)),
+        disabled: Box::new(move |theme| {
+            let mut s = plain(theme);
+            if let Some(ref mut c) = s.text_color {
+                c.a *= 0.5;
+            }
+            if let Some(ref mut c) = s.icon_color {
+                c.a *= 0.5;
+            }
+            s
+        }),
+        hovered: Box::new(move |_focused, theme| with_overlay(theme, 0.08)),
+        pressed: Box::new(move |_focused, theme| with_overlay(theme, 0.16)),
+    }
+}
+
+/// Fixed pixel height for the top UI bar overlay (matches native COSMIC header bar).
+pub const TOP_BAR_HEIGHT: f32 = 47.0;
+
+/// Fallback aspect ratio used before the first window-resize event arrives.
+const FALLBACK_ASPECT_RATIO: f32 = 16.0 / 9.0;
+
+impl AppModel {
+    /// Current window aspect ratio, populated from `on_window_resize`. Returns
+    /// 16:9 as a fallback before the first resize event.
+    pub fn screen_aspect_ratio(&self) -> f32 {
+        if self.screen_width > 0.0 && self.screen_height > 0.0 {
+            self.screen_width / self.screen_height
+        } else {
+            FALLBACK_ASPECT_RATIO
+        }
+    }
+
+    /// `true` when the window is taller than wide. Drives the orientation
+    /// flip applied to the aspect-ratio crop, the canvas overlay bars, the
+    /// composition guide and the aspect-icon selection so all four agree
+    /// with what the rotated preview shows.
+    pub fn screen_is_portrait(&self) -> bool {
+        self.screen_width > 0.0
+            && self.screen_height > 0.0
+            && self.screen_height > self.screen_width
+    }
+
+    /// Settled top-bar scrim / shader bar height. 0 in View mode (the
+    /// preview takes the full window in fit/fill); `TOP_BAR_HEIGHT`
+    /// otherwise.
+    pub fn settled_top_ui_height(&self) -> f32 {
+        if self.mode.is_view_only() {
+            0.0
+        } else {
+            TOP_BAR_HEIGHT
+        }
+    }
+
+    /// Animated top-bar scrim height. Interpolates between snapshots through
+    /// `fit_animation` so the Photo↔View transition slides smoothly.
+    pub fn top_ui_height(&self) -> f32 {
+        let target = self.settled_top_ui_height();
+        let Some(anim) = self.fit_animation else {
+            return target;
+        };
+        anim.from.top_ui_height + (target - anim.from.top_ui_height) * self.fit_animation_eased()
+    }
+
+    /// Settled pixel height of the bottom UI scrim. The top edge sits at:
+    ///
+    /// - **View mode**: 0. The preview extends to the window's bottom edge
+    ///   in fit/fill (the carousel renders on top of the live preview
+    ///   without a scrim).
+    /// - **Photo mode**: the top of the capture-button area. By construction
+    ///   the symmetric `space_xs` paddings (`build_capture_button`'s top
+    ///   padding and the zoom row's `control_spacing` bottom padding) make
+    ///   that line coincide with the midpoint between the capture circle
+    ///   and the zoom/fit row above it.
+    /// - **Other modes**: a quarter of the capture button's bottom padding
+    ///   (`space_xs / 4`) above the carousel's top edge — close to the
+    ///   carousel but with a small visual gap so the bar doesn't appear
+    ///   to swallow the bottom controls.
+    ///
+    /// Photo capture math (`cover_capture_crop`) reads this through the
+    /// settled value so a shot taken mid-animation isn't cropped against
+    /// an in-flight value.
+    pub fn settled_bottom_ui_height(&self) -> f32 {
+        if self.mode.is_view_only() {
+            return 0.0;
+        }
+        let spacing = cosmic::theme::spacing();
+        let bottom_bar_h = crate::app::bottom_bar::BOTTOM_BAR_HEIGHT;
+        if self.mode == CameraMode::Photo {
+            let capture_h = crate::app::controls::capture_button::CAPTURE_BUTTON_OUTER_SIZE
+                + 2.0 * f32::from(spacing.space_xs);
+            bottom_bar_h + capture_h
+        } else {
+            bottom_bar_h + f32::from(spacing.space_xs) / 4.0
+        }
+    }
+
+    /// Animated bottom-bar scrim height. During an in-flight fit animation,
+    /// interpolates from the captured starting height toward
+    /// `settled_bottom_ui_height()` using the same eased progress as
+    /// `cover_blend`. Drives the canvas scrim and the video shader's
+    /// `bar_bottom_px`, so the preview's centre slides with the scrim during
+    /// a Photo↔non-Photo transition.
+    pub fn bottom_ui_height(&self) -> f32 {
+        let target = self.settled_bottom_ui_height();
+        let Some(anim) = self.fit_animation else {
+            return target;
+        };
+        anim.from.bottom_ui_height
+            + (target - anim.from.bottom_ui_height) * self.fit_animation_eased()
+    }
+
+    /// Settled height of the empty placeholder above the bottom bar. 0 in
+    /// View (no capture button — fit/zoom row sits flush above the
+    /// carousel); the capture button area otherwise.
+    pub fn settled_capture_area_height(&self) -> f32 {
+        if self.mode.is_view_only() {
+            0.0
+        } else {
+            let spacing = cosmic::theme::spacing();
+            crate::app::controls::capture_button::CAPTURE_BUTTON_OUTER_SIZE
+                + 2.0 * f32::from(spacing.space_xs)
+        }
+    }
+
+    /// Animated capture-area placeholder height. Interpolates through
+    /// `fit_animation` so Photo↔View glides the fit/zoom row toward the
+    /// carousel instead of snapping.
+    pub fn capture_area_height(&self) -> f32 {
+        let target = self.settled_capture_area_height();
+        let Some(anim) = self.fit_animation else {
+            return target;
+        };
+        anim.from.capture_area_height
+            + (target - anim.from.capture_area_height) * self.fit_animation_eased()
+    }
+}
+
+/// On-screen "framed" rectangle that the canvas crop overlay highlights and
+/// that the captured photo's Cover-mode crop maps to. Sharing this helper
+/// between the canvas and the capture path guarantees the saved image
+/// matches what the user sees inside the translucent crop bars — including
+/// when the UI bars are asymmetric (top 47 px vs bottom ~174 px) and a
+/// sensor-centered crop would diverge from the on-screen content area.
+pub fn frame_rect_on_screen(
+    screen_w: f32,
+    screen_h: f32,
+    top_h: f32,
+    bottom_h: f32,
+    target_ratio: Option<f32>,
+) -> cosmic::iced::Rectangle {
+    let content_top = top_h;
+    let content_h = (screen_h - top_h - bottom_h).max(0.0);
+    let content_w = screen_w;
+    let content_rect = cosmic::iced::Rectangle {
+        x: 0.0,
+        y: content_top,
+        width: content_w,
+        height: content_h,
+    };
+    match target_ratio {
+        None => content_rect,
+        Some(ratio) if content_h > 0.0 && content_w > 0.0 => {
+            let content_aspect = content_w / content_h;
+            if ratio > content_aspect {
+                let h = content_w / ratio;
+                cosmic::iced::Rectangle {
+                    x: 0.0,
+                    y: content_top + (content_h - h) / 2.0,
+                    width: content_w,
+                    height: h,
+                }
+            } else {
+                let w = content_h * ratio;
+                cosmic::iced::Rectangle {
+                    x: (content_w - w) / 2.0,
+                    y: content_top,
+                    width: w,
+                    height: content_h,
+                }
+            }
+        }
+        Some(_) => content_rect,
+    }
+}
+
+/// Map the on-screen `frame_rect_on_screen` to sensor coordinates via the
+/// preview's Cover scaling. The result is the sensor sub-rect the user
+/// actually sees in the framed area on screen — which is *not* a sensor-
+/// centered crop when the UI bars are asymmetric. Capture-mode crop logic
+/// uses this to keep the saved photo aligned with the on-screen framing.
+///
+/// `frame_w` / `frame_h` are display-oriented (rotation-swapped by the
+/// caller); the returned coords are in the same space.
+pub fn cover_capture_crop(
+    frame_w: u32,
+    frame_h: u32,
+    screen_w: f32,
+    screen_h: f32,
+    top_h: f32,
+    bottom_h: f32,
+    target_ratio: Option<f32>,
+) -> (u32, u32, u32, u32) {
+    let fw = frame_w as f32;
+    let fh = frame_h as f32;
+    if fw <= 0.0 || fh <= 0.0 || screen_w <= 0.0 || screen_h <= 0.0 {
+        // No screen geometry yet (window hasn't reported size). Fall back
+        // to no crop so we save *something* sensible.
+        return (0, 0, frame_w, frame_h);
+    }
+    // Cover scale: scale the frame so the wider dimension just covers the
+    // screen, the other overflows.
+    let scale = (screen_w / fw).max(screen_h / fh);
+    let scaled_x_off = (screen_w - fw * scale) / 2.0;
+    let scaled_y_off = (screen_h - fh * scale) / 2.0;
+    let frame_rect = frame_rect_on_screen(screen_w, screen_h, top_h, bottom_h, target_ratio);
+    // Inverse-map the on-screen frame rect back to sensor coords.
+    let sx = ((frame_rect.x - scaled_x_off) / scale).max(0.0);
+    let sy = ((frame_rect.y - scaled_y_off) / scale).max(0.0);
+    let scw = (frame_rect.width / scale).min(fw - sx);
+    let sch = (frame_rect.height / scale).min(fh - sy);
+    (sx as u32, sy as u32, scw as u32, sch as u32)
+}
+
+/// Canvas program that draws translucent top/bottom bars for UI backgrounds and crop framing.
+/// This is the single source of truth for all translucent overlays — the top bar and bottom
+/// controls containers have transparent backgrounds and rely on this canvas.
+struct OverlayBackgroundProgram {
+    /// Target aspect ratio (width / height), or None for no crop framing
+    target_ratio: Option<f32>,
+    /// Translucent overlay color
+    overlay_color: Color,
+    /// Fixed pixel height for the top UI bar
+    top_height: f32,
+    /// Fixed pixel height for the bottom UI controls scrim (matches the
+    /// actual UI footprint, not a fraction of the window).
+    bottom_height: f32,
+}
+
+impl cosmic::widget::canvas::Program<Message, cosmic::Theme> for OverlayBackgroundProgram {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::Renderer,
+        _theme: &cosmic::Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: cosmic::iced::mouse::Cursor,
+    ) -> Vec<cosmic::widget::canvas::Geometry<cosmic::Renderer>> {
+        let mut frame = cosmic::widget::canvas::Frame::new(renderer, bounds.size());
+
+        // The framed rect is shared with the capture path
+        // (`cover_capture_crop`) so the saved photo matches what's
+        // visible inside the crop bars — including when the UI bars are
+        // asymmetric and a sensor-centered crop would diverge from the
+        // on-screen content area.
+        let frame_rect = frame_rect_on_screen(
+            bounds.width,
+            bounds.height,
+            self.top_height,
+            self.bottom_height,
+            self.target_ratio,
+        );
+
+        // Derive scrim bars from frame_rect. Each bar covers everything
+        // *outside* the frame, so the framed area is exactly target_ratio.
+        let top_bar = frame_rect.y;
+        let bottom_bar = (bounds.height - (frame_rect.y + frame_rect.height)).max(0.0);
+        let left_bar = frame_rect.x;
+        let right_bar = (bounds.width - (frame_rect.x + frame_rect.width)).max(0.0);
+
+        // Draw top bar
+        if top_bar > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::ORIGIN,
+                cosmic::iced::Size::new(bounds.width, top_bar),
+                self.overlay_color,
+            );
+        }
+
+        // Draw bottom bar
+        if bottom_bar > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::new(0.0, bounds.height - bottom_bar),
+                cosmic::iced::Size::new(bounds.width, bottom_bar),
+                self.overlay_color,
+            );
+        }
+
+        // Draw left bar (between top and bottom bars)
+        if left_bar > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::new(0.0, top_bar),
+                cosmic::iced::Size::new(left_bar, bounds.height - top_bar - bottom_bar),
+                self.overlay_color,
+            );
+        }
+
+        // Draw right bar (between top and bottom bars)
+        if right_bar > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::new(bounds.width - right_bar, top_bar),
+                cosmic::iced::Size::new(right_bar, bounds.height - top_bar - bottom_bar),
+                self.overlay_color,
+            );
+        }
+
+        vec![frame.into_geometry()]
     }
 }
 
@@ -140,36 +488,136 @@ fn build_overlay_popup<'a>(
         .into()
 }
 
-/// Create an icon button with a themed background for use on camera preview overlays
+/// Create an icon button with a themed background for use on camera preview overlays.
+/// `highlighted = true` switches to the accent (Suggested) class so toggle-state
+/// buttons (flash, HDR, tools menu) show their active state visually.
 fn overlay_icon_button<'a, M: Clone + 'static>(
     handle: impl Into<widget::icon::Handle>,
     message: Option<M>,
     highlighted: bool,
 ) -> Element<'a, M> {
-    // Create icon widget that inherits theme colors
-    let icon_widget = widget::icon(handle.into()).size(20);
-
-    // Use custom button with icon as content - this allows icon to inherit theme colors
-    // Use Suggested for active state, Text for inactive (transparent background)
-    let mut button = widget::button::custom(icon_widget)
-        .padding(8)
-        .class(if highlighted {
-            cosmic::theme::Button::Suggested
-        } else {
-            cosmic::theme::Button::Text
-        });
-
+    let mut button = widget::button::icon(handle).extra_small();
+    if highlighted {
+        button = button.class(cosmic::theme::Button::Suggested);
+    }
     if let Some(msg) = message {
         button = button.on_press(msg);
     }
-
-    // Wrap in container with themed background for better visibility on camera preview
-    widget::container(button)
-        .style(overlay_container_style)
-        .into()
+    button.into()
 }
 
+/// Animation duration for fit/fill transition.
+pub const FIT_ANIMATION_DURATION: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Animation duration for the zoom-reset transition.
+pub const ZOOM_ANIMATION_DURATION: std::time::Duration = std::time::Duration::from_millis(300);
+
 impl AppModel {
+    /// Settled cover blend: 0.0 (Contain) when fit-to-view is enabled in a
+    /// mode that supports it (Photo, View), 1.0 (Cover) everywhere else.
+    /// The single source of truth for the preview's geometry target.
+    pub fn settled_blend(&self) -> f32 {
+        if self.preview_fit_to_view && self.mode.supports_fit_and_zoom() {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    /// Animated zoom level. During an in-flight zoom-reset transition,
+    /// interpolates from the captured starting zoom toward `self.zoom_level`
+    /// using the same ease-out cubic shape as the fit/fill animation.
+    /// Pinch and step zoom clear `zoom_animation`, so they remain real-time.
+    pub fn current_zoom_level(&self) -> f32 {
+        let target = self.zoom_level;
+        let Some(anim) = self.zoom_animation else {
+            return target;
+        };
+        let t =
+            (anim.start.elapsed().as_secs_f32() / ZOOM_ANIMATION_DURATION.as_secs_f32()).min(1.0);
+        let eased = 1.0 - (1.0 - t).powi(3);
+        anim.from + (target - anim.from) * eased
+    }
+
+    /// Eased progress of the in-flight fit animation, in [0, 1]. Returns 1.0
+    /// when no animation is running (i.e. fully settled).
+    fn fit_animation_eased(&self) -> f32 {
+        let Some(anim) = self.fit_animation else {
+            return 1.0;
+        };
+        let t =
+            (anim.start.elapsed().as_secs_f32() / FIT_ANIMATION_DURATION.as_secs_f32()).min(1.0);
+        // Ease-out cubic: 1 - (1-t)^3
+        1.0 - (1.0 - t).powi(3)
+    }
+
+    /// Returns the current cover blend value (0.0 = contain/fit, 1.0 = cover/fill).
+    /// During animation, returns an ease-out interpolation toward `settled_blend()`.
+    pub fn cover_blend(&self) -> f32 {
+        let target = self.settled_blend();
+        let Some(anim) = self.fit_animation else {
+            return target;
+        };
+        anim.from.blend + (target - anim.from.blend) * self.fit_animation_eased()
+    }
+
+    /// Snapshot every value that animates through a fit/fill transition.
+    /// Callers take this *before* mutating `self.mode` or
+    /// `self.preview_fit_to_view`, then pass the snapshot to
+    /// `start_fit_animation`. Centralising the read here means a new
+    /// animated channel only needs to be added once (struct + this method
+    /// + the matching settled getter).
+    pub fn capture_fit_state(&self) -> crate::app::state::FitFrom {
+        crate::app::state::FitFrom {
+            blend: self.cover_blend(),
+            top_ui_height: self.top_ui_height(),
+            bottom_ui_height: self.bottom_ui_height(),
+            capture_area_height: self.capture_area_height(),
+        }
+    }
+
+    /// Install a fit/fill animation if any of the animated values differ
+    /// from where the eye currently is, returning the tick task that drives
+    /// it (or `Task::none` when no animation is needed). Callers must mutate
+    /// `self.mode` and/or `self.preview_fit_to_view` before calling so the
+    /// settled values reflect the new state. If a tick chain is already in
+    /// flight (i.e. `fit_animation` was already `Some`), no new chain is
+    /// spawned — the existing one picks up the replaced animation on its
+    /// next fire, so re-triggers don't double the tick rate.
+    pub fn start_fit_animation(
+        &mut self,
+        from: crate::app::state::FitFrom,
+    ) -> cosmic::Task<cosmic::Action<Message>> {
+        let target_blend = self.settled_blend();
+        let target_top = self.settled_top_ui_height();
+        let target_bottom = self.settled_bottom_ui_height();
+        let target_capture = self.settled_capture_area_height();
+        let differs = (target_blend - from.blend).abs() > f32::EPSILON
+            || (target_top - from.top_ui_height).abs() > f32::EPSILON
+            || (target_bottom - from.bottom_ui_height).abs() > f32::EPSILON
+            || (target_capture - from.capture_area_height).abs() > f32::EPSILON;
+        if !differs {
+            return cosmic::Task::none();
+        }
+        // The animation crosses the View-mode boundary whenever the source
+        // or destination has zero capture-area height (View's signature).
+        // Storing this explicitly means downstream rendering paths don't
+        // have to infer it from a height comparison.
+        let is_view_boundary =
+            from.capture_area_height <= f32::EPSILON || target_capture <= f32::EPSILON;
+        let was_idle = self.fit_animation.is_none();
+        self.fit_animation = Some(crate::app::state::FitAnimation {
+            start: std::time::Instant::now(),
+            from,
+            is_view_boundary,
+        });
+        if was_idle {
+            Self::delay_task(16, Message::FitAnimationTick)
+        } else {
+            cosmic::Task::none()
+        }
+    }
+
     /// Build the main application view
     ///
     /// Composes all UI components into a layered layout with overlays.
@@ -231,81 +679,51 @@ impl AppModel {
         // Build top bar
         let top_bar = self.build_top_bar();
 
-        // Wrap preview in mouse area for theatre mode interactions
-        let camera_preview = if self.theatre.enabled {
-            // In theatre mode, toggle UI visibility on click/tap
-            widget::mouse_area(camera_preview)
-                .on_press(Message::TheatreToggleUI)
-                .into()
-        } else {
-            camera_preview
-        };
-
-        // Check if zoom label should be shown (only in Photo mode)
-        let show_zoom_label = self.mode == CameraMode::Photo;
+        // Zoom/fit row is shown in modes that allow manual zoom and the
+        // fit-to-view toggle (Photo, View).
+        let show_zoom_label = self.mode.supports_fit_and_zoom();
 
         // Capture button area - changes based on recording/streaming state and video file selection
         // Check if we have video file controls (play/pause button for video file sources)
-        let has_video_controls = self.build_video_play_pause_button().is_some();
+        let play_pause_button = self.build_video_play_pause_button();
+        let has_video_controls = play_pause_button.is_some();
 
         let capture_button_only = if (self.recording.is_recording()
             && !self.quick_record.is_recording())
             || self.virtual_camera.is_streaming()
         {
-            // When recording/streaming (not quick-record): stop button centered,
-            // photo button aligned with camera switch button in bottom bar below.
-            // Mirror the bottom bar: [Gallery=44] [Fill] [Center] [Fill] [Switch=44]
-            // Mirror the bottom bar layout exactly:
-            // Bottom bar: [gallery=44] [Fill] [carousel=150] [Fill] [switch=44]
-            // Recording:  [spacer=44]  [Fill] [stop=150]     [Fill] [photo]
-            // The stop circle is wrapped in a 150px container to match
-            // the carousel width, ensuring Fill spacers are identical
-            // and the photo button aligns with the camera switch position.
-            // Use the same layout as the bottom bar:
-            // [gallery(Shrink)] [Fill] [carousel(Shrink)] [Fill] [SlideH(switch, -1.0)]
-            // SlideH shifts the button visually inward by the carousel's
-            // button slide offset, keeping it aligned with the camera switch.
+            // Mirror the bottom bar's three-column layout so the stop circle
+            // sits where the carousel does and the photo button lines up with
+            // the camera-switch position. `three_col_row` is the shared shape;
+            // the side spacer width and center container width must match the
+            // bottom bar's gallery/switch buttons and carousel width.
             let stop_circle = self.build_capture_circle();
             let photo_button = self.build_photo_during_recording_button();
             let slide = std::sync::Arc::clone(&self.carousel_button_slide);
 
             let spacing = cosmic::theme::spacing();
-            let side_width = ui::PLACEHOLDER_BUTTON_WIDTH; // 44px
-            // Match carousel layout width (adapts to theme spacing density)
+            let side_width = ui::PLACEHOLDER_BUTTON_WIDTH;
             let center_width = crate::app::bottom_bar::mode_carousel::carousel_width_for_modes(
                 &self.available_modes(),
             );
-            let row = widget::row()
-                .push(
-                    widget::Space::new()
-                        .width(Length::Fixed(side_width))
-                        .height(Length::Shrink),
-                )
-                .push(
-                    widget::Space::new()
-                        .width(Length::Fill)
-                        .height(Length::Shrink),
-                )
-                .push(
-                    widget::container(stop_circle)
-                        .width(Length::Fixed(center_width))
-                        .center_x(center_width),
-                )
-                .push(
-                    widget::Space::new()
-                        .width(Length::Fill)
-                        .height(Length::Shrink),
-                )
-                .push(SlideH::new(photo_button, slide, -1.0))
-                .padding([0, spacing.space_m])
-                .align_y(Alignment::Center)
-                .width(Length::Fill);
 
-            row.into()
+            // Vertical padding matches build_capture_button so the circle
+            // doesn't shift when the layout flips between idle and recording.
+            crate::app::bottom_bar::three_col_row(
+                widget::Space::new()
+                    .width(Length::Fixed(side_width))
+                    .height(Length::Shrink)
+                    .into(),
+                widget::container(stop_circle)
+                    .width(Length::Fixed(center_width))
+                    .center_x(center_width)
+                    .into(),
+                SlideH::new(photo_button, slide, -1.0).into(),
+                [spacing.space_xs, spacing.space_m],
+            )
         } else if has_video_controls {
             // Video file selected but not streaming: show play button + capture button
             let capture_button = self.build_capture_button();
-            let play_pause_button = self.build_video_play_pause_button();
             let icon_button_width = crate::constants::ui::ICON_BUTTON_WIDTH;
 
             // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
@@ -347,152 +765,134 @@ impl AppModel {
             self.build_capture_button()
         };
 
-        // Capture button area (filter name label is now an overlay on the preview)
-        let capture_button_area: Element<'_, Message> = capture_button_only;
+        // Capture button area (filter name label is now an overlay on the
+        // preview). Wrap in a fixed-height container driven by the animated
+        // `capture_area_height` so the slot collapses to 0 when entering
+        // View and expands back when leaving — the fit/zoom row above
+        // glides toward / away from the carousel. The capture button
+        // itself, however, pops in/out instead of being gradually clipped:
+        // we render an empty Space whenever a View transition is in flight
+        // and only swap to the real button once it's at its settled height.
+        let capture_h = self.capture_area_height();
+        let view_transition_in_flight = self.fit_animation.is_some_and(|a| a.is_view_boundary);
+        let inner: Element<'_, Message> = if self.mode.is_view_only() || view_transition_in_flight {
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Shrink)
+                .into()
+        } else {
+            capture_button_only
+        };
+        let capture_button_area: Element<'_, Message> = widget::container(inner)
+            .width(Length::Fill)
+            .height(Length::Fixed(capture_h.max(0.0)))
+            .clip(true)
+            .into();
 
         // Bottom area: always show bottom bar (filter picker is now a sidebar overlay)
         let bottom_area: Element<'_, Message> = self.build_bottom_bar();
 
-        // Build content based on theatre mode
-        let content: Element<'_, Message> = if self.theatre.enabled {
-            // Theatre mode - camera preview as full background with UI overlaid
-            debug!(
-                "Building theatre mode layout (UI visible: {})",
-                self.theatre.ui_visible
-            );
+        // Immersive layout: camera preview fills the screen, all UI overlaid on top.
+        // Aspect ratio crop is shown as translucent top/bottom bars (canvas overlay).
+        let content: Element<'_, Message> = {
+            let spacing = cosmic::theme::spacing();
+            let control_spacing = spacing.space_xs;
 
-            if self.theatre.ui_visible {
-                // Theatre mode with UI visible - overlay all UI on top of preview
-                // Use same layout structure as normal mode to prevent position jumps
+            let mut bottom_controls = widget::column().width(Length::Fill);
 
-                // Bottom controls: zoom label + capture button + bottom area in a column
-                // Zoom label is added first (above capture button) with same 8px padding as normal mode
-                let mut bottom_controls = widget::column().width(Length::Fill);
-
-                // Add zoom label above capture button (same 8px margin as normal mode)
-                if show_zoom_label {
-                    bottom_controls = bottom_controls.push(
-                        widget::container(self.build_zoom_label())
-                            .width(Length::Fill)
-                            .center_x(Length::Fill)
-                            .padding([0, 0, 8, 0]),
-                    );
-                }
-
-                // Add video progress bar between preview and capture button (if streaming video)
-                if let Some(progress_bar) = self.build_video_progress_bar() {
-                    bottom_controls = bottom_controls.push(progress_bar);
-                }
-
-                bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
-
-                // Flash error popup for theatre mode (centered in preview area)
-                let flash_error_popup: Option<Element<'_, Message>> =
-                    if self.flash_error_popup.is_some() {
-                        Some(self.build_flash_error_popup())
-                    } else {
-                        None
-                    };
-
-                let mut theatre_stack = cosmic::iced::widget::stack![
-                    camera_preview,
-                    self.build_composition_overlay(),
-                    // QR overlay (custom widget calculates positions at render time)
-                    self.build_qr_overlay(),
-                    // Privacy cover warning overlay (centered)
-                    self.build_privacy_warning(),
-                    // Top bar aligned to top (no extra padding - row has its own padding)
-                    widget::container(top_bar)
-                        .width(Length::Fill)
-                        .align_y(cosmic::iced::alignment::Vertical::Top),
-                    // Bottom controls aligned to bottom
-                    widget::container(bottom_controls)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_y(cosmic::iced::alignment::Vertical::Bottom)
-                ];
-
-                if let Some(popup) = flash_error_popup {
-                    theatre_stack = theatre_stack.push(popup);
-                }
-
-                // Timer countdown overlay (centered on preview)
-                if let Some(remaining) = self.photo_timer_countdown {
-                    theatre_stack = theatre_stack.push(self.build_timer_overlay(remaining));
-                }
-
-                theatre_stack
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
-            } else {
-                // Theatre mode with UI hidden - show only full-screen preview with QR overlay and privacy warning
-                let mut hidden_stack = cosmic::iced::widget::stack![
-                    camera_preview,
-                    self.build_composition_overlay(),
-                    self.build_qr_overlay(),
-                    self.build_privacy_warning()
-                ];
-
-                if self.flash_error_popup.is_some() {
-                    hidden_stack = hidden_stack.push(self.build_flash_error_popup());
-                }
-
-                hidden_stack.width(Length::Fill).height(Length::Fill).into()
-            }
-        } else {
-            // Normal mode - traditional layout
-            // Preview with top bar, QR overlay, privacy warning, and optional filter name label overlaid
-            let mut preview_stack = cosmic::iced::widget::stack![
-                camera_preview,
-                self.build_composition_overlay(),
-                // QR overlay (custom widget calculates positions at render time)
-                self.build_qr_overlay(),
-                // Privacy cover warning overlay (centered)
-                self.build_privacy_warning(),
-                widget::container(top_bar)
-                    .width(Length::Fill)
-                    .align_y(cosmic::iced::alignment::Vertical::Top)
-            ];
-
-            // Flash permission error popup (centered in preview area)
-            if self.flash_error_popup.is_some() {
-                preview_stack = preview_stack.push(self.build_flash_error_popup());
+            if let Some(progress_bar) = self.build_video_progress_bar() {
+                bottom_controls = bottom_controls.push(progress_bar);
             }
 
-            // Timer countdown overlay (centered on preview)
-            if let Some(remaining) = self.photo_timer_countdown {
-                preview_stack = preview_stack.push(self.build_timer_overlay(remaining));
-            }
+            bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
 
-            // Add zoom label overlapping bottom of preview (centered above capture button)
-            if show_zoom_label {
-                preview_stack = preview_stack.push(
-                    widget::container(self.build_zoom_label())
+            // Bottom section: zoom label + bottom controls
+            let mut bottom_section = widget::column().width(Length::Fill);
+
+            // Hide the fit/zoom row while the tools menu is open so the two
+            // don't visually compete — the menu itself is shown as an overlay.
+            if show_zoom_label && !self.tools_menu_visible {
+                let fit_icon_name = if self.preview_fit_to_view {
+                    "view-fullscreen-symbolic"
+                } else {
+                    "view-restore-symbolic"
+                };
+                let fit_button_inner = widget::button::custom(
+                    widget::row()
+                        .push(
+                            widget::icon::from_name(fit_icon_name)
+                                .symbolic(true)
+                                .size(16),
+                        )
+                        .padding([0, spacing.space_s])
+                        .height(Length::Fixed(spacing.space_l.into()))
+                        .align_y(Alignment::Center),
+                )
+                .padding(0)
+                .on_press(Message::TogglePreviewFit)
+                .class(if self.preview_fit_to_view {
+                    cosmic::theme::Button::Suggested
+                } else {
+                    overlay_chip_button_class()
+                });
+                // Inactive: wrap in the same translucent scrim used for the
+                // top/bottom bars so the button sits on a matching surface.
+                // Active: keep the Suggested (accent) fill so toggle state
+                // stays visible.
+                let fit_button: Element<'_, Message> = if self.preview_fit_to_view {
+                    fit_button_inner.into()
+                } else {
+                    widget::container(fit_button_inner)
+                        .style(overlay_container_style)
+                        .into()
+                };
+
+                let zoom_row = widget::row()
+                    .push(fit_button)
+                    .push(widget::space::horizontal().width(Length::Fixed(8.0)))
+                    .push(self.build_zoom_label())
+                    .align_y(Alignment::Center);
+
+                bottom_section = bottom_section.push(
+                    widget::container(zoom_row)
                         .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(cosmic::iced::alignment::Horizontal::Center)
-                        .align_y(cosmic::iced::alignment::Vertical::Bottom)
-                        .padding([0, 0, 8, 0]),
+                        .center_x(Length::Fill)
+                        .padding([0, 0, control_spacing, 0]),
                 );
             }
 
-            let preview_with_overlays = preview_stack.width(Length::Fill).height(Length::Fill);
+            bottom_section = bottom_section.push(bottom_controls);
 
-            // Column layout: preview with overlays, optional progress bar, capture button area, bottom area
-            let mut main_column = widget::column()
-                .push(preview_with_overlays)
-                .width(Length::Fill)
-                .height(Length::Fill);
+            // The shader handles the Cover/Contain blend via cover_blend(), so
+            // the preview always uses Cover layout (fills the window).  The shader
+            // zooms out to show the full frame in Contain mode, with transparent
+            // letterbox areas.
+            let camera_layer: Element<'_, Message> = camera_preview;
 
-            // Add video progress bar between preview and capture button (if streaming video)
-            if let Some(progress_bar) = self.build_video_progress_bar() {
-                main_column = main_column.push(progress_bar);
+            let mut main_stack = cosmic::iced::widget::stack![
+                camera_layer,
+                self.build_crop_overlay(),
+                self.build_composition_overlay(),
+                self.build_qr_overlay(),
+                self.build_privacy_warning(),
+                widget::container(top_bar)
+                    .width(Length::Fill)
+                    .align_y(cosmic::iced::alignment::Vertical::Top),
+                widget::container(bottom_section)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_y(cosmic::iced::alignment::Vertical::Bottom)
+            ];
+
+            if self.flash_error_popup.is_some() {
+                main_stack = main_stack.push(self.build_flash_error_popup());
             }
 
-            main_column = main_column.push(capture_button_area).push(bottom_area);
+            if let Some(remaining) = self.photo_timer_countdown {
+                main_stack = main_stack.push(self.build_timer_overlay(remaining));
+            }
 
-            main_column.into()
+            main_stack.width(Length::Fill).height(Length::Fill).into()
         };
 
         // Wrap content in a stack so we can overlay the picker
@@ -537,11 +937,32 @@ impl AppModel {
 
     /// Build the top bar with recording indicator and format button
     fn build_top_bar(&self) -> Element<'_, Message> {
+        // View mode strips every top-bar button (and the title-bar window
+        // controls) but keeps the draggable row so the user can still move
+        // / double-click-to-maximize the window.
+        if self.mode.is_view_only() {
+            let empty = widget::container(
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(TOP_BAR_HEIGHT)),
+            )
+            .width(Length::Fill)
+            .style(|_theme| widget::container::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                ..Default::default()
+            });
+            return widget::mouse_area(empty)
+                .on_drag(Message::WindowDrag)
+                .on_double_press(Message::WindowToggleMaximize)
+                .into();
+        }
+
         let spacing = cosmic::theme::spacing();
         let is_disabled = self.transition_state.ui_disabled;
 
+        // Match the native COSMIC header bar padding: [7, 7, 8, 7] (not maximized)
         let mut row = widget::row()
-            .padding(spacing.space_xs)
+            .padding([7, 7, 8, 7])
             .align_y(Alignment::Center);
 
         // Show recording indicator when recording (from controls module)
@@ -592,156 +1013,23 @@ impl AppModel {
                 .height(Length::Shrink),
         );
 
-        // Hide flash and tools buttons when any picker/menu is open
-        let hide_top_bar_buttons = self.tools_menu_visible
-            || self.exposure_picker_visible
-            || self.color_picker_visible
-            || self.motor_picker_visible;
-
-        if !hide_top_bar_buttons {
-            // Flash toggle button (Photo mode, or Video/Timelapse mode with hardware flash for torch)
-            if self.mode == CameraMode::Photo
-                || ((self.mode == CameraMode::Video || self.mode == CameraMode::Timelapse)
-                    && self.use_hardware_flash())
-            {
-                let flash_icon_bytes = if self.flash_enabled {
-                    FLASH_ICON
-                } else {
-                    FLASH_OFF_ICON
-                };
-                let flash_icon = widget::icon::from_svg_bytes(flash_icon_bytes).symbolic(true);
-
-                if is_disabled {
-                    row = row.push(
-                        widget::container(widget::icon(flash_icon).size(20))
-                            .style(|_theme| widget::container::Style {
-                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                ..Default::default()
-                            })
-                            .padding([4, 8]),
-                    );
-                } else {
-                    row = row.push(overlay_icon_button(
-                        flash_icon,
-                        Some(Message::ToggleFlash),
-                        self.flash_enabled,
-                    ));
-                }
-
-                // 5px spacing
-                row = row.push(
-                    widget::Space::new()
-                        .width(Length::Fixed(5.0))
-                        .height(Length::Shrink),
-                );
-
-                if self.should_show_burst_button() {
-                    // Show moon-off icon when HDR+ is disabled (by override or setting)
-                    let is_hdr_active = self.would_use_burst_mode();
-                    let moon_icon_bytes = if is_hdr_active {
-                        MOON_ICON
-                    } else {
-                        MOON_OFF_ICON
-                    };
-                    let moon_icon = widget::icon::from_svg_bytes(moon_icon_bytes).symbolic(true);
-
-                    if is_disabled {
-                        row = row.push(
-                            widget::container(widget::icon(moon_icon).size(20))
-                                .style(|_theme| widget::container::Style {
-                                    text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                    ..Default::default()
-                                })
-                                .padding([4, 8]),
-                        );
-                    } else {
-                        row = row.push(overlay_icon_button(
-                            moon_icon,
-                            Some(Message::ToggleBurstMode),
-                            is_hdr_active,
-                        ));
-                    }
-
-                    // 5px spacing
-                    row = row.push(
-                        widget::Space::new()
-                            .width(Length::Fixed(5.0))
-                            .height(Length::Shrink),
-                    );
-                }
-            }
-
-            // File open button (only in Virtual mode, hidden when streaming)
-            if self.mode == CameraMode::Virtual && !self.virtual_camera.is_streaming() {
-                let has_file = self.virtual_camera_file_source.is_some();
-                if is_disabled {
-                    let file_button = widget::button::icon(
-                        icon::from_name("document-open-symbolic").symbolic(true),
-                    );
-                    row = row.push(widget::container(file_button).style(|_theme| {
-                        widget::container::Style {
-                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                            ..Default::default()
-                        }
-                    }));
-                } else {
-                    let message = if has_file {
-                        Message::ClearVirtualCameraFile
-                    } else {
-                        Message::OpenVirtualCameraFile
-                    };
-                    row = row.push(overlay_icon_button(
-                        icon::from_name("document-open-symbolic").symbolic(true),
-                        Some(message),
-                        has_file,
-                    ));
-                }
-
-                // 5px spacing
-                row = row.push(
-                    widget::Space::new()
-                        .width(Length::Fixed(5.0))
-                        .height(Length::Shrink),
-                );
-            }
-
-            // Motor/PTZ control button (shows when camera has motor controls)
-            if self.has_motor_controls() {
-                let motor_icon = widget::icon::from_svg_bytes(CAMERA_TILT_ICON).symbolic(true);
-
-                if is_disabled {
-                    row = row.push(
-                        widget::container(widget::icon(motor_icon.clone()).size(20))
-                            .style(|_theme| widget::container::Style {
-                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                                ..Default::default()
-                            })
-                            .padding([4, 8]),
-                    );
-                } else {
-                    row = row.push(overlay_icon_button(
-                        motor_icon,
-                        Some(Message::ToggleMotorPicker),
-                        self.motor_picker_visible,
-                    ));
-                }
-
-                // 5px spacing
-                row = row.push(
-                    widget::Space::new()
-                        .width(Length::Fixed(5.0))
-                        .height(Length::Shrink),
-                );
-            }
-
-            // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, theatre)
-            // Highlight when tools menu is open or any tool setting is non-default
-            let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
-            let tools_icon = widget::icon::from_svg_bytes(TOOLS_GRID_ICON).symbolic(true);
+        // Top-bar toggle buttons (flash, HDR, file, motor, tools) are always
+        // shown. Picker overlays appear on top of them but never replace them.
+        // Flash toggle button (Photo mode, or Video/Timelapse mode with hardware flash for torch)
+        if self.mode == CameraMode::Photo
+            || ((self.mode == CameraMode::Video || self.mode == CameraMode::Timelapse)
+                && self.use_hardware_flash())
+        {
+            let flash_icon_bytes = if self.flash_enabled {
+                FLASH_ICON
+            } else {
+                FLASH_OFF_ICON
+            };
+            let flash_icon = widget::icon::from_svg_bytes(flash_icon_bytes).symbolic(true);
 
             if is_disabled {
                 row = row.push(
-                    widget::container(widget::icon(tools_icon).size(20))
+                    widget::container(widget::icon(flash_icon).size(20))
                         .style(|_theme| widget::container::Style {
                             text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
                             ..Default::default()
@@ -750,19 +1038,192 @@ impl AppModel {
                 );
             } else {
                 row = row.push(overlay_icon_button(
-                    tools_icon,
-                    Some(Message::ToggleToolsMenu),
-                    tools_active,
+                    flash_icon,
+                    Some(Message::ToggleFlash),
+                    self.flash_enabled,
                 ));
+            }
+
+            // 5px spacing
+            row = row.push(
+                widget::Space::new()
+                    .width(Length::Fixed(5.0))
+                    .height(Length::Shrink),
+            );
+
+            if self.should_show_burst_button() {
+                // Show moon-off icon when HDR+ is disabled (by override or setting)
+                let is_hdr_active = self.would_use_burst_mode();
+                let moon_icon_bytes = if is_hdr_active {
+                    MOON_ICON
+                } else {
+                    MOON_OFF_ICON
+                };
+                let moon_icon = widget::icon::from_svg_bytes(moon_icon_bytes).symbolic(true);
+
+                if is_disabled {
+                    row = row.push(
+                        widget::container(widget::icon(moon_icon).size(20))
+                            .style(|_theme| widget::container::Style {
+                                text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                                ..Default::default()
+                            })
+                            .padding([4, 8]),
+                    );
+                } else {
+                    row = row.push(overlay_icon_button(
+                        moon_icon,
+                        Some(Message::ToggleBurstMode),
+                        is_hdr_active,
+                    ));
+                }
+
+                // 5px spacing
+                row = row.push(
+                    widget::Space::new()
+                        .width(Length::Fixed(5.0))
+                        .height(Length::Shrink),
+                );
             }
         }
 
-        widget::container(row)
-            .width(Length::Fill)
-            .style(|_theme| widget::container::Style {
-                background: Some(Background::Color(Color::TRANSPARENT)),
-                ..Default::default()
-            })
+        // File open button (only in Virtual mode, hidden when streaming)
+        if self.mode == CameraMode::Virtual && !self.virtual_camera.is_streaming() {
+            let has_file = self.virtual_camera_file_source.is_some();
+            if is_disabled {
+                let file_button =
+                    widget::button::icon(icon::from_name("document-open-symbolic").symbolic(true));
+                row = row.push(widget::container(file_button).style(|_theme| {
+                    widget::container::Style {
+                        text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                        ..Default::default()
+                    }
+                }));
+            } else {
+                let message = if has_file {
+                    Message::ClearVirtualCameraFile
+                } else {
+                    Message::OpenVirtualCameraFile
+                };
+                row = row.push(overlay_icon_button(
+                    icon::from_name("document-open-symbolic").symbolic(true),
+                    Some(message),
+                    has_file,
+                ));
+            }
+
+            // 5px spacing
+            row = row.push(
+                widget::Space::new()
+                    .width(Length::Fixed(5.0))
+                    .height(Length::Shrink),
+            );
+        }
+
+        // Motor/PTZ control button (shows when camera has motor controls)
+        if self.has_motor_controls() {
+            let motor_icon = widget::icon::from_svg_bytes(CAMERA_TILT_ICON).symbolic(true);
+
+            if is_disabled {
+                row = row.push(
+                    widget::container(widget::icon(motor_icon.clone()).size(20))
+                        .style(|_theme| widget::container::Style {
+                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                            ..Default::default()
+                        })
+                        .padding([4, 8]),
+                );
+            } else {
+                row = row.push(overlay_icon_button(
+                    motor_icon,
+                    Some(Message::ToggleMotorPicker),
+                    self.motor_picker_visible,
+                ));
+            }
+
+            // 5px spacing
+            row = row.push(
+                widget::Space::new()
+                    .width(Length::Fixed(5.0))
+                    .height(Length::Shrink),
+            );
+        }
+
+        // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter)
+        // Highlight when tools menu is open or any tool setting is non-default
+        let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
+        let tools_icon = widget::icon::from_svg_bytes(TOOLS_GRID_ICON).symbolic(true);
+
+        if is_disabled {
+            row = row.push(
+                widget::container(widget::icon(tools_icon).size(20))
+                    .style(|_theme| widget::container::Style {
+                        text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
+                        ..Default::default()
+                    })
+                    .padding([4, 8]),
+            );
+        } else {
+            row = row.push(overlay_icon_button(
+                tools_icon,
+                Some(Message::ToggleToolsMenu),
+                tools_active,
+            ));
+        }
+
+        // About and settings buttons (normally in header_end)
+        if !is_disabled {
+            row = row.push(
+                widget::button::icon(icon::from_name("help-about-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::About,
+                    )),
+            );
+            row = row.push(
+                widget::button::icon(icon::from_name("preferences-system-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::Settings,
+                    )),
+            );
+        }
+
+        // Window control buttons
+        row = row.push(
+            widget::Space::new()
+                .width(Length::Fixed(5.0))
+                .height(Length::Shrink),
+        );
+        row = row
+            .push(
+                widget::button::icon(icon::from_name("window-minimize-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::WindowMinimize),
+            )
+            .push(
+                widget::button::icon(icon::from_name("window-maximize-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::WindowToggleMaximize),
+            )
+            .push(
+                widget::button::icon(icon::from_name("window-close-symbolic").symbolic(true))
+                    .extra_small()
+                    .on_press(Message::WindowClose),
+            );
+
+        let top_bar_widget =
+            widget::container(row)
+                .width(Length::Fill)
+                .style(|_theme| widget::container::Style {
+                    background: Some(Background::Color(Color::TRANSPARENT)),
+                    ..Default::default()
+                });
+
+        // Make the top bar draggable for window movement
+        widget::mouse_area(top_bar_widget)
+            .on_drag(Message::WindowDrag)
+            .on_double_press(Message::WindowToggleMaximize)
             .into()
     }
 
@@ -877,15 +1338,23 @@ impl AppModel {
 
         let is_zoomed = (self.zoom_level - 1.0).abs() > 0.01;
 
-        // Use text button style - Suggested when zoomed, Standard when at 1x
-        widget::button::text(zoom_text)
+        // Suggested (accent fill) when zoomed; otherwise a Text button wrapped
+        // in `overlay_container_style` so the resting background matches the
+        // top/bottom bars' translucent scrim.
+        let button = widget::button::text(zoom_text)
             .on_press(Message::ResetZoom)
             .class(if is_zoomed {
                 cosmic::theme::Button::Suggested
             } else {
-                cosmic::theme::Button::Standard
-            })
-            .into()
+                overlay_chip_button_class()
+            });
+        if is_zoomed {
+            button.into()
+        } else {
+            widget::container(button)
+                .style(overlay_container_style)
+                .into()
+        }
     }
 
     /// Build the QR code overlay layer
@@ -910,27 +1379,26 @@ impl AppModel {
                 .into();
         };
 
-        // Determine content fit mode based on theatre state
-        let content_fit = if self.theatre.enabled {
-            VideoContentFit::Cover
-        } else {
-            VideoContentFit::Contain
-        };
-
         let should_mirror = self.should_mirror_preview();
 
+        // Pass the animated `cover_blend` and UI bar heights so the QR
+        // overlay tracks the live preview through a Photo↔fit-to-view
+        // transition — without this the boxes are placed against the full
+        // window in Contain mode where the video is actually letterboxed.
         build_qr_overlay(
             &self.qr_detections,
             frame.width,
             frame.height,
-            content_fit,
+            self.cover_blend(),
+            self.top_ui_height(),
+            self.bottom_ui_height(),
             should_mirror,
         )
     }
 
     /// Build the tools menu overlay
     ///
-    /// Shows timer, aspect ratio, exposure, filter, and theatre mode buttons
+    /// Shows timer, aspect ratio, exposure, filter buttons
     /// in a floating panel aligned to the top-right with large icon buttons in a 2-row grid.
     fn build_tools_menu(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
@@ -957,35 +1425,28 @@ impl AppModel {
                 timer_active,
             ));
 
-            // Aspect ratio button (Photo mode only, disabled in theatre mode)
-            // Theatre mode always uses native resolution, so aspect ratio control is disabled
+            // Aspect ratio button (Photo mode only). Square ratios (Native,
+            // 1:1) are orientation-agnostic; the others swap to their
+            // portrait companion icon when the window is taller than wide
+            // so the label matches the rotated preview.
             let aspect_active = self.is_aspect_ratio_changed();
-            let aspect_enabled = !self.theatre.enabled;
-            let native_ratio = self.current_frame.as_ref().and_then(|f| {
-                crate::app::state::PhotoAspectRatio::from_frame_dimensions(f.width, f.height)
-            });
-            // In theatre mode, always show native icon since aspect ratio is ignored
-            let effective_ratio = if self.theatre.enabled {
-                crate::app::state::PhotoAspectRatio::Native
-            } else if self.photo_aspect_ratio == crate::app::state::PhotoAspectRatio::Native {
-                native_ratio.unwrap_or(crate::app::state::PhotoAspectRatio::Native)
-            } else {
-                self.photo_aspect_ratio
-            };
-            let aspect_icon_bytes = match effective_ratio {
+            let portrait = self.screen_is_portrait();
+            let aspect_icon_bytes = match self.photo_aspect_ratio {
                 crate::app::state::PhotoAspectRatio::Native => ASPECT_NATIVE_ICON,
-                crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
-                crate::app::state::PhotoAspectRatio::Ratio16x9 => ASPECT_16_9_ICON,
-                crate::app::state::PhotoAspectRatio::Ratio2x1 => ASPECT_2_1_ICON,
                 crate::app::state::PhotoAspectRatio::Ratio1x1 => ASPECT_1_1_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio4x3 if portrait => ASPECT_3_4_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio4x3 => ASPECT_4_3_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio16x9 if portrait => ASPECT_9_16_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio16x9 => ASPECT_16_9_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio2x1 if portrait => ASPECT_1_2_ICON,
+                crate::app::state::PhotoAspectRatio::Ratio2x1 => ASPECT_2_1_ICON,
             };
             let aspect_icon = widget::icon::from_svg_bytes(aspect_icon_bytes).symbolic(true);
-            buttons.push(self.build_tools_grid_button_with_enabled(
+            buttons.push(self.build_tools_grid_button(
                 aspect_icon,
                 fl!("tools-aspect"),
                 Message::CyclePhotoAspectRatio,
-                aspect_active && aspect_enabled, // Only show as active if enabled and changed
-                aspect_enabled,
+                aspect_active,
             ));
         }
 
@@ -1025,19 +1486,6 @@ impl AppModel {
                 filter_active,
             ));
         }
-
-        // Theatre mode button
-        let theatre_icon = if self.theatre.enabled {
-            "view-restore-symbolic"
-        } else {
-            "view-fullscreen-symbolic"
-        };
-        buttons.push(self.build_tools_grid_button(
-            icon::from_name(theatre_icon).symbolic(true),
-            fl!("tools-theatre"),
-            Message::ToggleTheatreMode,
-            self.theatre.enabled,
-        ));
 
         // Distribute buttons into 2 rows
         let items_per_row = buttons.len().div_ceil(2); // Ceiling division
@@ -1084,7 +1532,8 @@ impl AppModel {
             }
         });
 
-        // Position in top-right corner (space first pushes panel to right)
+        // Position in top-right corner, below the custom title bar so the menu
+        // doesn't overlap the window controls.
         let positioned = widget::row()
             .push(
                 widget::Space::new()
@@ -1092,7 +1541,12 @@ impl AppModel {
                     .height(Length::Shrink),
             )
             .push(panel)
-            .padding([spacing.space_xs, spacing.space_xs, 0, spacing.space_xs]);
+            .padding([
+                TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                spacing.space_xs,
+                0,
+                spacing.space_xs,
+            ]);
 
         widget::mouse_area(
             widget::container(positioned)
@@ -1155,40 +1609,25 @@ impl AppModel {
             .into()
     }
 
-    /// Check if any tool settings are non-default (for highlighting tools button)
+    /// Check if any tool settings are non-default (for highlighting tools button).
+    /// Photo-only settings (timer, aspect ratio) are only counted while the
+    /// app is in Photo mode — they don't take effect elsewhere, so they
+    /// shouldn't drive the highlight in Video / Timelapse / Virtual.
     fn has_non_default_tool_settings(&self) -> bool {
-        let timer_active = self.mode == CameraMode::Photo
-            && self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
-        let aspect_active = self.is_aspect_ratio_changed();
+        let in_photo = self.mode == CameraMode::Photo;
+        let timer_active =
+            in_photo && self.photo_timer_setting != crate::app::state::PhotoTimerSetting::Off;
+        let aspect_active = in_photo && self.is_aspect_ratio_changed();
         let exposure_active = self.is_exposure_changed();
         let color_active = self.is_color_changed();
         let filter_active = self.selected_filter != FilterType::Standard;
-        let theatre_active = self.theatre.enabled;
 
-        timer_active
-            || aspect_active
-            || exposure_active
-            || color_active
-            || filter_active
-            || theatre_active
+        timer_active || aspect_active || exposure_active || color_active || filter_active
     }
 
     /// Check if aspect ratio is cropped (not using native ratio)
     fn is_aspect_ratio_changed(&self) -> bool {
-        let (frame_width, frame_height) = self
-            .current_frame
-            .as_ref()
-            .map(|f| (f.width, f.height))
-            .unwrap_or((0, 0));
-        let has_frame = frame_width > 0 && frame_height > 0;
-        let native_ratio =
-            crate::app::state::PhotoAspectRatio::from_frame_dimensions(frame_width, frame_height);
-        has_frame
-            && match (self.photo_aspect_ratio, native_ratio) {
-                (crate::app::state::PhotoAspectRatio::Native, _) => false,
-                (selected, Some(native)) => selected != native,
-                (_, None) => true,
-            }
+        self.photo_aspect_ratio != crate::app::state::PhotoAspectRatio::Native
     }
 
     /// Check if exposure settings differ from defaults
@@ -1235,6 +1674,55 @@ impl AppModel {
                 image_changed || wb_auto_off
             })
             .unwrap_or(false)
+    }
+
+    /// Build the translucent overlay background canvas.
+    /// Draws crop framing bars when an aspect ratio is selected (Photo mode only).
+    fn build_crop_overlay(&self) -> Element<'_, Message> {
+        // In fit-to-view mode, the frame is letterboxed — no crop bars needed, just default UI bars.
+        // In Cover mode with an aspect ratio, draw crop bars.
+        let target_ratio = if !self.preview_fit_to_view
+            && self.mode == CameraMode::Photo
+            && !self.current_frame_is_file_source
+        {
+            // Display-oriented ratio so the canvas crop bars match the
+            // rotated preview on portrait windows (e.g. a "2:1" pref
+            // produces a 1:2 portrait region on screen).
+            self.photo_aspect_ratio
+                .display_ratio(self.screen_is_portrait())
+        } else {
+            None
+        };
+
+        let theme = cosmic::theme::active();
+        let cosmic_theme = theme.cosmic();
+        let bg = cosmic_theme.bg_color();
+        // Derive the scrim alpha from the animated top-bar height so it
+        // fades in/out with the Photo↔View transition without needing its
+        // own animation channel. **Invariant**: this only behaves
+        // correctly because `settled_top_ui_height()` is binary today —
+        // either 0 (View) or `TOP_BAR_HEIGHT` (every other mode). If a
+        // future mode picks an intermediate top height, the alpha will
+        // settle at a fractional value and look permanently dimmed. In
+        // that case promote `scrim_alpha` to its own `FitFrom` channel.
+        let top_h = self.top_ui_height();
+        let alpha_t = (top_h / TOP_BAR_HEIGHT).clamp(0.0, 1.0);
+        let overlay_color = Color::from_rgba(
+            bg.red,
+            bg.green,
+            bg.blue,
+            OVERLAY_BACKGROUND_ALPHA * alpha_t,
+        );
+
+        cosmic::widget::canvas(OverlayBackgroundProgram {
+            target_ratio,
+            overlay_color,
+            top_height: top_h,
+            bottom_height: self.bottom_ui_height(),
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     /// Build the privacy cover warning overlay

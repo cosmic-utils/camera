@@ -10,6 +10,7 @@ git-description = Версія Git {$hash} від {$date}
 mode-video = ВІДЕО
 mode-photo = ЗНІМОК
 mode-virtual = ВІРТУАЛЬНА
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Віртуальна камера (експериментально)
@@ -136,7 +137,6 @@ tools-aspect = Пропорції
 tools-exposure = Експозиція
 tools-color = Колір
 tools-filter = Фільтр
-tools-theatre = Театральний
 
 # PTZ controls
 ptz-title = Регулювання камери

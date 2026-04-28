@@ -12,6 +12,7 @@ mode-photo = Foto
 mode-timelapse = Časosběr
 timelapse-saving = Ukládání videa...
 mode-virtual = Virtuální
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Virtuální kamera (experimentální)
@@ -142,7 +143,6 @@ tools-aspect = Poměr stran
 tools-exposure = Expozice
 tools-color = Barvy
 tools-filter = Filtr
-tools-theatre = Kino
 
 # PTZ controls
 ptz-title = Ovládání kamery

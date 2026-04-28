@@ -85,6 +85,9 @@ impl AppModel {
                         crop_uv: None,   // No aspect ratio cropping in filter previews
                         zoom_level: 1.0, // No zoom for filter previews
                         scroll_zoom_enabled: false, // No scroll zoom for filter previews
+                        cover_blend: None,
+                        bar_top_px: 0.0,
+                        bar_bottom_px: 0.0,
                     },
                 )
             } else {

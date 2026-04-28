@@ -878,7 +878,7 @@ impl AppModel {
         let stream = self.insights.preview_stream.as_ref();
 
         let mut sorted_sizes = fmt.sizes.clone();
-        sorted_sizes.sort_by(|a, b| (b.width * b.height).cmp(&(a.width * a.height)));
+        sorted_sizes.sort_by_key(|b| std::cmp::Reverse(b.width * b.height));
 
         for size in &sorted_sizes {
             let in_libcamera = self.insights.libcamera_formats.iter().any(|lf| {

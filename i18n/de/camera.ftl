@@ -12,6 +12,7 @@ mode-photo = Foto
 mode-timelapse = Zeitraffer
 timelapse-saving = Video wird gespeichert...
 mode-virtual = Virtuell
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Virtuelle Kamera (experimentell)
@@ -140,7 +141,6 @@ tools-aspect = Seitenverhältnis
 tools-exposure = Belichtung
 tools-color = Farbe
 tools-filter = Filter
-tools-theatre = Kino
 
 # PTZ controls
 ptz-title = Kamerasteuerung

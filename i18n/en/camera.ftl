@@ -12,6 +12,7 @@ mode-photo = Photo
 mode-timelapse = Timelapse
 timelapse-saving = Saving video...
 mode-virtual = Virtual
+mode-view = View
 
 # Virtual camera
 virtual-camera-title = Virtual camera (experimental)
@@ -81,6 +82,8 @@ preset-high = High
 
 # Camera preview
 initializing-camera = Initializing camera...
+preview-fit = Fit
+preview-cover = Fill
 
 # Format picker
 format-resolution = Resolution:
@@ -142,7 +145,6 @@ tools-aspect = Aspect
 tools-exposure = Exposure
 tools-color = Color
 tools-filter = Filter
-tools-theatre = Theatre
 
 # PTZ controls
 ptz-title = Camera Controls

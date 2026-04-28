@@ -96,8 +96,8 @@ impl VideoFrame {
 struct ViewportUniform {
     /// Viewport width and height (full widget size)
     viewport_size: [f32; 2],
-    /// Content fit mode: 0 = Contain, 1 = Cover
-    content_fit_mode: u32,
+    /// Content fit blend: 0.0 = Contain, 1.0 = Cover (interpolated during animation)
+    content_fit_mode: f32,
     /// Filter mode: 0 = None, 1 = Black & White
     filter_mode: u32,
     /// Corner radius in pixels (0 = no rounding)
@@ -116,6 +116,10 @@ struct ViewportUniform {
     zoom_level: f32,
     /// Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
     rotation: u32,
+    /// Top bar height in pixels (for contain-mode centering between UI bars)
+    bar_top_height: f32,
+    /// Bottom bar height in pixels
+    bar_bottom_height: f32,
 }
 
 /// Combined frame and viewport data to reduce mutex contention
@@ -123,7 +127,8 @@ struct ViewportUniform {
 #[derive(Debug)]
 pub struct FrameViewportData {
     pub frame: Option<VideoFrame>,
-    pub viewport: (f32, f32, crate::app::video_widget::VideoContentFit),
+    /// (width, height, cover_blend, bar_top_px, bar_bottom_px)
+    pub viewport: (f32, f32, f32, f32, f32),
     /// Physical widget bounds (x, y, width, height) clamped to render target
     /// Stored during prepare() and used in render() for valid viewport rect
     pub physical_bounds: Option<(f32, f32, f32, f32)>,
@@ -252,12 +257,11 @@ struct BlurIntermediateTexture {
 
 impl VideoPrimitive {
     pub fn new(video_id: u64) -> Self {
-        use crate::app::video_widget::VideoContentFit;
         Self {
             video_id,
             data: Arc::new(Mutex::new(FrameViewportData {
                 frame: None,
-                viewport: (0.0, 0.0, VideoContentFit::Contain),
+                viewport: (0.0, 0.0, 0.0, 0.0, 0.0),
                 physical_bounds: None,
                 uv_offset: (0.0, 0.0),
                 uv_scale: (1.0, 1.0),
@@ -281,10 +285,12 @@ impl VideoPrimitive {
         &self,
         width: f32,
         height: f32,
-        content_fit: crate::app::video_widget::VideoContentFit,
+        cover_blend: f32,
+        bar_top_px: f32,
+        bar_bottom_px: f32,
     ) {
         if let Ok(mut guard) = self.data.lock() {
-            guard.viewport = (width, height, content_fit);
+            guard.viewport = (width, height, cover_blend, bar_top_px, bar_bottom_px);
         }
     }
 }
@@ -414,14 +420,10 @@ impl PrimitiveTrait for VideoPrimitive {
             }
 
             // Update viewport uniform data (using viewport_data captured before releasing lock)
-            let (width, height, content_fit) = viewport_data;
+            let (width, height, cover_blend, bar_top, bar_bottom) = viewport_data;
 
-            // Get content fit mode as u32 (0 = Contain, 1 = Cover)
-            use crate::app::video_widget::VideoContentFit;
-            let content_fit_mode = match content_fit {
-                VideoContentFit::Contain => 0,
-                VideoContentFit::Cover => 1,
-            };
+            // Cover blend: 0.0 = Contain, 1.0 = Cover (may be intermediate during animation)
+            let content_fit_mode = cover_blend;
 
             let filter_mode = self.filter_type.gpu_filter_code();
 
@@ -460,9 +462,9 @@ impl PrimitiveTrait for VideoPrimitive {
                             };
                         let blur_uniform = ViewportUniform {
                             viewport_size: [effective_width, effective_height],
-                            content_fit_mode: 0, // Contain mode - no Cover cropping in Pass 1
-                            filter_mode,         // Apply filter during blur (visible in transition)
-                            corner_radius: 0.0,  // No rounded corners for blur passes
+                            content_fit_mode: 0.0, // Contain mode - no Cover cropping in Pass 1
+                            filter_mode, // Apply filter during blur (visible in transition)
+                            corner_radius: 0.0, // No rounded corners for blur passes
                             mirror_horizontal: if self.mirror_horizontal { 1 } else { 0 },
                             uv_offset: [0.0, 0.0],
                             uv_scale: [1.0, 1.0],
@@ -470,6 +472,8 @@ impl PrimitiveTrait for VideoPrimitive {
                             crop_uv_max: crop_max,
                             zoom_level: 1.0, // No zoom for blur passes
                             rotation: self.rotation,
+                            bar_top_height: 0.0,
+                            bar_bottom_height: 0.0,
                         };
                         queue.write_buffer(
                             &binding.viewport_buffer,
@@ -491,6 +495,8 @@ impl PrimitiveTrait for VideoPrimitive {
                         crop_uv_max: crop_max,
                         zoom_level: self.zoom_level,
                         rotation: self.rotation,
+                        bar_top_height: bar_top,
+                        bar_bottom_height: bar_bottom,
                     };
                     queue.write_buffer(
                         &binding.viewport_buffer,
@@ -548,12 +554,17 @@ impl PrimitiveTrait for VideoPrimitive {
                     }
 
                     // Update the preblur binding's viewport uniform.
-                    // The intermediate already has transforms baked in, so use
-                    // identity transforms but keep filter_mode and screen viewport.
+                    // The intermediate already has cover-fit baked in (pass 1
+                    // wrote the cover-fit-to-widget view into a frame-sized
+                    // texture). Pass 2 must sample it 1:1 across the widget;
+                    // we get scale = (1, 1) by telling the shader its
+                    // "viewport" matches the intermediate's pixel dimensions,
+                    // so the Contain math degenerates to identity instead of
+                    // letterboxing the intermediate inside the widget.
                     if let Some(pb_binding) = pipeline.preblur_binding.as_ref() {
                         let pb_uniform = ViewportUniform {
-                            viewport_size: [width, height],
-                            content_fit_mode: 0, // Contain — intermediate is already transformed
+                            viewport_size: [intermediate.width as f32, intermediate.height as f32],
+                            content_fit_mode: 0.0, // Contain — identity given the matched viewport_size
                             filter_mode,
                             corner_radius: self.corner_radius,
                             mirror_horizontal: 0, // Already applied in preblur pass
@@ -563,6 +574,8 @@ impl PrimitiveTrait for VideoPrimitive {
                             crop_uv_max: [1.0, 1.0],
                             zoom_level: 1.0, // Already zoomed in preblur
                             rotation: 0,     // Already rotated in preblur
+                            bar_top_height: 0.0,
+                            bar_bottom_height: 0.0,
                         };
                         queue.write_buffer(
                             &pb_binding.viewport_buffer,
@@ -579,16 +592,18 @@ impl PrimitiveTrait for VideoPrimitive {
                 {
                     let intermediate_uniform = ViewportUniform {
                         viewport_size: [intermediate_1.width as f32, intermediate_1.height as f32],
-                        content_fit_mode: 0, // Contain mode - no Cover cropping in intermediate pass
-                        filter_mode: 0,      // No filter during intermediate pass
-                        corner_radius: 0.0,  // No rounded corners for intermediate passes
-                        mirror_horizontal: 0, // No mirror for intermediate passes
+                        content_fit_mode: 0.0, // Contain mode - no Cover cropping in intermediate pass
+                        filter_mode: 0,        // No filter during intermediate pass
+                        corner_radius: 0.0,    // No rounded corners for intermediate passes
+                        mirror_horizontal: 0,  // No mirror for intermediate passes
                         uv_offset: [0.0, 0.0],
                         uv_scale: [1.0, 1.0],
                         crop_uv_min: [0.0, 0.0], // No crop for intermediate
                         crop_uv_max: [1.0, 1.0],
                         zoom_level: 1.0, // No zoom for intermediate passes
                         rotation: 0,     // Already rotated in pass 1
+                        bar_top_height: 0.0,
+                        bar_bottom_height: 0.0,
                     };
                     queue.write_buffer(
                         &intermediate_1.viewport_buffer,
@@ -612,6 +627,8 @@ impl PrimitiveTrait for VideoPrimitive {
                         crop_uv_max: [1.0, 1.0],
                         zoom_level: 1.0, // No zoom for blur
                         rotation: 0,     // Already rotated in pass 1
+                        bar_top_height: bar_top,
+                        bar_bottom_height: bar_bottom,
                     };
                     queue.write_buffer(
                         &intermediate_2.viewport_buffer,

@@ -625,7 +625,11 @@ impl AppModel {
             "Virtual camera feature toggled"
         );
 
-        // If disabling while in Virtual mode, switch to Photo mode
+        // If disabling while in Virtual mode, switch to Photo mode.
+        // Snapshot the animated values before mutating self.mode so the
+        // transition across the photo-mode boundary animates rather than
+        // snaps.
+        let mut fit_anim_task = Task::none();
         if !self.config.virtual_camera_enabled && self.mode == CameraMode::Virtual {
             // Stop virtual camera if streaming
             if self.virtual_camera.is_streaming() {
@@ -634,7 +638,9 @@ impl AppModel {
                 }
                 self.virtual_camera = VirtualCameraState::Idle;
             }
+            let from_fit = self.capture_fit_state();
             self.mode = CameraMode::Photo;
+            fit_anim_task = self.start_fit_animation(from_fit);
         }
 
         // If disabling and default_mode was Virtual, reset to Photo
@@ -650,7 +656,7 @@ impl AppModel {
         {
             error!(?err, "Failed to save virtual camera setting");
         }
-        Task::none()
+        fit_anim_task
     }
 
     // =========================================================================
