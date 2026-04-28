@@ -46,13 +46,13 @@ impl AppModel {
     pub fn build_motor_picker(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
 
-        let mut column = widget::column()
+        let mut column = widget::Column::new()
             .spacing(spacing.space_s)
             .padding(spacing.space_s)
             .width(Length::Shrink);
 
         // Title with reset button
-        let title_row = widget::row()
+        let title_row = widget::Row::new()
             .push(widget::text::heading(fl!("ptz-title")).width(Length::Fill))
             .push(
                 widget::button::icon(widget::icon::from_name("edit-undo-symbolic"))
@@ -67,7 +67,7 @@ impl AppModel {
         if self.available_exposure_controls.pan_absolute.available {
             let range = &self.available_exposure_controls.pan_absolute;
             let current = self.get_v4l2_pan_value().unwrap_or(range.default);
-            let pan_row = widget::row()
+            let pan_row = widget::Row::new()
                 .push(widget::text::body("Pan").width(Length::Fixed(60.0)))
                 .push(
                     widget::slider(range.min..=range.max, current, Message::SetPanAbsolute)
@@ -83,7 +83,7 @@ impl AppModel {
         if self.available_exposure_controls.tilt_absolute.available {
             let range = &self.available_exposure_controls.tilt_absolute;
             let current = self.get_v4l2_tilt_value().unwrap_or(range.default);
-            let tilt_row = widget::row()
+            let tilt_row = widget::Row::new()
                 .push(widget::text::body("Tilt").width(Length::Fixed(60.0)))
                 .push(
                     widget::slider(range.min..=range.max, current, Message::SetTiltAbsolute)
@@ -107,7 +107,7 @@ impl AppModel {
         .on_press(Message::Noop);
 
         // Position picker in top-right corner
-        let picker_positioned = widget::row()
+        let picker_positioned = widget::Row::new()
             .push(
                 widget::Space::new()
                     .width(Length::Fill)

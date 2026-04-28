@@ -55,7 +55,7 @@ impl AppModel {
     /// Shows pipeline information, performance metrics, and format capabilities.
     pub fn insights_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
         // Capture buttons row at the top
-        let capture_buttons: Element<'_, Message> = widget::row()
+        let capture_buttons: Element<'_, Message> = widget::Row::new()
             .push(
                 widget::button::standard(fl!("insights-capture"))
                     .on_press(Message::InsightsCaptureFrames),
@@ -159,11 +159,11 @@ impl AppModel {
                     }
                 };
 
-                let row = widget::row()
+                let row = widget::Row::new()
                     .push(widget::icon::from_name(icon_name).symbolic(true).size(16))
                     .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                     .push(
-                        widget::column()
+                        widget::Column::new()
                             .push(widget::text::body(decoder.name).font(cosmic::font::mono()))
                             .push(
                                 widget::text::caption(format!(
@@ -759,7 +759,7 @@ impl AppModel {
 
                 let vol_text = format!("{:.1} dB", ch.volume_db,);
 
-                let mut row = widget::row()
+                let mut row = widget::Row::new()
                     .push(
                         widget::text::body(&ch.position)
                             .font(cosmic::font::mono())
@@ -795,7 +795,7 @@ impl AppModel {
         if let Some(levels) = &self.insights.audio_levels {
             let rms_text = format!("{:.1} dB", levels.output_rms_db);
 
-            let output_row = widget::row()
+            let output_row = widget::Row::new()
                 .push(
                     widget::text::body(fl!("insights-audio-mono"))
                         .font(cosmic::font::mono())

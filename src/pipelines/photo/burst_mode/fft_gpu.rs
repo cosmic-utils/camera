@@ -145,7 +145,7 @@ impl FftMergePipeline {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fft_merge_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // Create compute pipelines (32x32 tiles)
@@ -237,7 +237,7 @@ impl FftMergePipeline {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("spatial_denoise_pipeline_layout"),
                 bind_group_layouts: &[&spatial_denoise_bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let spatial_denoise_init_pipeline = Self::create_pipeline(
@@ -284,7 +284,7 @@ impl FftMergePipeline {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("chroma_denoise_pipeline_layout"),
                 bind_group_layouts: &[&chroma_denoise_bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let chroma_denoise_pipeline = Self::create_pipeline(

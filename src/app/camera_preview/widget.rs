@@ -31,7 +31,7 @@ impl AppModel {
         // Show loading indicator if cameras aren't initialized yet
         if self.available_cameras.is_empty() {
             return widget::container(
-                widget::column()
+                widget::Column::new()
                     .push(widget::text(fl!("initializing-camera")).size(20))
                     .spacing(10)
                     .align_x(cosmic::iced::alignment::Horizontal::Center),

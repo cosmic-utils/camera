@@ -442,7 +442,7 @@ fn build_overlay_popup<'a>(
 ) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
 
-    let mut content = widget::column()
+    let mut content = widget::Column::new()
         .push(icon)
         .push(
             widget::text(title.to_string())
@@ -728,7 +728,7 @@ impl AppModel {
 
             // Layout: [Fill] [Play container] [Capture] [Spacer matching Play] [Fill]
             // Use fixed-width container for play button to ensure centering
-            let mut row = widget::row().push(
+            let mut row = widget::Row::new().push(
                 widget::Space::new()
                     .width(Length::Fill)
                     .height(Length::Shrink),
@@ -798,7 +798,7 @@ impl AppModel {
             let spacing = cosmic::theme::spacing();
             let control_spacing = spacing.space_xs;
 
-            let mut bottom_controls = widget::column().width(Length::Fill);
+            let mut bottom_controls = widget::Column::new().width(Length::Fill);
 
             if let Some(progress_bar) = self.build_video_progress_bar() {
                 bottom_controls = bottom_controls.push(progress_bar);
@@ -807,7 +807,7 @@ impl AppModel {
             bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
 
             // Bottom section: zoom label + bottom controls
-            let mut bottom_section = widget::column().width(Length::Fill);
+            let mut bottom_section = widget::Column::new().width(Length::Fill);
 
             // Hide the fit/zoom row while the tools menu is open so the two
             // don't visually compete — the menu itself is shown as an overlay.
@@ -818,7 +818,7 @@ impl AppModel {
                     "view-restore-symbolic"
                 };
                 let fit_button_inner = widget::button::custom(
-                    widget::row()
+                    widget::Row::new()
                         .push(
                             widget::icon::from_name(fit_icon_name)
                                 .symbolic(true)
@@ -847,7 +847,7 @@ impl AppModel {
                         .into()
                 };
 
-                let zoom_row = widget::row()
+                let zoom_row = widget::Row::new()
                     .push(fit_button)
                     .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                     .push(self.build_zoom_label())
@@ -961,7 +961,7 @@ impl AppModel {
         let is_disabled = self.transition_state.ui_disabled;
 
         // Match the native COSMIC header bar padding: [7, 7, 8, 7] (not maximized)
-        let mut row = widget::row()
+        let mut row = widget::Row::new()
             .padding([7, 7, 8, 7])
             .align_y(Alignment::Center);
 
@@ -1263,7 +1263,7 @@ impl AppModel {
             widget::container(widget::text(fl!("indicator-fps")).size(ui::SUPERSCRIPT_TEXT_SIZE))
                 .padding(ui::SUPERSCRIPT_PADDING);
 
-        let button_content = widget::row()
+        let button_content = widget::Row::new()
             .push(widget::text(res_label).size(ui::RES_LABEL_TEXT_SIZE))
             .push(res_superscript)
             .push(widget::space::horizontal().width(spacing.space_xxs))
@@ -1311,7 +1311,7 @@ impl AppModel {
             "---".to_string()
         };
 
-        let label_content = widget::row()
+        let label_content = widget::Row::new()
             .push(
                 widget::text(dimensions)
                     .size(ui::RES_LABEL_TEXT_SIZE)
@@ -1534,7 +1534,7 @@ impl AppModel {
 
         // Position in top-right corner, below the custom title bar so the menu
         // doesn't overlap the window controls.
-        let positioned = widget::row()
+        let positioned = widget::Row::new()
             .push(
                 widget::Space::new()
                     .width(Length::Fill)
@@ -1601,7 +1601,7 @@ impl AppModel {
         };
 
         // Button with label below
-        widget::column()
+        widget::Column::new()
             .push(button_element)
             .push(widget::text(label).size(11))
             .spacing(4)
@@ -1770,7 +1770,7 @@ impl AppModel {
         let filled_width = progress_width * self.burst_mode.progress();
 
         let progress_bar = widget::container(
-            widget::row()
+            widget::Row::new()
                 .push(
                     widget::container(
                         widget::Space::new()
@@ -1810,7 +1810,7 @@ impl AppModel {
         });
 
         // Build the overlay content
-        let overlay_content = widget::column()
+        let overlay_content = widget::Column::new()
             .push(
                 widget::text(status_text)
                     .size(32)

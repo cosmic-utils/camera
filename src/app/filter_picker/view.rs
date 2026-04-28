@@ -51,8 +51,8 @@ impl AppModel {
 
         // Build filter grid with responsive sizing
         let spacing = FILTER_GRID_SPACING as u16;
-        let mut grid_column = widget::column().spacing(spacing);
-        let mut current_row = widget::row().spacing(spacing);
+        let mut grid_column = widget::Column::new().spacing(spacing);
+        let mut current_row = widget::Row::new().spacing(spacing);
         let mut items_in_row = 0;
 
         // Get corner radius from theme for consistent styling
@@ -128,7 +128,7 @@ impl AppModel {
                 .align_x(cosmic::iced::alignment::Horizontal::Center);
 
             // Column with button (thumbnail only) and name below
-            let filter_item = widget::column()
+            let filter_item = widget::Column::new()
                 .push(thumbnail_button)
                 .push(widget::space::vertical().height(Length::Fixed(LABEL_SPACING)))
                 .push(name_label)
@@ -143,7 +143,7 @@ impl AppModel {
             // Start new row after FILTER_GRID_COLUMNS items
             if items_in_row >= FILTER_GRID_COLUMNS {
                 grid_column = grid_column.push(current_row);
-                current_row = widget::row().spacing(spacing);
+                current_row = widget::Row::new().spacing(spacing);
                 items_in_row = 0;
             }
         }

@@ -9,9 +9,9 @@
 //! uniform buffer overwrite issue when multiple primitives draw per frame.
 
 use cosmic::iced::Rectangle;
-use cosmic::iced_wgpu::graphics::Viewport;
-use cosmic::iced_wgpu::primitive::{Pipeline, Primitive};
-use cosmic::iced_wgpu::wgpu;
+use iced_wgpu::graphics::Viewport;
+use iced_wgpu::primitive::{Pipeline, Primitive};
+use iced_wgpu::wgpu;
 
 /// Uniform data sent to the fade shader.
 #[repr(C)]
@@ -60,7 +60,7 @@ impl Pipeline for FadePipeline {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fade pipeline layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -85,7 +85,7 @@ impl Pipeline for FadePipeline {
                 })],
                 compilation_options: Default::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

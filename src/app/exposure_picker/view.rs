@@ -49,7 +49,7 @@ impl AppModel {
         let current_mode = settings_data.map(|s| s.mode).unwrap_or_default();
         let is_manual = current_mode == super::ExposureMode::Manual;
 
-        let mut column = widget::column()
+        let mut column = widget::Column::new()
             .spacing(spacing.space_xs)
             .padding(spacing.space_s)
             .width(Length::Shrink);
@@ -73,7 +73,7 @@ impl AppModel {
         .on_press(Message::Noop);
 
         // Position picker in top-right corner
-        let picker_positioned = widget::row()
+        let picker_positioned = widget::Row::new()
             .push(
                 widget::Space::new()
                     .width(Length::Fill)
@@ -108,7 +108,7 @@ impl AppModel {
             .class(cosmic::theme::Button::Text)
             .padding(4);
 
-        widget::row()
+        widget::Row::new()
             .push(toggle)
             .push(reset_btn)
             .spacing(CONTROL_SPACING)
@@ -119,9 +119,9 @@ impl AppModel {
     /// Add auto mode controls to column
     fn add_auto_controls<'a>(
         &'a self,
-        mut column: widget::Column<'a, Message>,
+        mut column: widget::Column<'a, Message, cosmic::Theme>,
         settings_data: Option<&'a super::ExposureSettings>,
-    ) -> widget::Column<'a, Message> {
+    ) -> widget::Column<'a, Message, cosmic::Theme> {
         let controls = &self.available_exposure_controls;
 
         if controls.exposure_bias.available {
@@ -140,9 +140,9 @@ impl AppModel {
     /// Add manual mode controls to column (shows all controls, disabled if unsupported)
     fn add_manual_controls<'a>(
         &'a self,
-        mut column: widget::Column<'a, Message>,
+        mut column: widget::Column<'a, Message, cosmic::Theme>,
         settings_data: Option<&'a super::ExposureSettings>,
-    ) -> widget::Column<'a, Message> {
+    ) -> widget::Column<'a, Message, cosmic::Theme> {
         let controls = &self.available_exposure_controls;
 
         // Exposure Time
@@ -377,7 +377,7 @@ impl AppModel {
             .and_then(|s| s.metering_mode)
             .unwrap_or_default();
 
-        let mut row = widget::row()
+        let mut row = widget::Row::new()
             .push(
                 widget::text(fl!("exposure-metering"))
                     .size(13)
@@ -412,7 +412,7 @@ impl AppModel {
     ) -> Element<'_, Message> {
         let enabled = settings_data.and_then(|s| s.auto_priority).unwrap_or(false);
 
-        widget::row()
+        widget::Row::new()
             .push(
                 widget::text(fl!("exposure-auto-priority"))
                     .size(13)
@@ -432,9 +432,9 @@ impl AppModel {
     /// Add focus controls (auto toggle + manual slider)
     fn add_focus_controls<'a>(
         &'a self,
-        mut column: widget::Column<'a, Message>,
+        mut column: widget::Column<'a, Message, cosmic::Theme>,
         settings_data: Option<&'a super::ExposureSettings>,
-    ) -> widget::Column<'a, Message> {
+    ) -> widget::Column<'a, Message, cosmic::Theme> {
         let controls = &self.available_exposure_controls;
 
         if controls.focus.available {
@@ -459,7 +459,7 @@ impl AppModel {
     ) -> Element<'_, Message> {
         let enabled = settings_data.and_then(|s| s.focus_auto).unwrap_or(false);
 
-        widget::row()
+        widget::Row::new()
             .push(
                 widget::text(fl!("focus-auto"))
                     .size(13)
@@ -510,7 +510,7 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
         let color_data = self.color_settings.as_ref();
 
-        let mut column = widget::column()
+        let mut column = widget::Column::new()
             .spacing(spacing.space_xs)
             .padding(spacing.space_s)
             .width(Length::Shrink);
@@ -526,7 +526,7 @@ impl AppModel {
         )
         .on_press(Message::Noop);
 
-        let picker_positioned = widget::row()
+        let picker_positioned = widget::Row::new()
             .push(
                 widget::Space::new()
                     .width(Length::Fill)
@@ -556,7 +556,7 @@ impl AppModel {
             .class(cosmic::theme::Button::Text)
             .padding(4);
 
-        widget::row()
+        widget::Row::new()
             .push(
                 widget::text(fl!("color-title"))
                     .size(14)
@@ -571,9 +571,9 @@ impl AppModel {
     /// Add image adjustment controls (contrast, saturation, sharpness, hue)
     fn add_image_controls<'a>(
         &'a self,
-        mut column: widget::Column<'a, Message>,
+        mut column: widget::Column<'a, Message, cosmic::Theme>,
         settings_data: Option<&'a super::ColorSettings>,
-    ) -> widget::Column<'a, Message> {
+    ) -> widget::Column<'a, Message, cosmic::Theme> {
         let controls = &self.available_exposure_controls;
 
         if controls.contrast.available {
@@ -637,9 +637,9 @@ impl AppModel {
     /// Add white balance controls
     fn add_white_balance_controls<'a>(
         &'a self,
-        mut column: widget::Column<'a, Message>,
+        mut column: widget::Column<'a, Message, cosmic::Theme>,
         settings_data: Option<&'a super::ColorSettings>,
-    ) -> widget::Column<'a, Message> {
+    ) -> widget::Column<'a, Message, cosmic::Theme> {
         let controls = &self.available_exposure_controls;
 
         if controls.has_white_balance_auto {
@@ -667,7 +667,7 @@ impl AppModel {
             .and_then(|s| s.white_balance_auto)
             .unwrap_or(true);
 
-        widget::row()
+        widget::Row::new()
             .push(
                 widget::text(fl!("color-white-balance"))
                     .size(13)

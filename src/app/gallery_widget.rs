@@ -8,8 +8,8 @@ use crate::app::gallery_primitive::GalleryPrimitive;
 use cosmic::iced::advanced::widget::Tree;
 use cosmic::iced::advanced::{Widget, layout};
 use cosmic::iced::{Element, Length, Rectangle, Size};
-use cosmic::iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use cosmic::{Renderer, Theme};
+use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 
 /// Gallery widget that renders thumbnails using a custom GPU primitive with rounded corners
 pub struct GalleryWidget {

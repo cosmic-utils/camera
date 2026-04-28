@@ -41,7 +41,7 @@ pub fn three_col_row<'a>(
             .width(Length::Fill)
             .height(Length::Shrink)
     };
-    widget::row()
+    widget::Row::new()
         .push(left)
         .push(fill())
         .push(center)

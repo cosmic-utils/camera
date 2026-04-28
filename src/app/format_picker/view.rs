@@ -57,7 +57,7 @@ impl AppModel {
         const BUTTON_WIDTH: f32 = ui::PICKER_BUTTON_WIDTH;
 
         // Build resolution row
-        let mut res_row = widget::row()
+        let mut res_row = widget::Row::new()
             .spacing(spacing.space_xxs)
             .align_y(Alignment::Center)
             .push(
@@ -92,7 +92,7 @@ impl AppModel {
         }
 
         // Build framerate row
-        let mut fps_row = widget::row()
+        let mut fps_row = widget::Row::new()
             .spacing(spacing.space_xxs)
             .align_y(Alignment::Center)
             .push(
@@ -159,7 +159,7 @@ impl AppModel {
         // Build picker panel with semi-transparent themed background
         // Uses picker_panel_style which caps roundness at "slightly rounded"
         let picker_panel = widget::container(
-            widget::column()
+            widget::Column::new()
                 .push(res_row)
                 .push(widget::space::vertical().height(spacing.space_s))
                 .push(fps_row)
@@ -168,7 +168,7 @@ impl AppModel {
         .style(picker_panel_style);
 
         // Position picker and add click-outside-to-close
-        let picker_positioned = widget::row()
+        let picker_positioned = widget::Row::new()
             .push(picker_panel)
             .push(
                 widget::Space::new()

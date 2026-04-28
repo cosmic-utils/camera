@@ -17,8 +17,8 @@ use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout};
 use cosmic::iced::mouse;
 use cosmic::iced::touch;
 use cosmic::iced::{Element, Event, Length, Point, Rectangle, Size};
-use cosmic::iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use cosmic::{Renderer, Theme};
+use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::collections::HashMap;
 use std::sync::Arc;
 

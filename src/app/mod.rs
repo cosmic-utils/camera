@@ -56,9 +56,9 @@ use crate::fl;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::Subscription;
-use cosmic::iced_futures::subscription;
 use cosmic::widget::{self, about::About};
 use cosmic::{Element, Task};
+use iced_futures::subscription;
 pub use state::{
     AppFlags, AppModel, BurstModeStage, BurstModeState, CameraMode, ContextPage, FileSource,
     FilterType, Message, PhotoAspectRatio, PhotoTimerSetting, PrewarmResults, RecordingState,
@@ -94,7 +94,7 @@ where
         fn stream(
             self: Box<Self>,
             _input: subscription::EventStream,
-        ) -> cosmic::iced_futures::BoxStream<Self::Output> {
+        ) -> iced_futures::BoxStream<Self::Output> {
             Box::pin(self.stream)
         }
     }
