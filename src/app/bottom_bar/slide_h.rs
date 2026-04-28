@@ -12,7 +12,7 @@ use cosmic::iced::advanced::renderer;
 use cosmic::iced::advanced::widget::tree::Tree;
 use cosmic::iced::advanced::{Clipboard, Layout, Shell, Widget};
 use cosmic::iced::{Event, Length, Rectangle, Size, Vector};
-use cosmic::iced_core::mouse;
+use iced_core::mouse;
 
 use crate::app::state::Message;
 use cosmic::Theme;

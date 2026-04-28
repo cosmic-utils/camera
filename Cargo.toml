@@ -47,6 +47,15 @@ libcamera = "0.7.0"
 drm-fourcc = "2.2.0"
 turbojpeg = { version = "1.4.0", default-features = false, features = ["cmake"] }
 
+[dependencies.iced_core]
+git = "https://github.com/pop-os/libcosmic.git"
+
+[dependencies.iced_wgpu]
+git = "https://github.com/pop-os/libcosmic.git"
+
+[dependencies.iced_futures]
+git = "https://github.com/pop-os/libcosmic.git"
+
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.

@@ -10,7 +10,7 @@ use tokio::sync::OnceCell;
 use tracing::{debug, info};
 
 /// Re-export wgpu types from cosmic for use in compute pipelines
-pub use cosmic::iced_wgpu::wgpu;
+pub use iced_wgpu::wgpu;
 
 /// Information about the created GPU device
 #[derive(Debug, Clone)]

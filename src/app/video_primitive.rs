@@ -15,9 +15,9 @@ use cosmic::iced::Rectangle;
 pub const VIDEO_ID_NORMAL: u64 = 0;
 /// Video ID for the blurred background preview (used during transitions/HDR+ processing).
 pub const VIDEO_ID_BLUR: u64 = 1;
-use cosmic::iced_wgpu::graphics::Viewport;
-use cosmic::iced_wgpu::primitive::{Pipeline as PipelineTrait, Primitive as PrimitiveTrait};
-use cosmic::iced_wgpu::wgpu;
+use iced_wgpu::graphics::Viewport;
+use iced_wgpu::primitive::{Pipeline as PipelineTrait, Primitive as PrimitiveTrait};
+use iced_wgpu::wgpu;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -730,7 +730,7 @@ impl VideoPipeline {
         let pipeline_layout_rgba = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("camera video pipeline layout"),
             bind_group_layouts: &[&bind_group_layout_rgba],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline_rgba = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -759,7 +759,7 @@ impl VideoPipeline {
                 })],
                 compilation_options: Default::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -814,7 +814,7 @@ impl VideoPipeline {
         let pipeline_layout_rgb = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("camera blur pipeline layout"),
             bind_group_layouts: &[&bind_group_layout_rgb],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let pipeline_rgb_blur = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -843,7 +843,7 @@ impl VideoPipeline {
                 })],
                 compilation_options: Default::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -880,7 +880,7 @@ impl VideoPipeline {
                 })],
                 compilation_options: Default::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -892,7 +892,7 @@ impl VideoPipeline {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -967,7 +967,7 @@ impl VideoPipeline {
         let yuv_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("yuv_convert_pipeline_layout"),
             bind_group_layouts: &[&yuv_bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let yuv_compute_pipeline =
@@ -2032,6 +2032,7 @@ impl VideoPipeline {
                         depth_stencil_attachment: None,
                         timestamp_writes: None,
                         occlusion_query_set: None,
+                        multiview_mask: None,
                     });
 
                     // Use full widget bounds for viewport (prevents distortion in scrollables)
@@ -2081,6 +2082,7 @@ impl VideoPipeline {
                                 depth_stencil_attachment: None,
                                 timestamp_writes: None,
                                 occlusion_query_set: None,
+                                multiview_mask: None,
                             });
 
                         render_pass.set_pipeline(&self.pipeline_rgb_blur);
@@ -2105,6 +2107,7 @@ impl VideoPipeline {
                                 depth_stencil_attachment: None,
                                 timestamp_writes: None,
                                 occlusion_query_set: None,
+                                multiview_mask: None,
                             });
 
                         render_pass.set_pipeline(&self.pipeline_rgb_blur);
@@ -2132,6 +2135,7 @@ impl VideoPipeline {
                         depth_stencil_attachment: None,
                         timestamp_writes: None,
                         occlusion_query_set: None,
+                        multiview_mask: None,
                     });
 
                     // Use full widget bounds for viewport (prevents distortion in scrollables)
@@ -2177,6 +2181,7 @@ impl VideoPipeline {
                                 depth_stencil_attachment: None,
                                 timestamp_writes: None,
                                 occlusion_query_set: None,
+                                multiview_mask: None,
                             });
 
                         render_pass.set_pipeline(&self.pipeline_preblur);
@@ -2209,6 +2214,7 @@ impl VideoPipeline {
                                 depth_stencil_attachment: None,
                                 timestamp_writes: None,
                                 occlusion_query_set: None,
+                                multiview_mask: None,
                             });
 
                         render_pass.set_viewport(
@@ -2248,6 +2254,7 @@ impl VideoPipeline {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
 
                 // Use full widget bounds for viewport (prevents distortion in scrollables)

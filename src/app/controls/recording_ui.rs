@@ -53,7 +53,7 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
         let duration_text = format_duration(self.recording.elapsed_duration());
 
-        let row = widget::row()
+        let row = widget::Row::new()
             .push(indicator_dot(Color::from_rgb(1.0, 0.0, 0.0)))
             .push(widget::text(duration_text).size(14))
             .align_y(Alignment::Center)
@@ -78,7 +78,7 @@ impl AppModel {
 
         let spacing = cosmic::theme::spacing();
 
-        let row = widget::row()
+        let row = widget::Row::new()
             .push(indicator_dot(Color::from_rgb(0.1, 0.7, 0.2)))
             .push(widget::text(fl!("streaming-live")).size(14))
             .align_y(Alignment::Center)
@@ -115,7 +115,7 @@ impl AppModel {
         let theme = cosmic::theme::active();
         let destructive: Color = theme.cosmic().destructive_color().into();
 
-        let row = widget::row()
+        let row = widget::Row::new()
             .push(indicator_dot(destructive))
             .push(widget::text(label).size(14))
             .align_y(Alignment::Center)
@@ -147,7 +147,7 @@ impl AppModel {
         let spacing = cosmic::theme::spacing();
         let slider_max = if duration > 0.0 { duration } else { 1.0 };
 
-        let progress_row = widget::row()
+        let progress_row = widget::Row::new()
             .push(widget::text(format_duration(position as u64)).size(12))
             .push(widget::space::horizontal().width(spacing.space_xs))
             .push(

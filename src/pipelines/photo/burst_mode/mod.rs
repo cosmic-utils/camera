@@ -984,61 +984,61 @@ impl BurstModeGpuPipeline {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("pyramid_pipeline_layout"),
                 bind_group_layouts: &[&pyramid_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let sharpness_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("sharpness_pipeline_layout"),
                 bind_group_layouts: &[&sharpness_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let align_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("align_pipeline_layout"),
                 bind_group_layouts: &[&align_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let luminance_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("luminance_pipeline_layout"),
                 bind_group_layouts: &[&luminance_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let warp_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("warp_pipeline_layout"),
             bind_group_layouts: &[&warp_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let local_lum_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("local_lum_pipeline_layout"),
                 bind_group_layouts: &[&local_lum_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let tonemap_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("tonemap_pipeline_layout"),
                 bind_group_layouts: &[&tonemap_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let noise_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("noise_pipeline_layout"),
                 bind_group_layouts: &[&noise_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let ca_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ca_pipeline_layout"),
             bind_group_layouts: &[&ca_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // Create compute pipelines
@@ -1170,7 +1170,7 @@ impl BurstModeGpuPipeline {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("bayer_finish_pipeline_layout"),
                 bind_group_layouts: &[&bayer_finish_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let bayer_finish = Self::create_pipeline(
             &device,

@@ -13,8 +13,8 @@ use cosmic::iced::advanced::widget::tree;
 use cosmic::iced::advanced::{Clipboard, Shell, Widget, layout, renderer};
 use cosmic::iced::{Background, Border, Color, Element, Event, Length, Pixels, Rectangle, Size};
 use cosmic::iced::{alignment, mouse, touch};
-use cosmic::iced_core::text::{self as iced_text, Text as IcedText};
 use cosmic::{Renderer, Theme};
+use iced_core::text::{self as iced_text, Text as IcedText};
 use std::time::Instant;
 /// Font size for mode labels
 const FONT_SIZE: f32 = 16.0;
@@ -601,7 +601,7 @@ impl<'a> Widget<Message, Theme, Renderer> for ModeCarousel<'a> {
         // Skip when fade_w is too small to produce a visible gradient (avoids 1px artifacts).
         if fade_w > 2.0 {
             renderer.with_layer(render_bounds, |renderer| {
-                use cosmic::iced_wgpu::primitive::Renderer as PrimitiveRenderer;
+                use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 
                 // Fade overlays at the outer edges of the expanded area.
                 // Use the same clamped corner radius as the background.

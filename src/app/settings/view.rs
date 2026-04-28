@@ -103,7 +103,7 @@ impl AppModel {
             .into()
         };
 
-        let device_label_with_info = widget::row()
+        let device_label_with_info = widget::Row::new()
             .push(widget::text::body(fl!("settings-device")))
             .push(widget::space::horizontal().width(Length::Fixed(4.0)))
             .push(
@@ -372,7 +372,7 @@ impl AppModel {
             let show_report_button = widget::button::standard(fl!("settings-show-report"))
                 .on_press(Message::ShowBugReport);
 
-            widget::row()
+            widget::Row::new()
                 .push(bug_report_button)
                 .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                 .push(show_report_button)
@@ -436,7 +436,7 @@ impl AppModel {
     fn build_device_info_panel(&self) -> Element<'_, Message> {
         // Helper to build a label: value row
         fn info_row<'a>(label: String, value: &str) -> Element<'a, Message> {
-            widget::row()
+            widget::Row::new()
                 .push(widget::text(label).size(12).font(cosmic::font::bold()))
                 .push(widget::space::horizontal().width(Length::Fixed(8.0)))
                 .push(widget::text(value.to_string()).size(12))
@@ -446,7 +446,7 @@ impl AppModel {
         let camera = self.available_cameras.get(self.current_camera_index);
         let device_info = camera.and_then(|c| c.device_info.as_ref());
 
-        let mut info_column = widget::column().spacing(4);
+        let mut info_column = widget::Column::new().spacing(4);
 
         if let Some(info) = device_info {
             // V4L2 device info
