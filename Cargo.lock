@@ -955,7 +955,7 @@ dependencies = [
  "libc",
  "libcamera",
  "libcosmic",
- "naga 29.0.1",
+ "naga 29.0.2",
  "open",
  "pollster",
  "ratatui",
@@ -4135,9 +4135,9 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "29.0.1"
+version = "29.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa2630921705b9b01dcdd0b6864b9562ca3c1951eecd0f0c4f5f04f61e412647"
+checksum = "5e1d5545a185b183ac132eb745a0f31f976d93ce495aad199cd1e1fe37d69581"
 dependencies = [
  "arrayvec",
  "bit-set 0.9.1",
