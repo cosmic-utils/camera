@@ -12,7 +12,7 @@ mode-photo = Foto
 mode-timelapse = Časosběr
 timelapse-saving = Ukládání videa...
 mode-virtual = Virtuální
-mode-view = View
+mode-view = Náhled
 
 # Virtual camera
 virtual-camera-title = Virtuální kamera (experimentální)
@@ -82,6 +82,8 @@ preset-high = Vysoký
 
 # Camera preview
 initializing-camera = Inicializace kamery...
+preview-fit = Přizpůsobit
+preview-cover = Vyplnit
 
 # Format picker
 format-resolution = Rozlišení:
