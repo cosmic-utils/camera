@@ -12,7 +12,7 @@ mode-photo = Photo
 mode-timelapse = Accéléré
 timelapse-saving = Enregistrement de la vidéo...
 mode-virtual = Virtuel
-mode-view = View
+mode-view = Afficher
 
 # Caméra virtuelle
 virtual-camera-title = Caméra virtuelle (expérimentale)
@@ -32,6 +32,8 @@ settings-theme = Thème
 match-desktop = Assortir au bureau
 dark = Sombre
 light = Clair
+settings-default-mode = Mode par défaut
+settings-default-mode-description = Mode caméra à utiliser au lancement de l'application
 settings-camera = Caméra
 settings-video = Vidéo
 settings-device = Périphérique
@@ -80,6 +82,8 @@ preset-high = Élevé
 
 # Aperçu de la caméra
 initializing-camera = Initialisation de la caméra...
+preview-fit = Ajuster
+preview-cover = Remplir
 
 # Sélecteur de format
 format-resolution = Résolution :
@@ -181,10 +185,10 @@ settings-composition-guide-description = Superposer des lignes de repère sur l'
 guide-none = Aucun
 guide-rule-of-thirds = Règle des tiers
 guide-phi-grid = Grille Phi
-guide-spiral-top-left = Spirale ↖
-guide-spiral-top-right = Spirale ↗
-guide-spiral-bottom-left = Spirale ↙
-guide-spiral-bottom-right = Spirale ↘
+guide-spiral-top-left = Nombre d'or ↖
+guide-spiral-top-right = Nombre d'or ↗
+guide-spiral-bottom-left = Nombre d'or ↙
+guide-spiral-bottom-right = Nombre d'or ↘
 guide-diagonal = Diagonales
 guide-crosshair = Réticule
 
@@ -291,6 +295,13 @@ insights-meta-na = N/A
 settings-timelapse = Accéléré
 settings-timelapse-interval = Intervalle
 settings-timelapse-interval-description = Temps entre deux prises de vue consécutives
+
+# Informations - Formats V4L2
+insights-v4l2-formats = Formats de périphériques V4L2
+insights-v4l2-no-device = Aucun périphérique V4L2
+insights-v4l2-in-libcamera = Disponible dans libcamera
+insights-v4l2-active-in-libcamera = Actif dans libcamera
+insights-v4l2-not-in-libcamera = Non disponible dans libcamera
 
 # Informations - Capture
 insights-capture = Capture
