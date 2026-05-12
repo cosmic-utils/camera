@@ -14,17 +14,17 @@ i18n-embed = { version = "0.16.0", features = [
     "desktop-requester",
 ] }
 i18n-embed-fl = "0.10.0"
-open = "5.3.4"
+open = "5.3.5"
 pollster = "0.4.0"
 rust-embed = "8.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tokio = { version = "1.52.2", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-gstreamer = "0.25.1"
-gstreamer-app = "0.25.0"
-gstreamer-video = "0.25.0"
+gstreamer = "0.25.2"
+gstreamer-app = "0.25.2"
+gstreamer-video = "0.25.2"
 image = "0.25.10"
 chrono = "0.4.44"
 ctrlc = "3.5.2"
