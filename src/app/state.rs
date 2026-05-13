@@ -571,6 +571,10 @@ pub struct AppModel {
     pub core: cosmic::Core,
     /// Display a context drawer with the designated page if defined.
     pub context_page: ContextPage,
+    /// Active key bindings (defaults merged with user overrides).
+    pub bindings: crate::app::keybind::Bindings,
+    /// Set while the user is recording a new keybind via the Settings page.
+    pub recording_keybind: Option<RecordingKeyBindState>,
     /// The about page for this app.
     pub about: About,
     /// Configuration data that persists between application runs.
@@ -1282,6 +1286,16 @@ pub enum ContextPage {
     Settings,
     Filters,
     Insights,
+    /// Keyboard shortcuts rebinding page (opened from the Settings drawer).
+    KeyBindings,
+}
+
+/// Transient state while the user is recording a new keybind for an Action.
+#[derive(Clone, Debug)]
+pub struct RecordingKeyBindState {
+    pub action: crate::app::keybind::Action,
+    pub captured: Option<cosmic::widget::menu::key_bind::KeyBind>,
+    pub conflict_with: Option<crate::app::keybind::Action>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -1674,6 +1688,24 @@ pub enum Message {
 
     /// GPU shader pipelines precompiled at startup
     GpuPipelinesWarmed(Result<(), String>),
+
+    // ===== Keyboard shortcuts =====
+    /// Open the keyboard-shortcuts rebinding page (a context drawer).
+    OpenKeyBindingsPage,
+    /// Triggered by the Esc key when libcosmic's keyboard_nav is disabled.
+    Escape,
+    /// Begin capturing a new keybind for the given action.
+    StartRecordingKeyBind(crate::app::keybind::Action),
+    /// A key was captured during recording.
+    KeyBindRecordingCaptured(cosmic::widget::menu::key_bind::KeyBind),
+    /// User cancelled the record-keybind dialog.
+    CancelKeyBindRecording,
+    /// User confirmed the recorded combo — save (optionally unbinding the conflict).
+    KeyBindSave,
+    /// Reset a single action's binding to its default.
+    ResetKeyBindToDefault(crate::app::keybind::Action),
+    /// Reset every action's binding to its default.
+    ResetAllKeyBindings,
 
     /// No-op message for async tasks that don't need a response
     Noop,

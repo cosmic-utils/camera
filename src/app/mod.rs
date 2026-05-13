@@ -39,6 +39,7 @@ mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
 pub mod insights;
+pub mod keybind;
 mod motor_picker;
 pub mod qr_overlay;
 pub mod settings;
@@ -191,8 +192,16 @@ impl cosmic::Application for AppModel {
     }
 
     /// Initializes the application with any given flags and startup commands.
-    fn init(core: cosmic::Core, flags: Self::Flags) -> (Self, Task<cosmic::Action<Self::Message>>) {
+    fn init(
+        mut core: cosmic::Core,
+        flags: Self::Flags,
+    ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         let init_start = std::time::Instant::now();
+
+        // Disable libcosmic's built-in keyboard navigation (Tab/Shift+Tab/Esc/F11/Ctrl+F).
+        // Tab focus traversal is removed by user request; Esc handling is restored by our
+        // own keybind subscription, which emits Message::Escape on Esc presses.
+        core.set_keyboard_nav(false);
 
         // Create the about widget
         let about = About::default()
@@ -334,6 +343,8 @@ impl cosmic::Application for AppModel {
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
+            bindings: crate::app::keybind::Bindings::with_overrides(&config.key_bindings),
+            recording_keybind: None,
             about,
             config,
             config_handler,
@@ -720,11 +731,21 @@ impl cosmic::Application for AppModel {
             ContextPage::Settings => self.settings_view(),
             ContextPage::Filters => self.filters_view(),
             ContextPage::Insights => self.insights_view(),
+            ContextPage::KeyBindings => keybind::key_bindings_page::view(self),
         })
     }
 
     /// Handle escape key - close any open drawers or pickers
     fn on_escape(&mut self) -> Task<cosmic::Action<Self::Message>> {
+        // Defensive: the subscription switches to `capture_subscription` while
+        // recording, which routes Esc to `CancelKeyBindRecording` directly, so
+        // this branch is normally unreachable. Kept so any other code path
+        // calling `on_escape` still clears the dialog cleanly.
+        if self.recording_keybind.is_some() {
+            self.recording_keybind = None;
+            return Task::none();
+        }
+
         // Abort photo timer countdown if active
         if self.photo_timer_countdown.is_some() {
             return self.handle_abort_photo_timer();
@@ -1484,6 +1505,17 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        let keybind_sub = if self.recording_keybind.is_some() {
+            keybind::capture_subscription()
+        } else {
+            keybind::subscription(
+                self.bindings.clone(),
+                self.mode,
+                self.virtual_camera_file_source.is_some(),
+                self.recording.is_recording(),
+            )
+        };
+
         Subscription::batch([
             config_sub,
             camera_sub,
@@ -1496,6 +1528,7 @@ impl cosmic::Application for AppModel {
             brightness_eval_sub,
             insights_update_sub,
             portal_theme_sub,
+            keybind_sub,
         ])
     }
 

@@ -306,3 +306,49 @@ insights-v4l2-not-in-libcamera = Not available in libcamera
 # Insights - Capture
 insights-capture = Capture
 insights-capture-burst = Capture Burst
+
+# Keyboard shortcuts — categories
+shortcut-category-capture = Capture
+shortcut-category-camera = Camera
+shortcut-category-pickers = Pickers
+shortcut-category-display = Display
+shortcut-category-zoom = Zoom & framing
+shortcut-category-app = App
+
+# Keyboard shortcuts — action labels
+action-capture = Capture / Record / Play-Pause
+action-photo-snapshot = Photo during recording
+action-switch-camera = Switch camera
+action-toggle-focus-auto = Toggle auto focus
+action-toggle-flash = Toggle flash
+action-toggle-exposure-picker = Toggle exposure picker
+action-toggle-color-picker = Toggle color picker
+action-toggle-motor-picker = Toggle motor controls
+action-toggle-format-picker = Toggle format picker
+action-toggle-settings = Open settings
+action-next-mode = Next mode
+action-prev-mode = Previous mode
+action-zoom-in = Zoom in
+action-zoom-out = Zoom out
+action-reset-zoom = Reset zoom
+action-cycle-photo-aspect-ratio = Cycle photo aspect ratio
+action-open-gallery = Open gallery
+action-toggle-about = About
+action-reset-all-settings = Reset all settings
+action-show-shortcuts = Show shortcuts
+action-quit-app = Quit
+
+# Shortcuts help / settings page
+shortcuts-help-title = Keyboard Shortcuts
+shortcuts-help-customize = Customize in Settings → Keyboard Shortcuts
+shortcuts-help-unbound = —
+keybindings-page-title = Keyboard Shortcuts
+keybindings-page-back = Back
+keybindings-page-reset-all = Reset all to defaults
+keybindings-page-reset-section = Reset section to defaults
+keybindings-record-title = Press a key combination
+keybindings-record-hint = Press the key combination you want, or Esc to cancel
+keybindings-record-conflict = This combination is already used by "{$other}". Replace?
+keybindings-record-replace = Replace
+keybindings-record-cancel = Cancel
+keybindings-record-save = Save

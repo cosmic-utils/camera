@@ -17,7 +17,8 @@
 //! - `handlers::virtual_camera`: Virtual camera streaming
 //! - `handlers::system`: Gallery, filters, settings, recovery, QR codes
 
-use crate::app::state::{AppModel, Message};
+use crate::app::state::{AppModel, ContextPage, Message};
+use cosmic::Application;
 use cosmic::Task;
 use tracing::{debug, info, warn};
 
@@ -344,6 +345,67 @@ impl AppModel {
                 if let Err(e) = result {
                     warn!("GPU pipeline warmup failed: {e}");
                 }
+                Task::none()
+            }
+
+            // ===== Keyboard shortcuts =====
+            Message::OpenKeyBindingsPage => {
+                self.context_page = ContextPage::KeyBindings;
+                self.core.window.show_context = true;
+                Task::none()
+            }
+            Message::Escape => self.on_escape(),
+            Message::StartRecordingKeyBind(action) => {
+                self.recording_keybind = Some(crate::app::state::RecordingKeyBindState {
+                    action,
+                    captured: None,
+                    conflict_with: None,
+                });
+                Task::none()
+            }
+            Message::KeyBindRecordingCaptured(kb) => {
+                if let Some(action) = self.recording_keybind.as_ref().map(|r| r.action) {
+                    let conflict = self.bindings.conflict_for(&kb, action);
+                    if let Some(rec) = self.recording_keybind.as_mut() {
+                        rec.conflict_with = conflict;
+                        rec.captured = Some(kb);
+                    }
+                }
+                Task::none()
+            }
+            Message::CancelKeyBindRecording => {
+                self.recording_keybind = None;
+                Task::none()
+            }
+            Message::KeyBindSave => {
+                if let Some(rec) = self.recording_keybind.take()
+                    && let Some(combo) = rec.captured
+                {
+                    if let Some(other) = rec.conflict_with {
+                        self.config
+                            .key_bindings
+                            .insert(other, crate::app::keybind::SerializedKeyBind::default());
+                        self.bindings.set(other, None);
+                    }
+                    self.bindings.set(rec.action, Some(combo.clone()));
+                    self.config.key_bindings.insert(
+                        rec.action,
+                        crate::app::keybind::SerializedKeyBind::from(&combo),
+                    );
+                    self.persist_config();
+                }
+                Task::none()
+            }
+            Message::ResetKeyBindToDefault(action) => {
+                self.config.key_bindings.remove(&action);
+                self.bindings.reset_to_default(action);
+                self.persist_config();
+                Task::none()
+            }
+            Message::ResetAllKeyBindings => {
+                self.config.key_bindings.clear();
+                self.bindings = crate::app::keybind::Bindings::defaults();
+                self.persist_config();
                 Task::none()
             }
 

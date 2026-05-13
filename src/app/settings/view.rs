@@ -29,10 +29,15 @@ fn disabled_text(value: String) -> Element<'static, Message> {
 }
 
 impl AppModel {
-    /// Create the settings view for the context drawer
+    /// Create the settings view for the context drawer.
     ///
     /// Shows camera selection, format options, and backend settings.
     pub fn settings_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
+        self.settings_view_main()
+    }
+
+    /// Main settings page — shows camera selection, format options, and backend settings.
+    fn settings_view_main(&self) -> context_drawer::ContextDrawer<'_, Message> {
         let is_recording = self.recording.is_recording();
 
         // Bitrate preset index
@@ -403,6 +408,17 @@ impl AppModel {
                     .into(),
             ]));
 
+        // Keyboard shortcuts section — opens a separate context drawer (like Insights).
+        let shortcuts_section = widget::settings::section()
+            .title(fl!("keybindings-page-title"))
+            .add(widget::settings::item_row(vec![
+                widget::button::standard(fl!("keybindings-page-title"))
+                    .on_press(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::KeyBindings,
+                    ))
+                    .into(),
+            ]));
+
         // Combine all sections
         let mut sections = vec![
             appearance_section.into(),
@@ -418,6 +434,7 @@ impl AppModel {
         sections.extend([
             composition_guide_section.into(),
             virtual_camera_section.into(),
+            shortcuts_section.into(),
             bug_reports_section.into(),
             reset_section.into(),
             insights_section.into(),
