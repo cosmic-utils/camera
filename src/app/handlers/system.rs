@@ -1199,6 +1199,14 @@ impl AppModel {
 
         serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap_or_default()
     }
+
+    pub(crate) fn persist_config(&mut self) {
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            tracing::warn!("Failed to persist config: {err}");
+        }
+    }
 }
 
 /// Serialize a single CameraFrame's metadata to JSON.

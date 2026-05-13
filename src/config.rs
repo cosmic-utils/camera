@@ -288,7 +288,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 18]
+#[version = 19]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -332,6 +332,13 @@ pub struct Config {
     pub photo_aspect_ratio: crate::app::PhotoAspectRatio,
     /// Show entire frame (Contain) instead of filling the window (Cover)
     pub preview_fit_to_view: bool,
+    /// User-rebound keyboard shortcuts. Only contains user overrides;
+    /// the full default set is computed at runtime.
+    /// An empty SerializedKeyBind means the action is intentionally unbound.
+    pub key_bindings: std::collections::HashMap<
+        crate::app::keybind::Action,
+        crate::app::keybind::SerializedKeyBind,
+    >,
 }
 
 impl Default for Config {
@@ -360,6 +367,7 @@ impl Default for Config {
             haptic_feedback: true, // Enable haptic feedback by default
             photo_aspect_ratio: crate::app::PhotoAspectRatio::default(),
             preview_fit_to_view: false,
+            key_bindings: std::collections::HashMap::new(),
         }
     }
 }
