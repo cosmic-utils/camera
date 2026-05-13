@@ -9,6 +9,13 @@ updates:
       prefix: "deps(cargo)"
     open-pull-requests-limit: 10
     groups:
+      # Group all crates from the pop-os/libcosmic git source into one PR
+      libcosmic:
+        patterns:
+          - "libcosmic"
+          - "iced_core"
+          - "iced_futures"
+          - "iced_wgpu"
       # Group minor and patch updates together
       rust-dependencies:
         patterns:
