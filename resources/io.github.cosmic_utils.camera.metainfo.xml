@@ -98,10 +98,12 @@
   <screenshots>
     <screenshot type="default">
       <caption>Photo mode with tools menu</caption>
+      <caption xml:lang="cs">Režim fotografie s nabídkou nástrojů</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
     </screenshot>
     <screenshot>
       <caption>Photo mode on a Linux phone</caption>
+      <caption xml:lang="cs">Režim fotografie na telefonu s Linuxem</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
     </screenshot>
     <screenshot>
