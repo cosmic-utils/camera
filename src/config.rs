@@ -288,7 +288,7 @@ pub struct FormatSettings {
 pub type VideoSettings = FormatSettings;
 
 #[derive(Debug, Clone, CosmicConfigEntry, Eq, PartialEq, Serialize, Deserialize)]
-#[version = 19]
+#[version = 20]
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
@@ -308,6 +308,11 @@ pub struct Config {
     pub bug_report_url: String,
     /// Mirror camera preview horizontally (selfie mode)
     pub mirror_preview: bool,
+    /// Apply the same horizontal mirroring to captured photos / videos /
+    /// timelapse output. Only effective when `mirror_preview` is on and a
+    /// front-facing camera is selected. Default off — captured media is
+    /// stored as the sensor delivered it (matches Android / iOS defaults).
+    pub mirror_captures: bool,
     /// Video encoder bitrate preset (Low, Medium, High)
     pub bitrate_preset: BitratePreset,
     /// Virtual camera feature enabled (disabled by default)
@@ -354,17 +359,18 @@ impl Default for Config {
             bug_report_url:
                 "https://github.com/cosmic-utils/camera/issues/new?template=bug_report_from_app.yml"
                     .to_string(),
-            mirror_preview: true, // Default to mirrored (selfie mode)
+            mirror_preview: true,   // Default to mirrored (selfie mode)
+            mirror_captures: false, // Captured media unmirrored by default
             bitrate_preset: BitratePreset::default(), // Default to Medium
             virtual_camera_enabled: false, // Disabled by default
             photo_output_format: PhotoOutputFormat::default(), // Default to JPEG
-            save_burst_raw: false, // Disabled by default (debugging feature)
+            save_burst_raw: false,  // Disabled by default (debugging feature)
             burst_mode_setting: BurstModeSetting::default(), // Default to Auto
-            record_audio: true,   // Enable audio recording by default
+            record_audio: true,     // Enable audio recording by default
             audio_encoder: AudioEncoder::default(), // Default to Opus
             composition_guide: CompositionGuide::default(), // Default to None
             timelapse_interval: TimelapseInterval::default(), // Default to 2 fps
-            haptic_feedback: true, // Enable haptic feedback by default
+            haptic_feedback: true,  // Enable haptic feedback by default
             photo_aspect_ratio: crate::app::PhotoAspectRatio::default(),
             preview_fit_to_view: false,
             key_bindings: std::collections::HashMap::new(),

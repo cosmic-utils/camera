@@ -539,6 +539,8 @@ pub struct BurstModeConfig {
     pub camera_metadata: super::CameraMetadata,
     /// Sensor rotation to correct the image orientation
     pub rotation: SensorRotation,
+    /// Mirror the final HDR+ output horizontally (selfie / front-camera).
+    pub mirror_horizontal: bool,
 }
 
 impl Default for BurstModeConfig {
@@ -555,6 +557,7 @@ impl Default for BurstModeConfig {
             encoding_format: super::EncodingFormat::Jpeg, // Default to JPEG
             camera_metadata: super::CameraMetadata::default(),
             rotation: SensorRotation::None, // No rotation by default
+            mirror_horizontal: false,
         }
     }
 }
@@ -3359,6 +3362,8 @@ pub struct SaveOutputParams<'a> {
     pub filter: Option<crate::app::FilterType>,
     pub rotation: SensorRotation,
     pub filename_suffix: Option<&'a str>,
+    /// Mirror the final image horizontally (selfie / front-camera mode).
+    pub mirror_horizontal: bool,
 }
 
 /// Save output image to disk with optional filter, rotation, and aspect ratio cropping
@@ -3379,6 +3384,7 @@ pub async fn save_output(
         filter,
         rotation,
         filename_suffix,
+        mirror_horizontal,
     } = params;
 
     let timestamp = SystemTime::now()
@@ -3457,6 +3463,17 @@ pub async fn save_output(
     } else {
         let (w, h) = rgb_img.dimensions();
         (rgb_img, w, h)
+    };
+
+    // Mirror horizontally if requested (front-camera selfie mode). Done after
+    // rotation so the user-visible orientation is upright before flipping.
+    let rgb_img = if mirror_horizontal {
+        debug!("Mirroring burst output horizontally");
+        let mut img = rgb_img;
+        image::imageops::flip_horizontal_in_place(&mut img);
+        img
+    } else {
+        rgb_img
     };
 
     // Create a PhotoEncoder for the selected format

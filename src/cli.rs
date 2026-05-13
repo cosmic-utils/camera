@@ -290,6 +290,7 @@ pub fn record_video(
                         audio_device: None,
                         encoder_info: None,
                         rotation,
+                        mirror_horizontal: false,
                         audio_levels: Default::default(),
                     },
                     pixel_format,
@@ -489,6 +490,7 @@ pub fn process_burst_mode(
                 filter: None,
                 rotation: SensorRotation::None,
                 filename_suffix: Some("_HDR+"),
+                mirror_horizontal: false,
             },
         )
         .await

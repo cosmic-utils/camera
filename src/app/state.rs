@@ -1428,6 +1428,9 @@ pub enum Message {
     ClearTransitionBlur,
     /// Toggle mirror preview (horizontal flip)
     ToggleMirrorPreview,
+    /// Toggle whether the same mirroring also applies to captured media
+    /// (photos / videos / timelapse output).
+    ToggleMirrorCaptures,
     /// Toggle haptic feedback
     ToggleHapticFeedback,
 
