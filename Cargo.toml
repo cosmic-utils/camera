@@ -34,7 +34,7 @@ rqrr = "0.10.1"
 rfd = "0.17.2"
 zbus = "5.15.0"
 # XDG portal integration for color-scheme detection on non-COSMIC desktops
-ashpd = { version = "0.13.10", default-features = false, features = ["tokio", "settings"] }
+ashpd = { version = "0.13.11", default-features = false, features = ["tokio", "settings"] }
 uuid = { version = "1.23.1", features = ["v4"] }
 clap = { version = "4.6.1", features = ["derive"] }
 ratatui = "0.30.0"
