@@ -1,16 +1,18 @@
 app-title = Камера
-about = Про Камеру
+about = Про «Камеру»
 repository = Сховище
 view = Перегляд
 welcome = Ласкаво просимо до COSMIC! ✨
 page-id = Сторінка { $num }
-git-description = Версія Git {$hash} від {$date}
+git-description = Git {$hash} від {$date}
 
 # Mode switcher
-mode-video = ВІДЕО
-mode-photo = ЗНІМОК
-mode-virtual = ВІРТУАЛЬНА
-mode-view = View
+mode-video = Відео
+mode-photo = Знімок
+mode-timelapse = Уповільнено
+timelapse-saving = Збереження відео...
+mode-virtual = Віртуальна
+mode-view = Вид
 
 # Virtual camera
 virtual-camera-title = Віртуальна камера (експериментально)
@@ -25,15 +27,17 @@ filters-title = Фільтри
 
 # Settings
 settings-title = Налаштування
-settings-appearance = Зовнішній вигляд
+settings-appearance = Вигляд
 settings-theme = Тема
 match-desktop = Системна
 dark = Темна
 light = Світла
+settings-default-mode = Типовий режим
+settings-default-mode-description = Режим камери під час запуску застосунку
 settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
-settings-backend = Backend
+settings-backend = Система обробки
 settings-format = Формат
 settings-microphone = Мікрофон
 settings-record-audio = Запис звуку
@@ -45,6 +49,8 @@ settings-video-quality = Якість відео
 settings-manual-override = Перевизначити вручну
 settings-mirror-preview = Дзеркалити
 settings-mirror-preview-description = Відобразити попередній перегляд по горизонталі
+settings-haptic-feedback = Тактильний відгук
+settings-haptic-feedback-description = Вібрація під час зйомки, перемикання режиму та камери
 settings-reset-all = Скинути всі налаштування
 settings-bug-reports = Звіти про вади
 settings-stats-for-nerds = Для допитливих
@@ -76,6 +82,8 @@ preset-high = Високий
 
 # Camera preview
 initializing-camera = Підготовка камери…
+preview-fit = Вписати
+preview-cover = Заповнити
 
 # Format picker
 format-resolution = Роздільність:
@@ -94,7 +102,7 @@ qr-open-link = Відкрити ланку
 qr-connect-wifi = Підключитися до WiFi
 qr-copy-text = Копіювати текст
 qr-call = Виклик
-qr-send-email = Надіслати Email
+qr-send-email = Надіслати лист
 qr-send-sms = Надіслати SMS
 qr-open-map = Відкрити мапу
 qr-add-contact = Додати контакт
@@ -170,6 +178,19 @@ settings-burst-mode-quality = Алгоритм HDR+
 settings-burst-mode-quality-description = «Якість» дає кращий результат злиттям у частотній області (FFT). «Швидкість» пришвидшує обробку просторовим злиттям.
 settings-save-burst-raw = Зберігати сирці серії
 settings-save-burst-raw-description = Зберігати окремі кадри серії у форматі DNG разом із HDR+ знімками. Корисно для налагодження або повторної обробки.
+
+# Composition guide
+settings-composition-guide = Напрямні композиції
+settings-composition-guide-description = Накладати напрямні на перегляд для кадрування
+guide-none = Немає
+guide-rule-of-thirds = Правило третин
+guide-phi-grid = Φ-сітка
+guide-spiral-top-left = Золотий перетин ↖
+guide-spiral-top-right = Золотий перетин ↗
+guide-spiral-bottom-left = Золотий перетин ↙
+guide-spiral-bottom-right = Золотий перетин ↘
+guide-diagonal = Діагоналі
+guide-crosshair = Перехрестя
 
 # About page
 about-support = Підтримка та відгуки
@@ -270,6 +291,64 @@ insights-meta-lux = Освітленість
 insights-meta-focus-fom = Показник фокуса
 insights-meta-na = N/A
 
+# Timelapse
+settings-timelapse = Уповільнення
+settings-timelapse-interval = Інтервал
+settings-timelapse-interval-description = Час між послідовними знімками
+
+# Insights - V4L2 Formats
+insights-v4l2-formats = Формати пристрою V4L2
+insights-v4l2-no-device = Немає пристрою V4L2
+insights-v4l2-in-libcamera = Доступно в libcamera
+insights-v4l2-active-in-libcamera = Активно в libcamera
+insights-v4l2-not-in-libcamera = Недоступно в libcamera
+
 # Insights - Capture
 insights-capture = Зйомка
 insights-capture-burst = Серійна зйомка
+
+# Keyboard shortcuts — categories
+shortcut-category-capture = Зйомка
+shortcut-category-camera = Камера
+shortcut-category-pickers = Pickers
+shortcut-category-display = Дисплей
+shortcut-category-zoom = Масштаб і кадрування
+shortcut-category-app = Застосунок
+
+# Keyboard shortcuts — action labels
+action-capture = Зйомка / Запис / Грати-Пауза
+action-photo-snapshot = Фото під час запису
+action-switch-camera = Перемкнути камеру
+action-toggle-focus-auto = Перемкнути автофокус
+action-toggle-flash = Перемкнути спалах
+action-toggle-exposure-picker = Перемкнути панель експозиції
+action-toggle-color-picker = Перемкнути панель кольору
+action-toggle-motor-picker = Перемкнути керування мотором
+action-toggle-format-picker = Перемкнути панель формату
+action-toggle-settings = Відкрити налаштування
+action-next-mode = Наступний режим
+action-prev-mode = Попередній режим
+action-zoom-in = Збільшити
+action-zoom-out = Зменшити
+action-reset-zoom = Скинути масштаб
+action-cycle-photo-aspect-ratio = Перемкнути пропорції фото
+action-open-gallery = Відкрити галерею
+action-toggle-about = Про застосунок
+action-reset-all-settings = Скинути всі налаштування
+action-show-shortcuts = Показати сполучення
+action-quit-app = Вийти
+
+# Shortcuts help / settings page
+shortcuts-help-title = Сполучення клавіш
+shortcuts-help-customize = Налаштувати в Налаштування → Сполучення клавіш
+shortcuts-help-unbound = —
+keybindings-page-title = Сполучення клавіш
+keybindings-page-back = Назад
+keybindings-page-reset-all = Скинути все до типових
+keybindings-page-reset-section = Скинути розділ до типових
+keybindings-record-title = Натисніть сполучення клавіш
+keybindings-record-hint = Натисніть потрібне сполучення або Esc для скасування
+keybindings-record-conflict = Сполучення вже використовується для "{$other}". Замінити?
+keybindings-record-replace = Замінити
+keybindings-record-cancel = Скасувати
+keybindings-record-save = Зберегти
