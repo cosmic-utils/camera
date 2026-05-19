@@ -1345,14 +1345,15 @@ impl VideoRecorder {
         audio_encoder_config: crate::media::encoders::audio::SelectedAudioEncoder,
     ) -> Result<Option<AudioBranch>, String> {
         let mut source_builder = gst::ElementFactory::make("pulsesrc")
-            // Use pipeline clock for timestamps instead of device clock.
-            // `re-timestamp` makes pulsesrc stamp buffers when they arrive,
-            // giving consistent A/V sync regardless of PipeWire routing
-            // latency for non-default devices. Tradeoff: audio latency
-            // through PipeWire (~10-50ms) is absorbed into timestamps, and
-            // long recordings may drift if PipeWire and pipeline clocks
-            // diverge. If drift is observed, consider `slave-method=skew`.
-            .property_from_str("slave-method", "re-timestamp")
+            // `skew` keeps the device clock and inserts/drops samples to
+            // resync against the pipeline clock, which avoids cumulative
+            // drift on long recordings (the previous `re-timestamp` mode
+            // stamps buffers on arrival and can diverge over time when
+            // PipeWire and pipeline clocks differ). Tradeoff: per-buffer
+            // PipeWire routing latency is no longer absorbed into the
+            // timestamps, so non-default audio devices may need their own
+            // sync compensation if A/V offset becomes audible.
+            .property_from_str("slave-method", "skew")
             .property("provide-clock", false);
 
         // pulsesrc `device` property takes the PipeWire/PulseAudio node name
