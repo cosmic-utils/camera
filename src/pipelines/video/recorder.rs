@@ -247,6 +247,8 @@ pub struct RecorderConfig<'a> {
     pub encoder_info: Option<&'a crate::media::encoders::video::EncoderInfo>,
     /// Sensor rotation to correct video orientation
     pub rotation: SensorRotation,
+    /// Mirror the recorded video horizontally (selfie / front-camera mode).
+    pub mirror_horizontal: bool,
     /// Pre-created shared audio levels handle (UI reads this for live meters)
     pub audio_levels: SharedAudioLevels,
 }
@@ -836,6 +838,7 @@ impl VideoRecorder {
                     audio_device,
                     encoder_info,
                     rotation,
+                    mirror_horizontal,
                     audio_levels,
                 },
             pixel_format,
@@ -856,6 +859,7 @@ impl VideoRecorder {
             audio = enable_audio,
             audio_device = ?audio_device,
             rotation = %rotation,
+            mirror_horizontal,
             "Creating appsrc-based video recorder (libcamera backend)"
         );
 
@@ -874,10 +878,17 @@ impl VideoRecorder {
             (width, height)
         };
 
-        // Inverse rotation: sensor mounting angle → correction direction
-        let flip_str = rotation_to_flip_direction(rotation)
+        // Inverse rotation: sensor mounting angle → correction direction.
+        // Optionally chained with a horizontal mirror flip for front-camera mode.
+        let rotation_flip = rotation_to_flip_direction(rotation)
             .map(|dir| format!("! videoflip video-direction={dir}"))
             .unwrap_or_default();
+        let mirror_flip = if mirror_horizontal {
+            "! videoflip video-direction=horiz"
+        } else {
+            ""
+        };
+        let flip_str = format!("{rotation_flip} {mirror_flip}").trim().to_string();
 
         // OpenH264 has a maximum resolution limit — downscale if exceeded
         let (final_width, final_height) =
@@ -1143,6 +1154,7 @@ impl VideoRecorder {
                     audio_device,
                     encoder_info,
                     rotation: _,
+                    mirror_horizontal,
                     audio_levels,
                 },
             pixel_format: _,
@@ -1162,6 +1174,7 @@ impl VideoRecorder {
             va_jpeg_dec,
             output = %output_path.display(),
             audio = enable_audio,
+            mirror_horizontal,
             "Creating VA-API JPEG zero-copy recording pipeline"
         );
 
@@ -1209,6 +1222,15 @@ impl VideoRecorder {
             }
         }
 
+        // Insert a horizontal flip between videoconvert and the encoder when
+        // mirroring is requested. This forces a software pass on the flip but
+        // keeps the rest of the zero-copy pipeline intact.
+        let mirror_str = if mirror_horizontal {
+            "! videoflip video-direction=horiz "
+        } else {
+            ""
+        };
+
         let pipeline_desc = format!(
             "appsrc name=camera-appsrc \
                caps=image/jpeg,width={w},height={h},framerate={fps}/1 \
@@ -1217,6 +1239,7 @@ impl VideoRecorder {
              ! queue max-size-buffers=60 max-size-time=3000000000 \
              ! {decoder} name=jpeg-decoder \
              ! videoconvert \
+             {mirror}\
              ! {encoder} name=recording-encoder \
              {parser} \
              ! {muxer} name=recording-muxer \
@@ -1226,6 +1249,7 @@ impl VideoRecorder {
             fps = framerate,
             lat = setup.frame_duration_ns,
             decoder = va_jpeg_dec,
+            mirror = mirror_str,
             encoder = setup.encoder_name,
             parser = setup.parser_str,
             muxer = setup.muxer_name,

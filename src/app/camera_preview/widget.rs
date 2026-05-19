@@ -21,6 +21,13 @@ impl AppModel {
         self.config.mirror_preview && !self.current_frame_is_file_source && !is_back
     }
 
+    /// Whether captured media (photo / video / timelapse) should be mirrored
+    /// to match the preview. Only applies when the preview itself is mirrored
+    /// AND the user has opted in via the `mirror_captures` setting.
+    pub(crate) fn should_mirror_captures(&self) -> bool {
+        self.config.mirror_captures && self.should_mirror_preview()
+    }
+
     /// Build the camera preview widget
     ///
     /// Uses custom video widget with handle caching for optimized rendering.

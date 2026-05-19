@@ -146,6 +146,7 @@ impl AppModel {
             Message::StartCameraTransition => self.handle_start_camera_transition(),
             Message::ClearTransitionBlur => self.handle_clear_transition_blur(),
             Message::ToggleMirrorPreview => self.handle_toggle_mirror_preview(),
+            Message::ToggleMirrorCaptures => self.handle_toggle_mirror_captures(),
             Message::ToggleHapticFeedback => self.handle_toggle_haptic_feedback(),
             Message::ToggleVirtualCameraEnabled => self.handle_toggle_virtual_camera_enabled(),
 

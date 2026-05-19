@@ -599,6 +599,23 @@ impl AppModel {
         Task::none()
     }
 
+    pub(crate) fn handle_toggle_mirror_captures(&mut self) -> Task<cosmic::Action<Message>> {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        self.config.mirror_captures = !self.config.mirror_captures;
+        info!(
+            mirror_captures = self.config.mirror_captures,
+            "Mirror captures toggled"
+        );
+
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            error!(?err, "Failed to save mirror captures setting");
+        }
+        Task::none()
+    }
+
     pub(crate) fn handle_toggle_haptic_feedback(&mut self) -> Task<cosmic::Action<Message>> {
         use cosmic::cosmic_config::CosmicConfigEntry;
 

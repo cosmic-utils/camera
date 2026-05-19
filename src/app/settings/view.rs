@@ -322,12 +322,21 @@ impl AppModel {
                 )
         };
 
-        // Mirror preview section
-        let mirror_section = widget::settings::section().add(
+        // Mirror preview section (preview flip + optional capture flip)
+        let mut mirror_section = widget::settings::section().add(
             widget::settings::item::builder(fl!("settings-mirror-preview"))
                 .description(fl!("settings-mirror-preview-description"))
                 .toggler(self.config.mirror_preview, |_| Message::ToggleMirrorPreview),
         );
+        if self.config.mirror_preview {
+            mirror_section = mirror_section.add(
+                widget::settings::item::builder(fl!("settings-mirror-captures"))
+                    .description(fl!("settings-mirror-captures-description"))
+                    .toggler(self.config.mirror_captures, |_| {
+                        Message::ToggleMirrorCaptures
+                    }),
+            );
+        }
 
         // Haptic feedback section (only show if device has haptics)
         let haptic_section = if crate::backends::haptic::is_available() {

@@ -39,6 +39,8 @@ pub struct PostProcessingConfig {
     pub zoom_level: f32,
     /// Sensor rotation to correct the image orientation
     pub rotation: SensorRotation,
+    /// Mirror the image horizontally (selfie capture, mirroring the preview).
+    pub mirror_horizontal: bool,
 }
 
 impl Default for PostProcessingConfig {
@@ -53,6 +55,7 @@ impl Default for PostProcessingConfig {
             crop_rect: None,
             zoom_level: 1.0,
             rotation: SensorRotation::None,
+            mirror_horizontal: false,
         }
     }
 }
@@ -192,6 +195,17 @@ impl PostProcessor {
             Self::apply_rotation(rgb_image, config.rotation)?
         } else {
             (rgb_image, final_width, final_height)
+        };
+
+        // Step 4.6: Mirror horizontally if requested (front-camera selfie mode).
+        // Done after rotation so the final orientation is upright before flipping.
+        let rgb_image = if config.mirror_horizontal {
+            debug!("Mirroring captured image horizontally");
+            let mut img = rgb_image;
+            image::imageops::flip_horizontal_in_place(&mut img);
+            img
+        } else {
+            rgb_image
         };
 
         // Step 5 & 6: Apply adjustments and sharpening (CPU-bound)

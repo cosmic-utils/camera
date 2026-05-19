@@ -39,6 +39,7 @@ pub async fn run_timelapse_encoder(
     bitrate_kbps: Option<u32>,
     live_filter_code: Arc<AtomicU32>,
     rotation: SensorRotation,
+    mirror_horizontal: bool,
 ) -> Result<String, String> {
     // Wait for the first frame so we know the dimensions.
     let first_frame = frame_rx
@@ -122,7 +123,8 @@ pub async fn run_timelapse_encoder(
         .build()
         .map_err(|e| format!("videoconvert: {e}"))?;
 
-    // Optional videoflip for sensor rotation correction
+    // Optional videoflip for sensor rotation correction. If we also need to
+    // mirror horizontally, chain a second videoflip after rotation.
     let videoflip = if let Some(direction) = flip_direction {
         let flip = gst::ElementFactory::make("videoflip")
             .property_from_str("video-direction", direction)
@@ -142,6 +144,17 @@ pub async fn run_timelapse_encoder(
             .map_err(|e| format!("capsfilter: {e}"))?;
 
         Some((flip, capsfilter))
+    } else {
+        None
+    };
+
+    let mirror_flip = if mirror_horizontal {
+        Some(
+            gst::ElementFactory::make("videoflip")
+                .property_from_str("video-direction", "horiz")
+                .build()
+                .map_err(|e| format!("videoflip(mirror): {e}"))?,
+        )
     } else {
         None
     };
@@ -167,14 +180,19 @@ pub async fn run_timelapse_encoder(
             .add_many([flip, capsfilter])
             .map_err(|e| format!("pipeline add flip/capsfilter: {e}"))?;
     }
+    if let Some(ref mirror) = mirror_flip {
+        pipeline
+            .add_many([mirror])
+            .map_err(|e| format!("pipeline add mirror: {e}"))?;
+    }
 
     // Link
     appsrc
         .link(&videoconvert)
         .map_err(|_| "link appsrc→videoconvert")?;
 
-    // Chain: videoconvert → [videoflip → capsfilter →] encoder
-    let pre_encoder: &gst::Element = if let Some((ref flip, ref capsfilter)) = videoflip {
+    // Chain: videoconvert → [videoflip → capsfilter →] [mirror →] encoder
+    let after_rotation: &gst::Element = if let Some((ref flip, ref capsfilter)) = videoflip {
         videoconvert
             .link(flip)
             .map_err(|_| "link videoconvert→videoflip")?;
@@ -183,6 +201,14 @@ pub async fn run_timelapse_encoder(
         capsfilter
     } else {
         &videoconvert
+    };
+    let pre_encoder: &gst::Element = if let Some(ref mirror) = mirror_flip {
+        after_rotation
+            .link(mirror)
+            .map_err(|_| "link rotation→mirror")?;
+        mirror
+    } else {
+        after_rotation
     };
 
     if let Some(ref p) = parser {

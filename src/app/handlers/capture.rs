@@ -222,6 +222,7 @@ impl AppModel {
         let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
+        let mirror_horizontal = self.should_mirror_captures();
 
         let rotation = self.current_camera_rotation();
 
@@ -279,6 +280,7 @@ impl AppModel {
                     crop_rect,
                     zoom_level,
                     rotation,
+                    mirror_horizontal,
                     ..Default::default()
                 };
                 let mut pipeline =
@@ -312,6 +314,7 @@ impl AppModel {
         let save_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
         let filter_type = self.selected_filter;
         let zoom_level = self.zoom_level;
+        let mirror_horizontal = self.should_mirror_captures();
 
         let rotation = self.current_camera_rotation();
 
@@ -396,6 +399,7 @@ impl AppModel {
                     crop_rect,
                     zoom_level,
                     rotation,
+                    mirror_horizontal,
                     ..Default::default()
                 };
                 let mut pipeline =
@@ -632,6 +636,7 @@ impl AppModel {
         config.camera_metadata = camera_metadata;
         config.save_burst_raw_dng = self.config.save_burst_raw;
         config.rotation = rotation;
+        config.mirror_horizontal = self.should_mirror_captures();
 
         // Calculate adaptive processing parameters based on scene brightness
         // estimate_scene_brightness assumes RGBA data, so skip for raw Bayer frames
@@ -1435,6 +1440,7 @@ impl AppModel {
             selected_encoder,
             bitrate_kbps,
         } = config;
+        let mirror_horizontal = self.should_mirror_captures();
 
         // Determine pixel format for the appsrc pipeline
         let pixel_format = self
@@ -1580,6 +1586,7 @@ impl AppModel {
                                     audio_device: audio_device.as_deref(),
                                     encoder_info: selected_encoder.as_ref(),
                                     rotation: sensor_rotation,
+                                    mirror_horizontal,
                                     audio_levels,
                                 },
                                 pixel_format,
@@ -1814,6 +1821,7 @@ impl AppModel {
         let bitrate_kbps = Some(self.config.bitrate_preset.bitrate_kbps(w, h));
         let live_filter_code = Arc::clone(&self.recording_filter_code);
         let rotation = self.current_camera_rotation();
+        let mirror_horizontal = self.should_mirror_captures();
 
         // Spawn the encoder task — it runs until the channel is closed
         let encoder_task = Task::perform(
@@ -1833,6 +1841,7 @@ impl AppModel {
                     bitrate_kbps,
                     live_filter_code,
                     rotation,
+                    mirror_horizontal,
                 )
                 .await
             },
@@ -2013,6 +2022,7 @@ async fn process_burst_mode_frames_with_atomic(
     let camera_metadata = config.camera_metadata.clone();
     let save_burst_raw_dng = config.save_burst_raw_dng;
     let rotation = config.rotation;
+    let mirror_horizontal = config.mirror_horizontal;
 
     // Export raw burst frames as DNG if enabled (before processing)
     if save_burst_raw_dng {
@@ -2037,6 +2047,7 @@ async fn process_burst_mode_frames_with_atomic(
             &camera_metadata,
             filter,
             rotation,
+            mirror_horizontal,
         )
         .await
     {
@@ -2064,6 +2075,7 @@ async fn process_burst_mode_frames_with_atomic(
             filter: Some(filter),
             rotation,
             filename_suffix: Some("_HDR+"),
+            mirror_horizontal,
         },
     )
     .await?;
@@ -2073,6 +2085,7 @@ async fn process_burst_mode_frames_with_atomic(
 }
 
 /// Save the first frame of a burst as a separate file for comparison
+#[allow(clippy::too_many_arguments)]
 async fn save_first_burst_frame(
     frame: &crate::backends::camera::types::CameraFrame,
     save_dir: &std::path::Path,
@@ -2081,6 +2094,7 @@ async fn save_first_burst_frame(
     camera_metadata: &crate::pipelines::photo::CameraMetadata,
     filter: crate::app::FilterType,
     rotation: crate::backends::camera::types::SensorRotation,
+    mirror_horizontal: bool,
 ) -> Result<PathBuf, String> {
     use crate::pipelines::photo::burst_mode::{MergedFrame, SaveOutputParams, save_output};
 
@@ -2123,6 +2137,7 @@ async fn save_first_burst_frame(
             filter: Some(filter),
             rotation,
             filename_suffix: None, // No suffix for first frame
+            mirror_horizontal,
         },
     )
     .await?;
