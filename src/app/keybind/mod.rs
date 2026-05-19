@@ -111,6 +111,7 @@ pub fn subscription(
         let Event::Keyboard(keyboard::Event::KeyPressed {
             key,
             modified_key,
+            physical_key,
             modifiers,
             ..
         }) = event
@@ -126,10 +127,15 @@ pub fn subscription(
 
         // Match against `modified_key` (layout-aware: Shift+/ on US and
         // Shift+ß on German both yield "?"), falling back to the raw key.
-        // KeyBind::matches handles case-insensitive character compare.
+        // KeyBind::matches handles case-insensitive character compare and uses
+        // the physical key as a Latin-position fallback for non-Latin layouts
+        // (e.g. so Ctrl+С on Cyrillic still triggers a Ctrl+C binding).
+        let phys = Some(&physical_key);
         let action = map
             .iter()
-            .find(|(kb, _)| kb.matches(modifiers, &modified_key) || kb.matches(modifiers, &key))
+            .find(|(kb, _)| {
+                kb.matches(modifiers, &modified_key, phys) || kb.matches(modifiers, &key, phys)
+            })
             .map(|(_, a)| *a)?;
 
         if action == Action::Capture {
