@@ -1075,6 +1075,56 @@ impl AppModel {
         Task::none()
     }
 
+    /// Handle a window-close request. If a recording or timelapse is in
+    /// progress, signal it to stop and defer the process exit until the
+    /// completion handler (`handle_recording_stopped` /
+    /// `handle_timelapse_assembly_complete`) sees `pending_close == true`
+    /// and exits. Otherwise exit immediately.
+    pub(crate) fn handle_window_close(&mut self) -> Task<cosmic::Action<Message>> {
+        // Already closing — second click is a no-op.
+        if self.pending_close {
+            return Task::none();
+        }
+
+        // Turn off hardware flash LEDs regardless of the exit path so we
+        // never leave them on after the app window goes away.
+        if self.flash_enabled {
+            self.flash_enabled = false;
+        }
+        self.turn_off_flash_hardware();
+
+        if self.recording.is_recording() {
+            info!("Window close requested during recording — signalling EOS first");
+            self.pending_close = true;
+            if let Some(sender) = self.recording.take_stop_sender() {
+                let _ = sender.send(());
+            }
+            // Leave RecordingState::Recording in place so the UI still
+            // shows the timer until the recorder task emits
+            // RecordingStopped.
+            return Task::none();
+        }
+
+        if self.timelapse.is_running() {
+            info!("Window close requested during timelapse — finalising first");
+            self.pending_close = true;
+            // Transition to Finalising; the frame sender is dropped,
+            // closing the channel so the encoder task drains and emits
+            // TimelapseAssemblyComplete.
+            return self.stop_timelapse();
+        }
+
+        if self.timelapse.is_finalising() {
+            // Already finalising — just defer the exit.
+            info!("Window close requested while timelapse is finalising — waiting");
+            self.pending_close = true;
+            return Task::none();
+        }
+
+        info!("Window close — exiting");
+        std::process::exit(0);
+    }
+
     pub(crate) fn handle_toggle_recording(&mut self) -> Task<cosmic::Action<Message>> {
         self.haptic_tap();
         if self.recording.is_recording() {
@@ -1129,6 +1179,14 @@ impl AppModel {
         self.update_idle_inhibit();
         // Turn off torch when recording ends
         self.turn_off_flash_hardware();
+
+        if self.pending_close {
+            match &result {
+                Ok(path) => info!(path = %path, "Recording finalized — exiting"),
+                Err(err) => error!(error = %err, "Recording finalize failed — exiting anyway"),
+            }
+            std::process::exit(0);
+        }
 
         match result {
             Ok(path) => {
@@ -1892,6 +1950,15 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         self.timelapse = TimelapseState::Idle;
         self.update_idle_inhibit();
+
+        if self.pending_close {
+            match &result {
+                Ok(path) => info!(path = %path, "Timelapse finalized — exiting"),
+                Err(err) => error!(error = %err, "Timelapse finalize failed — exiting anyway"),
+            }
+            std::process::exit(0);
+        }
+
         match result {
             Ok(path) => {
                 info!(path = %path, "Timelapse video saved");
