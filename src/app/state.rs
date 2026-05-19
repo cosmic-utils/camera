@@ -697,6 +697,11 @@ pub struct AppModel {
     pub last_bug_report_path: Option<String>,
     /// Path to the most recently saved photo or video (for gallery pre-selection)
     pub last_media_path: Option<String>,
+    /// Set when the user pressed the close button while a recording or
+    /// timelapse was active. The handlers that complete those operations
+    /// (`handle_recording_stopped` / `handle_timelapse_assembly_complete`)
+    /// check this flag and exit the process once the file is finalized.
+    pub pending_close: bool,
     /// Latest gallery thumbnail (cached)
     pub gallery_thumbnail: Option<cosmic::widget::image::Handle>,
     /// Gallery thumbnail RGBA data for custom rendering (Arc for cheap cloning)

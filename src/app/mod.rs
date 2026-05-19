@@ -422,6 +422,7 @@ impl cosmic::Application for AppModel {
             fit_animation: None,
             last_bug_report_path: None,
             last_media_path: None,
+            pending_close: false,
             gallery_thumbnail: None,
             gallery_thumbnail_rgba: None,
             picker_selected_resolution: None,

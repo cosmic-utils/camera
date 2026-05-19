@@ -215,9 +215,7 @@ impl AppModel {
                 self.zoom_animation.map(|a| a.start.elapsed()),
                 |s| s.zoom_animation = None,
             ),
-            Message::WindowClose => {
-                std::process::exit(0);
-            }
+            Message::WindowClose => self.handle_window_close(),
             Message::WindowMinimize => self.core.minimize(None),
             Message::WindowToggleMaximize => self.core.toggle_maximize(None),
             Message::WindowDrag => self.core.drag(None),
