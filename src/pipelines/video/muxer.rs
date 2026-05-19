@@ -46,6 +46,18 @@ pub fn create_muxer(
         info!(muxer = %muxer_name, "Configured muxer with streamable=false for seekable output");
     }
 
+    // For MP4 (mp4mux / qtmux), write a fragmented file (moof every 2 s) so the
+    // recording is incrementally playable: closing cleanly produces a normal
+    // fragmented MP4, and if the pipeline is killed mid-recording (crash, EOS
+    // timeout, OOM) every fragment written up to that point is still valid —
+    // no missing moov atom. Issues #385 and #395. Trade-off: very old players
+    // that don't understand fragmented MP4 may struggle.
+    if (muxer_name == "mp4mux" || muxer_name == "qtmux") && muxer.has_property("fragment-duration")
+    {
+        muxer.set_property("fragment-duration", 2000u32);
+        info!(muxer = %muxer_name, "Configured fragmented MP4 (fragment-duration=2000ms)");
+    }
+
     // WebM-specific optimizations for proper duration writing
     if muxer_name == "webmmux" {
         // Ensure writing duration (streamable=false should handle this, but be explicit)
