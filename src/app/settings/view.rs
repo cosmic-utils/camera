@@ -242,6 +242,39 @@ impl AppModel {
             }
         }
 
+        if self.config.record_audio {
+            use crate::app::controls::audio_meter::{AudioMeterStyle, audio_meter};
+
+            let meter_row = match self.current_audio_levels() {
+                Some(levels) => widget::Row::new()
+                    .push(widget::text::body(fl!("settings-mic-level")))
+                    .push(widget::space::horizontal().width(Length::Fill))
+                    .push(audio_meter(
+                        levels.output_peak_db,
+                        levels.output_rms_db,
+                        AudioMeterStyle {
+                            width: 120.0,
+                            height: 10.0,
+                            show_peak: true,
+                        },
+                    ))
+                    .push(widget::space::horizontal().width(Length::Fixed(8.0)))
+                    .push(
+                        widget::text::caption(format!("{:.0} dB", levels.output_rms_db))
+                            .font(cosmic::font::mono())
+                            .size(11),
+                    )
+                    .align_y(Alignment::Center),
+                None => widget::Row::new()
+                    .push(widget::text::body(fl!("settings-mic-level")))
+                    .push(widget::space::horizontal().width(Length::Fill))
+                    .push(widget::text::caption(fl!("settings-mic-level-initializing")).size(11))
+                    .align_y(Alignment::Center),
+            };
+
+            video_section = video_section.add(widget::settings::item_row(vec![meter_row.into()]));
+        }
+
         // Photo section (output format and HDR+ settings)
         use crate::config::BurstModeSetting;
         // Index 0 = Off, 1 = Auto, 2 = 4 frames, 3 = 6 frames, 4 = 8 frames, 5 = 50 frames

@@ -36,6 +36,7 @@ impl AppModel {
             self.context_page = context_page;
             self.core.window.show_context = true;
         }
+        self.sync_audio_probe();
         Task::none()
     }
 

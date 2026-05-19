@@ -498,6 +498,9 @@ impl cosmic::Application for AppModel {
                 .map(|i| i.display_name().to_string())
                 .collect(),
             device_info_visible: false,
+            audio_probe: None,
+            probe_audio_levels: None,
+            audio_levels_snapshot: None,
             screen_width: 0.0,
             screen_height: 0.0,
             transition_state: crate::app::state::TransitionState::default(),
@@ -780,6 +783,7 @@ impl cosmic::Application for AppModel {
         // Close context drawer if open (about, settings, filters)
         if self.core.window.show_context {
             self.core.window.show_context = false;
+            self.sync_audio_probe();
             return Task::none();
         }
 
@@ -1460,6 +1464,14 @@ impl cosmic::Application for AppModel {
                 Subscription::none()
             };
 
+        // 100 ms audio level snapshot — only while a level source is active.
+        let audio_level_sub = if self.audio_probe.is_some() || self.recording.is_recording() {
+            let interval = std::time::Duration::from_millis(100);
+            cosmic::iced::time::every(interval).map(|_| Message::AudioLevelTick)
+        } else {
+            Subscription::none()
+        };
+
         // On non-COSMIC desktops, subscribe to XDG portal color-scheme changes
         // so theme updates when user changes their desktop appearance
         let portal_theme_sub = if !crate::config::is_cosmic_desktop()
@@ -1527,6 +1539,7 @@ impl cosmic::Application for AppModel {
             privacy_polling_sub,
             brightness_eval_sub,
             insights_update_sub,
+            audio_level_sub,
             portal_theme_sub,
             keybind_sub,
         ])

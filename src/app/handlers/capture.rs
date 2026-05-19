@@ -1117,6 +1117,7 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         info!(path = %path, "Recording started successfully");
         self.update_idle_inhibit();
+        self.sync_audio_probe();
         Self::delay_task(1000, Message::UpdateRecordingDuration)
     }
 
@@ -1125,6 +1126,7 @@ impl AppModel {
         result: Result<String, String>,
     ) -> Task<cosmic::Action<Message>> {
         self.recording = RecordingState::Idle;
+        self.sync_audio_probe();
         self.quick_record = crate::app::state::QuickRecordState::Idle;
         self.update_idle_inhibit();
         // Turn off torch when recording ends

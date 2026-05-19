@@ -775,9 +775,18 @@ impl AppModel {
 
                 // Live dB level bar (when recording)
                 if let Some(rms_db) = live_rms {
+                    use crate::app::controls::audio_meter::{AudioMeterStyle, audio_meter};
                     row = row
                         .push(widget::space::horizontal().width(Length::Fixed(8.0)))
-                        .push(Self::build_level_bar(rms_db))
+                        .push(audio_meter(
+                            rms_db, // peak unused (show_peak: false)
+                            rms_db,
+                            AudioMeterStyle {
+                                width: 80.0,
+                                height: 8.0,
+                                show_peak: false,
+                            },
+                        ))
                         .push(widget::space::horizontal().width(Length::Fixed(4.0)))
                         .push(
                             widget::text::caption(format!("{:.0} dB", rms_db))
@@ -803,7 +812,18 @@ impl AppModel {
                         .width(Length::Fixed(48.0)),
                 )
                 .push(widget::space::horizontal().width(Length::Fixed(8.0)))
-                .push(Self::build_level_bar(levels.output_rms_db))
+                .push({
+                    use crate::app::controls::audio_meter::{AudioMeterStyle, audio_meter};
+                    audio_meter(
+                        levels.output_rms_db,
+                        levels.output_rms_db,
+                        AudioMeterStyle {
+                            width: 80.0,
+                            height: 8.0,
+                            show_peak: false,
+                        },
+                    )
+                })
                 .push(widget::space::horizontal().width(Length::Fixed(4.0)))
                 .push(
                     widget::text::caption(rms_text)
@@ -827,38 +847,6 @@ impl AppModel {
         }
 
         section
-    }
-
-    /// Build a horizontal level bar for a dB value.
-    ///
-    /// Maps -60 dB..0 dB to 0..100% width.  Uses green/yellow/red colouring.
-    fn build_level_bar(db: f64) -> Element<'static, Message> {
-        // Clamp and normalize: -60 dB → 0%, 0 dB → 100%
-        let fraction = ((db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
-        let bar_width = (fraction * 80.0).max(1.0);
-
-        // Color: green < -12 dB, yellow -12...-3, red > -3
-        let color = if db < -12.0 {
-            cosmic::iced::Color::from_rgb(0.2, 0.8, 0.3) // green
-        } else if db < -3.0 {
-            cosmic::iced::Color::from_rgb(0.9, 0.8, 0.1) // yellow
-        } else {
-            cosmic::iced::Color::from_rgb(0.9, 0.2, 0.2) // red
-        };
-
-        widget::container(widget::Space::new().width(bar_width).height(8))
-            .class(cosmic::style::Container::custom(move |_theme| {
-                cosmic::widget::container::Style {
-                    background: Some(cosmic::iced::Background::Color(color)),
-                    border: cosmic::iced::Border {
-                        radius: 2.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            }))
-            .width(Length::Fixed(bar_width))
-            .into()
     }
 
     /// Build a V4L2 format section for a single pixel format (e.g., MJPG, YUYV, H264).

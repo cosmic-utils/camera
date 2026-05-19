@@ -764,6 +764,17 @@ pub struct AppModel {
     /// Whether the device info panel is visible
     pub device_info_visible: bool,
 
+    /// Live pre-recording audio level probe (Some only while the settings
+    /// drawer is open with audio recording enabled and no real recording).
+    pub audio_probe: Option<crate::pipelines::audio_probe::AudioLevelProbe>,
+    /// Shared levels owned by `audio_probe`. Mirrors `audio_probe.levels()`
+    /// when the probe is alive; `None` otherwise.
+    pub probe_audio_levels: Option<crate::pipelines::audio_level::SharedAudioLevels>,
+    /// 100 ms snapshot of whichever level source is currently active
+    /// (recorder during recording, probe otherwise). The render path reads
+    /// this without locking any mutex.
+    pub audio_levels_snapshot: Option<crate::pipelines::audio_level::AudioLevels>,
+
     /// Latest window/canvas dimensions (logical pixels), set by
     /// `Application::on_window_resize`. Used by capture-time crop logic
     /// to compute the visible content aspect ratio. Both default to 0.0
@@ -1611,6 +1622,8 @@ pub enum Message {
     SelectPhotoOutputFormat(usize),
     /// Toggle recording audio with video
     ToggleRecordAudio,
+    /// Fired by the 100 ms subscription whenever a level source is active.
+    AudioLevelTick,
     /// Select audio encoder (Opus, AAC)
     SelectAudioEncoder(usize),
     /// Toggle saving raw burst frames as DNG (debugging feature)
@@ -1788,5 +1801,54 @@ impl TransitionState {
         self.ui_disabled = false; // Re-enable UI
         // Keep transition_start_time — used by handle_camera_frame to drop stale frames
         self.first_frame_time = None;
+    }
+}
+
+impl AppModel {
+    /// The most recent audio levels snapshot, or `None` if neither a
+    /// recording nor a probe is producing levels right now.
+    pub fn current_audio_levels(&self) -> Option<&crate::pipelines::audio_level::AudioLevels> {
+        self.audio_levels_snapshot.as_ref()
+    }
+
+    /// Start, stop, or restart the audio-level probe to match the current
+    /// app state. Idempotent — safe to call from any handler whose work
+    /// might change `record_audio`, the selected device, the recording
+    /// state, or the settings-drawer visibility.
+    pub fn sync_audio_probe(&mut self) {
+        let drawer_open =
+            self.context_page == ContextPage::Settings && self.core.window.show_context;
+        let want = drawer_open && self.config.record_audio && !self.recording.is_recording();
+
+        let desired_device: Option<String> = self
+            .available_audio_devices
+            .get(self.current_audio_device_index)
+            .map(|d| d.node_name.clone());
+
+        // Tear down if running and no longer wanted, or if the device changed.
+        if let Some(probe) = self.audio_probe.take() {
+            let device_changed = probe.device().map(str::to_string) != desired_device;
+            if !want || device_changed {
+                probe.stop();
+                self.probe_audio_levels = None;
+            } else {
+                // Still valid — put it back.
+                self.audio_probe = Some(probe);
+            }
+        }
+
+        // Start if wanted and not running.
+        if want && self.audio_probe.is_none() {
+            match crate::pipelines::audio_probe::AudioLevelProbe::start(desired_device.as_deref()) {
+                Ok(probe) => {
+                    self.probe_audio_levels = Some(probe.levels());
+                    self.audio_probe = Some(probe);
+                }
+                Err(e) => {
+                    tracing::info!(error = %e, "Audio level probe failed to start");
+                    self.probe_audio_levels = None;
+                }
+            }
+        }
     }
 }

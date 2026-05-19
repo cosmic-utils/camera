@@ -29,6 +29,7 @@ impl AppModel {
     /// it easy to find the handling code for any message type.
     pub fn update(&mut self, message: Message) -> Task<cosmic::Action<Message>> {
         match message {
+            Message::AudioLevelTick => self.handle_audio_level_tick(),
             // ===== UI Navigation =====
             Message::LaunchUrl(url) => self.handle_launch_url(url),
             Message::ToggleContextPage(page) => self.handle_toggle_context_page(page),

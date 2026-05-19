@@ -36,5 +36,7 @@
 //! - [`photo`]: Async photo capture with filters and JPEG encoding
 //! - [`video`]: Video recording with GStreamer and hardware acceleration
 
+pub mod audio_level;
+pub mod audio_probe;
 pub mod photo;
 pub mod video;

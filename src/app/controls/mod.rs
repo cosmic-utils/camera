@@ -6,6 +6,7 @@
 //! - Capture button (photo/video)
 //! - Recording indicator and timer
 
+pub mod audio_meter;
 pub mod capture_button;
 pub mod recording_ui;
 

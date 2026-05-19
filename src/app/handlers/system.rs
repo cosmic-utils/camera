@@ -179,6 +179,20 @@ impl AppModel {
             info!(index, "Selected audio device index");
             self.current_audio_device_index = index;
         }
+        self.sync_audio_probe();
+        Task::none()
+    }
+
+    pub(crate) fn handle_audio_level_tick(&mut self) -> Task<cosmic::Action<Message>> {
+        // Recorder wins over probe — they never coexist by design.
+        let source = if self.recording.is_recording() {
+            self.recording.audio_levels().cloned()
+        } else {
+            self.probe_audio_levels.clone()
+        };
+
+        self.audio_levels_snapshot =
+            source.and_then(|arc| arc.lock().ok().map(|guard| guard.clone()));
         Task::none()
     }
 
@@ -247,6 +261,7 @@ impl AppModel {
             self.current_audio_device_index = 0;
         }
 
+        self.sync_audio_probe();
         Task::none()
     }
 
@@ -306,6 +321,7 @@ impl AppModel {
         {
             error!(?err, "Failed to save record audio setting");
         }
+        self.sync_audio_probe();
         Task::none()
     }
 
