@@ -74,8 +74,8 @@ impl PulseClient {
             protocol_version,
         )
         .ok()?;
-        let _ = protocol::read_reply_message::<SetClientNameReply>(&mut sock, protocol_version)
-            .ok()?;
+        let _ =
+            protocol::read_reply_message::<SetClientNameReply>(&mut sock, protocol_version).ok()?;
 
         Some(Self {
             sock,
@@ -226,7 +226,10 @@ impl PulseSourceVolumeGuard {
 
         let boosted = ChannelVolume::norm(channels);
         if !client.set_source_volume(device, boosted) {
-            warn!(device, "Failed to boost PA source volume — skipping restore");
+            warn!(
+                device,
+                "Failed to boost PA source volume — skipping restore"
+            );
             return None;
         }
 
@@ -590,7 +593,12 @@ fn channel_info_from_pa(src: &SourceInfo) -> Vec<AudioChannelInfo> {
 
     let mut channels = Vec::with_capacity(positions.len());
     for (i, position) in positions.iter().enumerate() {
-        let vol = src.cvolume.channels().get(i).copied().unwrap_or(Volume::NORM);
+        let vol = src
+            .cvolume
+            .channels()
+            .get(i)
+            .copied()
+            .unwrap_or(Volume::NORM);
         let linear = vol.to_linear() as f64;
         let db = vol.to_db() as f64;
         channels.push(AudioChannelInfo {
