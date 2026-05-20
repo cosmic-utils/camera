@@ -37,7 +37,7 @@ settings-default-mode-description = Режим камери під час зап
 settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
-settings-backend = Система обробки
+settings-backend = Рушій
 settings-format = Формат
 settings-microphone = Мікрофон
 settings-record-audio = Запис звуку
@@ -61,7 +61,7 @@ settings-version = Версія { $version }
 settings-version-flatpak = Версія { $version } (Flatpak)
 
 # Device info
-device-info-card = Card
+device-info-card = Картка
 device-info-driver = Драйвер
 device-info-path = Шлях
 device-info-real-path = Реальний шлях
@@ -118,7 +118,7 @@ exposure-metering = Режим вимірювання
 exposure-auto-priority = Частота кадрів
 exposure-no-controls = Налаштування експозиції недоступні
 exposure-title = Експозиція
-exposure-reset = Поновити
+exposure-reset = Скинути
 exposure-backlight = Заднє світло
 exposure-manual-mode = Ручний
 exposure-auto-mode = Авто
@@ -190,13 +190,13 @@ guide-spiral-top-right = Золотий перетин ↗
 guide-spiral-bottom-left = Золотий перетин ↙
 guide-spiral-bottom-right = Золотий перетин ↘
 guide-diagonal = Діагоналі
-guide-crosshair = Перехрестя
+guide-crosshair = Центр
 
 # About page
 about-support = Підтримка та відгуки
 
 # Insights
-insights-title = Аналітика
+insights-title = Діагностика
 insights-pipeline = Pipeline
 insights-pipeline-full = GStreamer Pipeline
 insights-pipeline-full-libcamera = Pipeline
@@ -226,7 +226,7 @@ insights-available = Доступно
 insights-unavailable = Недоступно
 
 # Insights - Backend
-insights-backend = Система обробки
+insights-backend = Система захоплення
 insights-backend-type = Тип
 insights-pipeline-handler = Обробник ланцюга
 insights-libcamera-version = Версія libcamera
@@ -319,13 +319,13 @@ shortcut-category-app = Застосунок
 action-capture = Зйомка / Запис / Грати-Пауза
 action-photo-snapshot = Фото під час запису
 action-switch-camera = Перемкнути камеру
-action-toggle-focus-auto = Перемкнути автофокус
-action-toggle-flash = Перемкнути спалах
-action-toggle-exposure-picker = Перемкнути панель експозиції
-action-toggle-color-picker = Перемкнути панель кольору
-action-toggle-motor-picker = Перемкнути керування мотором
-action-toggle-format-picker = Перемкнути панель формату
-action-toggle-settings = Відкрити налаштування
+action-toggle-focus-auto = Автофокус
+action-toggle-flash = Спалах
+action-toggle-exposure-picker = Експозиція
+action-toggle-color-picker = Колір
+action-toggle-motor-picker = Керування мотором
+action-toggle-format-picker = Формат
+action-toggle-settings = Налаштування
 action-next-mode = Наступний режим
 action-prev-mode = Попередній режим
 action-zoom-in = Збільшити
