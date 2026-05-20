@@ -296,8 +296,19 @@ pub struct Config {
     pub default_mode: crate::app::CameraMode,
     /// Folder name for saving captures (photos go to XDG Pictures, videos go to XDG Videos)
     pub save_folder_name: String,
-    /// Last used camera device path
+    /// Last camera path that successfully delivered a frame. Used as the
+    /// preferred selection on next launch.
     pub last_camera_path: Option<String>,
+    /// Camera path currently being initialized. Set immediately on switch /
+    /// startup, cleared once the first frame from that camera arrives. If
+    /// this is still set at the next launch, the previous session crashed
+    /// before the camera produced a frame — the path is added to
+    /// `failed_camera_paths` and skipped during selection (issue #410).
+    pub pending_camera_path: Option<String>,
+    /// Camera paths that crashed during the current recovery cycle. Skipped
+    /// when picking the startup camera; cleared once any camera successfully
+    /// produces a frame.
+    pub failed_camera_paths: Vec<String>,
     /// Video mode settings per camera (key = camera device path)
     pub video_settings: HashMap<String, FormatSettings>,
     /// Photo mode settings per camera (key = camera device path)
@@ -353,6 +364,8 @@ impl Default for Config {
             default_mode: crate::app::CameraMode::default(), // Default to Photo
             save_folder_name: crate::constants::DEFAULT_SAVE_FOLDER.to_string(),
             last_camera_path: None,
+            pending_camera_path: None,
+            failed_camera_paths: Vec::new(),
             video_settings: HashMap::new(),
             photo_settings: HashMap::new(),
             last_video_encoder_index: None,

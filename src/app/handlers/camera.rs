@@ -19,6 +19,44 @@ impl AppModel {
         }
     }
 
+    /// Promote `pending_persist_camera` to `last_camera_path` if `frame` is
+    /// new enough to prove the current camera is streaming. Also clears
+    /// `pending_camera_path` and `failed_camera_paths` (a successful frame
+    /// invalidates the crash-recovery list). Persists to disk on success.
+    ///
+    /// No-op if there is no pending camera or the frame predates the switch.
+    /// Issue #410.
+    fn commit_pending_camera_if_ready(
+        &mut self,
+        frame: &crate::backends::camera::types::CameraFrame,
+    ) {
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        let ready = self
+            .pending_persist_camera
+            .as_ref()
+            .is_some_and(|(_, since)| frame.captured_at >= *since);
+        if !ready {
+            return;
+        }
+        let Some((path, _)) = self.pending_persist_camera.take() else {
+            return;
+        };
+
+        self.config.last_camera_path = Some(path);
+        self.config.pending_camera_path = None;
+        let had_failed = !self.config.failed_camera_paths.is_empty();
+        self.config.failed_camera_paths.clear();
+
+        if let Some(handler) = self.config_handler.as_ref() {
+            if let Err(err) = self.config.write_entry(handler) {
+                error!(?err, "Failed to persist camera selection after first frame");
+            } else if had_failed {
+                info!("Cleared crash-recovery state after first successful frame");
+            }
+        }
+    }
+
     // =========================================================================
     // Camera Control Handlers
     // =========================================================================
@@ -169,6 +207,12 @@ impl AppModel {
                 "CameraFrame message received in update()"
             );
         }
+
+        // Promote the pending camera to `last_camera_path` once we have proof
+        // it can stream. Skips frames captured before the switch (which would
+        // be the OLD camera, leaking through during the transition window).
+        // Also clears the crash-recovery state. Issue #410.
+        self.commit_pending_camera_if_ready(&frame);
 
         // When in Virtual mode with file source but NOT streaming, skip camera frames
         // (file source preview is shown via FileSourcePreviewLoaded message)

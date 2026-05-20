@@ -222,7 +222,10 @@ impl AppModel {
         };
 
         self.update_all_dropdowns();
-        self.config.last_camera_path = Some(camera_path);
+
+        if !camera_path.is_empty() {
+            self.mark_camera_pending(camera_path);
+        }
     }
 
     pub fn switch_camera_or_mode(&mut self, camera_index: usize, mode: CameraMode) {
@@ -250,9 +253,34 @@ impl AppModel {
         // Update all dropdown options
         self.update_all_dropdowns();
 
-        // Save last used camera and settings
-        self.config.last_camera_path = Some(camera_path);
+        // Mark this camera as pending — `last_camera_path` is only promoted
+        // once the first frame from the new camera arrives. This prevents a
+        // bad camera selection (e.g. flipping to an IR-only sensor that
+        // crashes the pipeline) from being persisted and replayed on the
+        // next launch. Issue #410.
+        self.mark_camera_pending(camera_path);
+
+        // Save per-camera format settings now (they are valid regardless of
+        // whether the new camera actually streams).
         self.save_settings();
+    }
+
+    /// Record `camera_path` as the camera we're attempting. Persists
+    /// `pending_camera_path` to disk so a crash before the first frame is
+    /// detectable on next launch (issue #410).
+    fn mark_camera_pending(&mut self, camera_path: String) {
+        self.pending_persist_camera = Some((camera_path.clone(), std::time::Instant::now()));
+
+        // Persist the intent to disk so a crash before first-frame leaves a
+        // tombstone that the next launch will use to skip this camera.
+        if self.config.pending_camera_path.as_ref() != Some(&camera_path) {
+            self.config.pending_camera_path = Some(camera_path);
+            if let Some(handler) = self.config_handler.as_ref()
+                && let Err(err) = self.config.write_entry(handler)
+            {
+                error!(?err, "Failed to persist pending_camera_path");
+            }
+        }
     }
 
     /// Change to a specific format (used by consolidated mode dropdown)

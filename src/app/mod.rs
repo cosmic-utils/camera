@@ -164,6 +164,52 @@ fn ensure_video_directory(folder_name: &str) -> Result<std::path::PathBuf, std::
     Ok(video_dir)
 }
 
+/// Pick which camera to start with, skipping any path known to have crashed
+/// the previous launch. Preference order:
+///   1. `last_path` if present in `cameras` and not in `failed_paths`
+///   2. First camera whose path is not in `failed_paths`
+///   3. 0 (every available camera has failed — fall back to index 0 anyway
+///      so the app still tries to show *something*; the next launch will
+///      re-add it to `failed_paths` if it crashes again).
+fn pick_startup_camera_index(
+    cameras: &[crate::backends::camera::types::CameraDevice],
+    last_path: Option<&str>,
+    failed_paths: &[String],
+) -> usize {
+    if let Some(last_path) = last_path
+        && !failed_paths.iter().any(|p| p == last_path)
+        && let Some((idx, _)) = cameras
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.path == last_path)
+    {
+        info!(index = idx, "Starting with saved camera");
+        return idx;
+    }
+    if let Some((idx, cam)) = cameras
+        .iter()
+        .enumerate()
+        .find(|(_, c)| !c.path.is_empty() && !failed_paths.iter().any(|p| p == &c.path))
+    {
+        if !failed_paths.is_empty() {
+            warn!(
+                index = idx,
+                path = %cam.path,
+                failed_count = failed_paths.len(),
+                "Skipping previously-crashing camera(s), starting with next available"
+            );
+        }
+        return idx;
+    }
+    if !failed_paths.is_empty() {
+        warn!(
+            failed_count = failed_paths.len(),
+            "Every available camera previously crashed — falling back to index 0"
+        );
+    }
+    0
+}
+
 const REPOSITORY: &str = "https://github.com/cosmic-utils/camera";
 
 /// App icon for the about page (pre-rendered PNG avoids SVG parsing lag on first open)
@@ -225,7 +271,7 @@ impl cosmic::Application for AppModel {
             );
 
         // Load configuration
-        let (config_handler, config) =
+        let (config_handler, mut config) =
             match cosmic_config::Config::new(Self::APP_ID, Config::VERSION) {
                 Ok(handler) => {
                     let config = match Config::get_entry(&handler) {
@@ -242,6 +288,25 @@ impl cosmic::Application for AppModel {
                     (None, Config::default())
                 }
             };
+
+        // Recover from a previous crash: if a camera switch was in flight and
+        // the app died before the new camera produced a frame, that path is
+        // still in `pending_camera_path`. Add it to the failed list so we
+        // skip it during selection below (issue #410).
+        if let Some(crashed) = config.pending_camera_path.take() {
+            warn!(
+                path = %crashed,
+                "Previous session crashed before camera delivered a frame — marking path as failed"
+            );
+            if !config.failed_camera_paths.contains(&crashed) {
+                config.failed_camera_paths.push(crashed);
+            }
+            if let Some(handler) = config_handler.as_ref()
+                && let Err(err) = config.write_entry(handler)
+            {
+                error!(?err, "Failed to persist crash-recovery state");
+            }
+        }
 
         // Ensure photo and video directories exist
         if let Err(e) = ensure_photo_directory(&config.save_folder_name) {
@@ -435,6 +500,7 @@ impl cosmic::Application for AppModel {
             current_frame: None,
             available_cameras,
             current_camera_index,
+            pending_persist_camera: None,
             available_formats: available_formats.clone(),
             active_format: initial_format,
             available_audio_devices,
@@ -535,8 +601,10 @@ impl cosmic::Application for AppModel {
         // so it overlaps with framework Vulkan init (~280ms). We wrap the join in an
         // async Task so it doesn't block init() or the first render.
         let last_camera_path = app.config.last_camera_path.clone();
+        let failed_camera_paths = app.config.failed_camera_paths.clone();
 
         let init_task = if let Some(handle) = camera_enum_handle {
+            let failed_paths = failed_camera_paths.clone();
             Task::perform(
                 async move {
                     // Join the prewarm camera thread — it started ~170ms ago,
@@ -545,26 +613,17 @@ impl cosmic::Application for AppModel {
                         handle.join().unwrap_or_else(|_| (Vec::new(), Vec::new()));
                     info!(count = cameras.len(), "Prewarmed camera enumeration ready");
 
-                    // Find last used camera or default to first
-                    let camera_index = if let Some(ref last_path) = last_camera_path {
-                        cameras
-                            .iter()
-                            .enumerate()
-                            .find(|(_, cam)| &cam.path == last_path)
-                            .map(|(idx, _)| {
-                                info!(index = idx, "Found saved camera");
-                                idx
-                            })
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    };
+                    let camera_index = pick_startup_camera_index(
+                        &cameras,
+                        last_camera_path.as_deref(),
+                        &failed_paths,
+                    );
 
                     if camera_index == 0 {
                         // Prewarm already queried formats for camera[0]
                         (cameras, camera_index, default_formats)
                     } else {
-                        // Saved camera is not camera[0] — query its formats
+                        // Selected camera is not camera[0] — query its formats
                         let backend = crate::backends::camera::create_backend();
                         let formats = if let Some(camera) = cameras.get(camera_index) {
                             if !camera.path.is_empty() {
@@ -584,6 +643,7 @@ impl cosmic::Application for AppModel {
             )
         } else {
             // No prewarm — fall back to full async enumeration
+            let failed_paths = failed_camera_paths.clone();
             Task::perform(
                 async move {
                     info!("Enumerating cameras asynchronously (no prewarm)");
@@ -591,16 +651,11 @@ impl cosmic::Application for AppModel {
                     let cameras = backend.enumerate_cameras();
                     info!(count = cameras.len(), "Found camera(s)");
 
-                    let camera_index = if let Some(ref last_path) = last_camera_path {
-                        cameras
-                            .iter()
-                            .enumerate()
-                            .find(|(_, cam)| &cam.path == last_path)
-                            .map(|(idx, _)| idx)
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    };
+                    let camera_index = pick_startup_camera_index(
+                        &cameras,
+                        last_camera_path.as_deref(),
+                        &failed_paths,
+                    );
 
                     let formats = if let Some(camera) = cameras.get(camera_index) {
                         if !camera.path.is_empty() {

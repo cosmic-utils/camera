@@ -727,6 +727,11 @@ pub struct AppModel {
     pub available_cameras: Vec<CameraDevice>,
     /// Current camera index
     pub current_camera_index: usize,
+    /// Camera selection awaiting first-frame confirmation before being
+    /// promoted to `config.last_camera_path`. Stored as (path, since): the
+    /// `since` instant is used to filter out stale frames captured from the
+    /// previous camera before the switch (issue #410).
+    pub pending_persist_camera: Option<(String, Instant)>,
     /// Available formats for current camera
     pub available_formats: Vec<CameraFormat>,
     /// Currently active format being used by camera
