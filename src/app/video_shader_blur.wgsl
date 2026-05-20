@@ -82,7 +82,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             tex_size_dim = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
         }
-        let crop_range = effective_crop_max - effective_crop_min;
+        // crop_range is in texture-orientation; swap to display before multiplying.
+        // See video_shader.wgsl for the rationale.
+        var crop_range = effective_crop_max - effective_crop_min;
+        if (viewport.rotation == 1u || viewport.rotation == 3u) {
+            crop_range = vec2<f32>(crop_range.y, crop_range.x);
+        }
         let effective_tex = tex_size_dim * crop_range;
 
         let content_height = viewport.viewport_size.y - viewport.bar_top_height - viewport.bar_bottom_height;
@@ -100,7 +105,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             scale = vec2<f32>(scale.y, scale.x);
         }
 
-        tex_coords = (tex_coords - vec2<f32>(0.5, center_y)) * scale + vec2<f32>(0.5, 0.5);
+        // Rotate the screen-space pivot into texture-UV space — see video_shader.wgsl.
+        var pivot = vec2<f32>(0.5, center_y);
+        if (viewport.rotation == 1u) {
+            pivot = vec2<f32>(1.0 - pivot.y, pivot.x);
+        } else if (viewport.rotation == 2u) {
+            pivot = vec2<f32>(1.0 - pivot.x, 1.0 - pivot.y);
+        } else if (viewport.rotation == 3u) {
+            pivot = vec2<f32>(pivot.y, 1.0 - pivot.x);
+        }
+        tex_coords = (tex_coords - pivot) * scale + vec2<f32>(0.5, 0.5);
     }
 
     // Discard letterbox before the crop remap — see video_shader.wgsl for the

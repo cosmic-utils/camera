@@ -120,8 +120,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         if (viewport.rotation == 1u || viewport.rotation == 3u) {
             tex_size = vec2<f32>(raw_tex_size.y, raw_tex_size.x);
         }
-        // Effective dimensions after the (blended) crop
-        let crop_range = effective_crop_max - effective_crop_min;
+        // Effective dimensions after the (blended) crop.
+        // `crop_range` is in texture-orientation (crop UVs are sensor-space, see
+        // PhotoAspectRatio::crop_uv); `tex_size` is in display-orientation (swapped
+        // above). Swap `crop_range` to display-orientation before multiplying so
+        // `effective_tex` has the right aspect on rotated sensors. Without this,
+        // an aspect-ratio crop in Contain mode produces a wrong-shape letterbox
+        // and distorts the sampled image on the phone (rotation 1 / 3).
+        var crop_range = effective_crop_max - effective_crop_min;
+        if (viewport.rotation == 1u || viewport.rotation == 3u) {
+            crop_range = vec2<f32>(crop_range.y, crop_range.x);
+        }
         let effective_tex = tex_size * crop_range;
 
         // Content area between UI bars (for contain centering)
@@ -144,7 +153,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             scale = vec2<f32>(scale.y, scale.x);
         }
 
-        tex_coords = (tex_coords - vec2<f32>(0.5, center_y)) * scale + vec2<f32>(0.5, 0.5);
+        // The pivot below is in screen-space; rotate it into texture-UV space so it
+        // matches `tex_coords` (already rotated above). Without this, the asymmetric
+        // `center_y` lands on the wrong axis for 90/270 rotations and is inverted for
+        // 180 — Contain centering and aspect-ratio crops drift off-axis on the phone.
+        var pivot = vec2<f32>(0.5, center_y);
+        if (viewport.rotation == 1u) {
+            pivot = vec2<f32>(1.0 - pivot.y, pivot.x);
+        } else if (viewport.rotation == 2u) {
+            pivot = vec2<f32>(1.0 - pivot.x, 1.0 - pivot.y);
+        } else if (viewport.rotation == 3u) {
+            pivot = vec2<f32>(pivot.y, 1.0 - pivot.x);
+        }
+        tex_coords = (tex_coords - pivot) * scale + vec2<f32>(0.5, 0.5);
     }
 
     // Discard letterbox *before* the crop remap.  The intermediate range [0,1]
