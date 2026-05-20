@@ -17,6 +17,7 @@ fn error_text_style(theme: &cosmic::Theme) -> cosmic::iced::widget::text::Style 
         color: Some(cosmic::iced::Color::from(
             theme.cosmic().destructive_color(),
         )),
+        ..Default::default()
     }
 }
 

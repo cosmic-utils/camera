@@ -16,6 +16,7 @@ use cosmic::widget::icon;
 fn disabled_text_style(theme: &cosmic::Theme) -> cosmic::iced::widget::text::Style {
     cosmic::iced::widget::text::Style {
         color: Some(cosmic::iced::Color::from(theme.cosmic().button.on_disabled)),
+        ..Default::default()
     }
 }
 
