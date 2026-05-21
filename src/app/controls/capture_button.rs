@@ -214,10 +214,7 @@ impl AppModel {
             let ring_outer = (ui::CAPTURE_BUTTON_INNER + RING_GAP * 2.0) + RING_WIDTH * 2.0;
             let timer_label = widget::text(format!("{seconds}"))
                 .size(32.0)
-                .font(cosmic::font::bold())
-                .center()
-                .width(Length::Fill)
-                .height(Length::Fill);
+                .font(cosmic::font::bold());
             let timer_overlay = widget::container(timer_label)
                 .width(Length::Fixed(ring_outer))
                 .height(Length::Fixed(ring_outer))
