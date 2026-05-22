@@ -73,99 +73,145 @@ fn histogram_pass(@builtin(global_invocation_id) gid: vec3<u32>) {
     atomicAdd(&histogram[bin], 1u);
 }
 
-// Workgroup shared memory for parallel reduction
-var<workgroup> partial_sum: array<u32, 256>;
-var<workgroup> partial_weighted_sum: array<f32, 256>;
+// Workgroup shared state for parallel reduction.
+//
+// All 256 threads participate in:
+//   1. Tree reduction (log2(N) = 8 steps) for total count, weighted sum,
+//      shadow count, and highlight count.
+//   2. Hillis-Steele inclusive prefix-scan (8 steps) on per-bin counts.
+//   3. Parallel percentile detection via workgroup-scoped `atomicMin`.
+//
+// The previous implementation barrier-loaded the histogram into shared memory
+// then had a single thread walk all 256 bins serially. The parallel path does
+// the same work in O(log N) steps across all threads.
+var<workgroup> sum_buf: array<u32, 256>;
+var<workgroup> weighted_buf: array<f32, 256>;
+var<workgroup> shadow_buf: array<u32, 256>;
+var<workgroup> highlight_buf: array<u32, 256>;
+var<workgroup> cum_buf: array<u32, 256>;
 
-// Pass 2: Reduce histogram to metrics
-// Single workgroup with 256 threads (one per bin)
+// Workgroup atomics for percentile detection. Initialised to 255 (max bin) so
+// the very rare case where no bin satisfies the threshold still yields a
+// defined value.
+var<workgroup> p5_bin: atomic<u32>;
+var<workgroup> p50_bin: atomic<u32>;
+var<workgroup> p95_bin: atomic<u32>;
+
+// Pass 2: Reduce histogram to metrics.
+// Single workgroup with 256 threads (one per bin).
 @compute @workgroup_size(256, 1, 1)
 fn reduce_pass(@builtin(local_invocation_id) lid: vec3<u32>) {
-    let bin_idx = lid.x;
+    let tid = lid.x;
     let total_pixels = params.width * params.height;
 
-    // Load histogram count for this bin
-    let count = atomicLoad(&histogram[bin_idx]);
-    let luminance = f32(bin_idx) / 255.0;
+    // Initialise the workgroup-scope atomic targets exactly once.
+    if tid == 0u {
+        atomicStore(&p5_bin, 255u);
+        atomicStore(&p50_bin, 255u);
+        atomicStore(&p95_bin, 255u);
+    }
 
-    // Store in shared memory
-    partial_sum[bin_idx] = count;
-    partial_weighted_sum[bin_idx] = f32(count) * luminance;
+    // Load this thread's histogram bin and seed the shared buffers.
+    let count = atomicLoad(&histogram[tid]);
+    let luminance = f32(tid) / 255.0;
+
+    sum_buf[tid] = count;
+    weighted_buf[tid] = f32(count) * luminance;
+    cum_buf[tid] = count;
+    // Bins 0..25 contribute to shadow_count, bins 230..255 to highlight_count.
+    shadow_buf[tid] = select(0u, count, tid < 26u);
+    highlight_buf[tid] = select(0u, count, tid >= 230u);
 
     workgroupBarrier();
 
-    // Only thread 0 computes final metrics
-    if bin_idx == 0u {
-        var sum_count: u32 = 0u;
-        var sum_weighted: f32 = 0.0;
-        var cumulative: u32 = 0u;
-
-        // Calculate percentile thresholds
-        let p5_threshold = total_pixels / 20u;      // 5%
-        let p50_threshold = total_pixels / 2u;       // 50% (median)
-        let p95_threshold = (total_pixels * 19u) / 20u;  // 95%
-
-        var p5_bin: u32 = 0u;
-        var p50_bin: u32 = 128u;
-        var p95_bin: u32 = 255u;
-        var p5_found: bool = false;
-        var p50_found: bool = false;
-        var p95_found: bool = false;
-
-        // Shadow/highlight counters (bins 0-25 and 230-255)
-        var shadow_count: u32 = 0u;
-        var highlight_count: u32 = 0u;
-
-        // Single pass through histogram
-        for (var i: u32 = 0u; i < 256u; i = i + 1u) {
-            let bin_count = partial_sum[i];
-            sum_count = sum_count + bin_count;
-            sum_weighted = sum_weighted + partial_weighted_sum[i];
-            cumulative = cumulative + bin_count;
-
-            // Track percentiles
-            if !p5_found && cumulative >= p5_threshold {
-                p5_bin = i;
-                p5_found = true;
-            }
-            if !p50_found && cumulative >= p50_threshold {
-                p50_bin = i;
-                p50_found = true;
-            }
-            if !p95_found && cumulative >= p95_threshold {
-                p95_bin = i;
-                p95_found = true;
-            }
-
-            // Count shadows (luminance < 0.1, bins 0-25)
-            if i < 26u {
-                shadow_count = shadow_count + bin_count;
-            }
-            // Count highlights (luminance > 0.9, bins 230-255)
-            if i >= 230u {
-                highlight_count = highlight_count + bin_count;
-            }
+    // ----- Tree reduction (8 steps for N=256) -----
+    // After this loop, *_buf[0] holds the total over all 256 bins.
+    var offset: u32 = 128u;
+    loop {
+        if tid < offset {
+            sum_buf[tid] = sum_buf[tid] + sum_buf[tid + offset];
+            weighted_buf[tid] = weighted_buf[tid] + weighted_buf[tid + offset];
+            shadow_buf[tid] = shadow_buf[tid] + shadow_buf[tid + offset];
+            highlight_buf[tid] = highlight_buf[tid] + highlight_buf[tid + offset];
         }
+        workgroupBarrier();
+        offset = offset / 2u;
+        if offset == 0u {
+            break;
+        }
+    }
 
-        // Calculate final metrics
+    // ----- Hillis-Steele inclusive prefix scan on cum_buf (8 steps) -----
+    // After this loop, cum_buf[i] = sum of counts for bins 0..=i.
+    var stride: u32 = 1u;
+    loop {
+        // Read the neighbour into a local before any thread writes, so the
+        // pre-write value is captured for all threads atomically.
+        let prev = select(0u, cum_buf[tid - stride], tid >= stride);
+        workgroupBarrier();
+        if tid >= stride {
+            cum_buf[tid] = cum_buf[tid] + prev;
+        }
+        workgroupBarrier();
+        stride = stride * 2u;
+        if stride >= 256u {
+            break;
+        }
+    }
+
+    // ----- Parallel percentile detection -----
+    // Each thread checks whether its bin is the (unique) crossing point for
+    // each threshold and records it via atomicMin. Several threads may meet
+    // the "≥ threshold" condition but only the smallest-index crossing wins.
+    let p5_threshold = total_pixels / 20u;          // 5%
+    let p50_threshold = total_pixels / 2u;          // 50% (median)
+    let p95_threshold = (total_pixels * 19u) / 20u; // 95%
+
+    let cum_self = cum_buf[tid];
+    let cum_prev = select(0u, cum_buf[tid - 1u], tid > 0u);
+
+    if cum_self >= p5_threshold && cum_prev < p5_threshold {
+        atomicMin(&p5_bin, tid);
+    }
+    if cum_self >= p50_threshold && cum_prev < p50_threshold {
+        atomicMin(&p50_bin, tid);
+    }
+    if cum_self >= p95_threshold && cum_prev < p95_threshold {
+        atomicMin(&p95_bin, tid);
+    }
+
+    workgroupBarrier();
+
+    // ----- Single thread writes the final metrics -----
+    if tid == 0u {
+        let sum_count = sum_buf[0];
+        let sum_weighted = weighted_buf[0];
+        let shadow_count = shadow_buf[0];
+        let highlight_count = highlight_buf[0];
+        let p5 = atomicLoad(&p5_bin);
+        let p50 = atomicLoad(&p50_bin);
+        let p95 = atomicLoad(&p95_bin);
+
         let mean_lum = select(0.0, sum_weighted / f32(sum_count), sum_count > 0u);
-        let median_lum = f32(p50_bin) / 255.0;
-        let p5_lum = f32(p5_bin) / 255.0;
-        let p95_lum = f32(p95_bin) / 255.0;
+        let median_lum = f32(p50) / 255.0;
+        let p5_lum = f32(p5) / 255.0;
+        let p95_lum = f32(p95) / 255.0;
 
         // Dynamic range in stops (avoid log of zero)
         let p5_safe = max(p5_lum, 0.001);
         let p95_safe = max(p95_lum, 0.001);
         let dynamic_range = log2(p95_safe / p5_safe);
 
-        // Store results
+        // Guard against zero-pixel divides if width or height was 0.
+        let total_safe = max(total_pixels, 1u);
+
         metrics.mean_luminance = mean_lum;
         metrics.median_luminance = median_lum;
         metrics.percentile_5 = p5_lum;
         metrics.percentile_95 = p95_lum;
         metrics.dynamic_range_stops = dynamic_range;
-        metrics.shadow_fraction = f32(shadow_count) / f32(total_pixels);
-        metrics.highlight_fraction = f32(highlight_count) / f32(total_pixels);
+        metrics.shadow_fraction = f32(shadow_count) / f32(total_safe);
+        metrics.highlight_fraction = f32(highlight_count) / f32(total_safe);
         metrics.total_pixels = total_pixels;
     }
 }

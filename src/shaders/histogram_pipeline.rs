@@ -433,3 +433,22 @@ pub async fn analyze_brightness_gpu(
     let pipeline = guard.as_mut()?;
     pipeline.analyze(data, width, height).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    /// Validate that the histogram WGSL shader parses and passes naga
+    /// validation. Catches errors in the parallel reduce / scan logic at
+    /// build time without needing a GPU.
+    #[test]
+    fn histogram_compute_shader_validates() {
+        const SRC: &str = include_str!("histogram_compute.wgsl");
+        let module = naga::front::wgsl::parse_str(SRC)
+            .unwrap_or_else(|e| panic!("histogram_compute.wgsl parse failed: {e}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("histogram_compute.wgsl validation failed: {e:?}"));
+    }
+}
