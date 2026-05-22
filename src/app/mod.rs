@@ -423,6 +423,7 @@ impl cosmic::Application for AppModel {
             photo_btn_scale_to: 1.0,
             photo_btn_anim_start: None,
             recording: RecordingState::default(),
+            recording_session_counter: 0,
             virtual_camera: VirtualCameraState::default(),
             virtual_camera_file_source: preview_file_source,
             current_frame_is_file_source: has_preview_source,

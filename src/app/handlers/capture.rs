@@ -1189,16 +1189,28 @@ impl AppModel {
 
     pub(crate) fn handle_recording_stopped(
         &mut self,
+        session: u64,
         result: Result<String, String>,
     ) -> Task<cosmic::Action<Message>> {
-        self.recording = RecordingState::Idle;
-        self.sync_audio_probe();
-        self.quick_record = crate::app::state::QuickRecordState::Idle;
-        self.update_idle_inhibit();
-        // Turn off torch when recording ends
-        self.turn_off_flash_hardware();
+        // If a new recording has already taken over `self.recording`, this
+        // stop event is from a previous session and must NOT touch the
+        // current-session state. Resetting `self.recording` here would
+        // drop the new session's `stop_sender`, causing its async task to
+        // wake from `stop_rx.await` with an error and self-terminate via
+        // `recorder.stop()`. We still log the result and update
+        // `last_media_path` / the gallery for the just-finalized file.
+        let is_current = self.recording.session() == Some(session);
 
-        if self.pending_close {
+        if is_current {
+            self.recording = RecordingState::Idle;
+            self.sync_audio_probe();
+            self.quick_record = crate::app::state::QuickRecordState::Idle;
+            self.update_idle_inhibit();
+            // Turn off torch when recording ends
+            self.turn_off_flash_hardware();
+        }
+
+        if is_current && self.pending_close {
             match &result {
                 Ok(path) => info!(path = %path, "Recording finalized — exiting"),
                 Err(err) => error!(error = %err, "Recording finalize failed — exiting anyway"),
@@ -1208,13 +1220,14 @@ impl AppModel {
 
         match result {
             Ok(path) => {
-                info!(path = %path, "Recording saved successfully");
+                info!(session, path = %path, "Recording saved successfully");
                 self.last_media_path = Some(path.clone());
-                return Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail));
+                Task::done(cosmic::Action::App(Message::RefreshGalleryThumbnail))
             }
             Err(err) => {
                 let expected_dir = crate::app::get_photo_directory(&self.config.save_folder_name);
                 error!(
+                    session,
                     error = %err,
                     expected_directory = %expected_dir.display(),
                     "Failed to save recording. This may be caused by: \
@@ -1223,9 +1236,9 @@ impl AppModel {
                      3) Flatpak sandbox restrictions (ensure xdg-pictures access is granted), \
                      4) XDG_PICTURES_DIR pointing to an inaccessible location"
                 );
+                Task::none()
             }
         }
-        Task::none()
     }
 
     pub(crate) fn handle_update_recording_duration(&mut self) -> Task<cosmic::Action<Message>> {
@@ -1632,7 +1645,10 @@ impl AppModel {
         // Create audio levels handle upfront so the UI can read it immediately.
         // The recorder is created in the async task to avoid blocking the UI thread.
         let audio_levels: crate::pipelines::video::SharedAudioLevels = Default::default();
+        self.recording_session_counter += 1;
+        let session = self.recording_session_counter;
         self.recording = RecordingState::start(
+            session,
             path_for_message.clone(),
             stop_tx,
             Some(audio_levels.clone()),
@@ -1762,7 +1778,7 @@ impl AppModel {
                 .await
                 .unwrap_or_else(|e| Err(format!("Task join error: {}", e)))
             },
-            |result| cosmic::Action::App(Message::RecordingStopped(result)),
+            move |result| cosmic::Action::App(Message::RecordingStopped { session, result }),
         );
 
         let start_signal = Task::done(cosmic::Action::App(Message::RecordingStarted(

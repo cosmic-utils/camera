@@ -224,7 +224,9 @@ impl AppModel {
             Message::ClearCaptureAnimation => self.handle_clear_capture_animation(),
             Message::ToggleRecording => self.handle_toggle_recording(),
             Message::RecordingStarted(path) => self.handle_recording_started(path),
-            Message::RecordingStopped(result) => self.handle_recording_stopped(result),
+            Message::RecordingStopped { session, result } => {
+                self.handle_recording_stopped(session, result)
+            }
             Message::UpdateRecordingDuration => self.handle_update_recording_duration(),
             Message::StartRecordingAfterDelay => self.handle_start_recording_after_delay(),
             Message::CaptureButtonPressed => self.handle_capture_button_pressed(),

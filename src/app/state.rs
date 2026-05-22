@@ -27,6 +27,10 @@ pub enum RecordingState {
     Idle,
     /// Actively recording
     Recording {
+        /// Monotonic ID assigned by `AppModel::recording_session_counter` at
+        /// start time. Used by `handle_recording_stopped` to detect a stale
+        /// stop event arriving after a new session has already taken over.
+        session: u64,
         /// When recording started
         start_time: Instant,
         /// Output file path
@@ -43,11 +47,13 @@ impl std::fmt::Debug for RecordingState {
         match self {
             RecordingState::Idle => write!(f, "Idle"),
             RecordingState::Recording {
+                session,
                 start_time,
                 file_path,
                 ..
             } => f
                 .debug_struct("Recording")
+                .field("session", session)
                 .field("elapsed", &start_time.elapsed())
                 .field("file_path", file_path)
                 .finish(),
@@ -79,11 +85,13 @@ impl RecordingState {
 
     /// Start recording
     pub fn start(
+        session: u64,
         file_path: String,
         stop_sender: tokio::sync::oneshot::Sender<()>,
         audio_levels: Option<SharedAudioLevels>,
     ) -> Self {
         RecordingState::Recording {
+            session,
             start_time: Instant::now(),
             file_path,
             stop_sender: Some(stop_sender),
@@ -96,6 +104,14 @@ impl RecordingState {
         match self {
             RecordingState::Recording { audio_levels, .. } => audio_levels.as_ref(),
             _ => None,
+        }
+    }
+
+    /// Session ID of the current recording, or `None` if idle.
+    pub fn session(&self) -> Option<u64> {
+        match self {
+            RecordingState::Idle => None,
+            RecordingState::Recording { session, .. } => Some(*session),
         }
     }
 }
@@ -598,6 +614,11 @@ pub struct AppModel {
     pub photo_btn_anim_start: Option<std::time::Instant>,
     /// Recording state (idle, recording, or paused)
     pub recording: RecordingState,
+    /// Monotonic counter that mints a unique ID for each recording session.
+    /// `handle_start_recording` increments this before assigning the new
+    /// session; `handle_recording_stopped` uses it to ignore late stop events
+    /// from a previous session whose async finalizer outlived its UI lifetime.
+    pub recording_session_counter: u64,
     /// Virtual camera state (idle or streaming)
     pub virtual_camera: VirtualCameraState,
     /// File source for virtual camera (image or video to stream instead of camera)
@@ -1557,8 +1578,13 @@ pub enum Message {
     ToggleRecording,
     /// Video recording started successfully
     RecordingStarted(String),
-    /// Video recording stopped successfully
-    RecordingStopped(Result<String, String>),
+    /// Video recording stopped successfully. `session` matches the
+    /// `RecordingState::Recording.session` assigned at start; the handler
+    /// uses it to drop stale events from an already-superseded session.
+    RecordingStopped {
+        session: u64,
+        result: Result<String, String>,
+    },
     /// Update recording duration (every second)
     UpdateRecordingDuration,
     /// Start recording after camera is released
