@@ -90,20 +90,23 @@ pub fn get_action_color(action: &QrAction) -> Color {
     }
 }
 
-/// Calculate the visible video bounds within a container, animated through
-/// the fit/fill transition.
+/// Calculate the source-frame bounds in screen coordinates, animated
+/// through the fit/fill transition.
 ///
 /// Returns `(offset_x, offset_y, video_width, video_height)` — the rectangle
-/// the live preview actually occupies on screen. Lerps between two endpoints
-/// by `cover_blend`:
-/// - **Cover** (`cover_blend = 1`): the video fills the entire container.
-/// - **Contain** (`cover_blend = 0`): the video is letterboxed inside the
-///   content area between `top_bar_h` and `bottom_bar_h`, with the sensor
-///   aspect preserved.
+/// the *source frame* occupies on screen, with the sensor aspect preserved
+/// at both endpoints. Lerps between two endpoints by `cover_blend`:
+/// - **Cover** (`cover_blend = 1`): the frame is scaled to fill the
+///   container in the minor axis; the major axis overflows the container
+///   and is cropped off-screen (so one of `offset_x`/`offset_y` is
+///   negative).
+/// - **Contain** (`cover_blend = 0`): the frame is letterboxed inside the
+///   content area between `top_bar_h` and `bottom_bar_h`.
 ///
 /// QR detections (which use normalized 0-1 frame coordinates) scale into
-/// this rectangle, so the on-screen boxes track the live preview through a
-/// Photo↔fit-to-view transition.
+/// this rectangle, so the on-screen boxes keep the sensor's aspect ratio
+/// in both modes and track the preview through a Photo↔fit-to-view
+/// transition.
 pub fn calculate_video_bounds(
     container_width: f32,
     container_height: f32,
@@ -119,8 +122,27 @@ pub fn calculate_video_bounds(
         1.0
     };
 
-    // Cover endpoint: fill entire container.
-    let cover = (0.0, 0.0, container_width, container_height);
+    // Cover endpoint: scale the frame so it fills the container in one
+    // axis; the other axis overflows and is cropped off-screen. Returning
+    // the source-frame rect (not the container rect) lets QR detections in
+    // normalized frame coords render with the sensor's aspect instead of
+    // being stretched to the container's aspect.
+    let cover = if container_width > 0.0 && container_height > 0.0 {
+        let container_aspect = container_width / container_height;
+        let (vw, vh) = if frame_aspect > container_aspect {
+            (container_height * frame_aspect, container_height)
+        } else {
+            (container_width, container_width / frame_aspect)
+        };
+        (
+            (container_width - vw) / 2.0,
+            (container_height - vh) / 2.0,
+            vw,
+            vh,
+        )
+    } else {
+        (0.0, 0.0, container_width, container_height)
+    };
 
     // Contain endpoint: letterbox the sensor aspect inside the content area
     // between the UI bars.
