@@ -1410,36 +1410,24 @@ impl cosmic::Application for AppModel {
                 "file_source_preview",
                 cosmic::iced::stream::channel(10, async move |mut output| {
                     loop {
-                        // Try to lock and receive a frame
-                        let frame = {
+                        // Hold the lock for one full recv+drain cycle so we
+                        // don't repeatedly take/release it on the inner loop,
+                        // and so a hypothetical second consumer can't race
+                        // partway through draining.
+                        let latest = {
                             let mut guard = receiver.lock().await;
-                            guard.recv().await
+                            let Some(first) = guard.recv().await else {
+                                break;
+                            };
+                            let mut latest = first;
+                            while let Ok(newer) = guard.try_recv() {
+                                latest = newer;
+                            }
+                            latest
                         };
 
-                        match frame {
-                            Some(frame) => {
-                                // Drain any extra frames to get the latest
-                                let mut latest = frame;
-                                loop {
-                                    let next = {
-                                        let mut guard = receiver.lock().await;
-                                        guard.try_recv().ok()
-                                    };
-                                    match next {
-                                        Some(newer) => latest = newer,
-                                        None => break,
-                                    }
-                                }
-
-                                // Send the latest frame to UI
-                                if output.send(Message::CameraFrame(latest)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            None => {
-                                // Channel closed, exit subscription
-                                break;
-                            }
+                        if output.send(Message::CameraFrame(latest)).await.is_err() {
+                            break;
                         }
                     }
                 }),
