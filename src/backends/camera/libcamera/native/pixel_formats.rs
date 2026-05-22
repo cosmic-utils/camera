@@ -26,8 +26,24 @@ pub(crate) fn map_pixel_format(pf: libcamera::pixel_format::PixelFormat) -> Opti
         Ok(DrmFourcc::Yvyu) => Some(PixelFormat::YVYU),
         Ok(DrmFourcc::Vyuy) => Some(PixelFormat::VYUY),
         Ok(DrmFourcc::Rgb888) | Ok(DrmFourcc::Bgr888) => Some(PixelFormat::RGB24),
-        _ => map_bayer_format(pf),
+        // Single-channel 8-bit luma (DRM R8 ≡ V4L2 GREY / Y8). Used by IR and
+        // monochrome sensors — e.g. the laptop "Integrated I" face-auth camera
+        // that surfaces alongside the regular RGB webcam. Issue #406.
+        Ok(DrmFourcc::R8) => Some(PixelFormat::Gray8),
+        _ => map_grayscale_or_bayer_format(pf),
     }
+}
+
+/// Fallback for formats `DrmFourcc::try_from` didn't recognise — covers V4L2
+/// grayscale fourccs ("GREY", "Y8  ") that aren't part of the DRM table, plus
+/// all Bayer variants.
+fn map_grayscale_or_bayer_format(pf: libcamera::pixel_format::PixelFormat) -> Option<PixelFormat> {
+    let bytes = pf.fourcc().to_le_bytes();
+    match &bytes {
+        b"GREY" | b"Y8  " => return Some(PixelFormat::Gray8),
+        _ => {}
+    }
+    map_bayer_format(pf)
 }
 
 /// Map Bayer pixel formats from fourcc bytes or format info

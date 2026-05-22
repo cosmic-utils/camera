@@ -664,7 +664,18 @@ fn read_stream_formats(
         PixelFormat::I420
     } else {
         vf_mapped.unwrap_or_else(|| {
-            warn!(format = %vf_format_name, "Unknown viewfinder pixel format, assuming ABGR");
+            // Falling back to ABGR for an unmapped format mislabels the
+            // per-pixel stride (e.g. 1-byte R8 frames get treated as 4-byte
+            // ABGR), which downstream crashes the QR detector with an
+            // index-out-of-bounds and wgpu with "bytes per row is less than
+            // a complete row" (issue #406). Log loudly so the format that
+            // slipped through `map_pixel_format` is easy to identify.
+            error!(
+                format = %vf_format_name,
+                "Unknown viewfinder pixel format — falling back to ABGR; \
+                 downstream pipeline will likely fail. Add a mapping in \
+                 `src/backends/camera/libcamera/native/pixel_formats.rs`."
+            );
             PixelFormat::ABGR
         })
     };
