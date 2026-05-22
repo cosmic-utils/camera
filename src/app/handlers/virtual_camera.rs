@@ -437,13 +437,21 @@ impl AppModel {
             "Streaming video to virtual camera (looping)"
         );
 
-        // Get preroll frame immediately for instant preview
+        // Get preroll frame immediately for instant preview.
+        // We keep an Arc handle to the most recent frame so we can re-push it
+        // while playback is paused — otherwise consumer apps connecting to
+        // the virtual-camera PipeWire node receive a single frame and then
+        // nothing, which most apps render as a black window (whereas the
+        // image-source path stays "alive" by re-pushing the same image at
+        // 30fps).
+        let mut last_frame: Option<Arc<crate::backends::camera::types::CameraFrame>> = None;
         if let Some(preroll) = decoder.preroll_frame() {
             let frame_arc = Arc::new(preroll);
             if let Err(e) = manager.push_frame(&frame_arc) {
                 warn!(?e, "Failed to push preroll frame to virtual camera");
             }
             let _ = preview_tx.send(Arc::clone(&frame_arc));
+            last_frame = Some(frame_arc);
         }
 
         let mut frame_count = 0u64;
@@ -513,8 +521,16 @@ impl AppModel {
                 last_progress_update = std::time::Instant::now();
             }
 
-            // If paused and no frame update needed, sleep briefly and continue
+            // If paused and no frame update needed, keep re-pushing the last
+            // frame so the consumer app sees a still image instead of going
+            // black. The decoder itself stays paused — we just refresh the
+            // virtual-camera pipeline's input.
             if paused && !needs_frame_update {
+                if let Some(ref frame_arc) = last_frame
+                    && let Err(e) = manager.push_frame(frame_arc)
+                {
+                    warn!(?e, "Failed to re-push paused frame to virtual camera");
+                }
                 std::thread::sleep(vc_timing::PAUSE_CHECK_INTERVAL);
                 continue;
             }
@@ -538,6 +554,7 @@ impl AppModel {
 
                     // Send frame to preview
                     let _ = preview_tx.send(Arc::clone(&frame_arc));
+                    last_frame = Some(Arc::clone(&frame_arc));
 
                     // If we got a frame update while paused (after seeking), re-pause and send progress
                     if needs_frame_update && paused {
