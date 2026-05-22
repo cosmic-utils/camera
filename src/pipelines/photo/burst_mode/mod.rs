@@ -2826,7 +2826,15 @@ impl BurstModeGpuPipeline {
             ccm_row0: [ccm[0][0], ccm[0][1], ccm[0][2], 0.0],
             ccm_row1: [ccm[1][0], ccm[1][1], ccm[1][2], 0.0],
             ccm_row2: [ccm[2][0], ccm[2][1], ccm[2][2], 0.0],
-            use_colour: if colour_gains.is_some() { 1 } else { 0 },
+            // Apply the colour pipeline when either white-balance gains or a
+            // colour-correction matrix is available; the two correct different
+            // things (channel amplitude vs. crosstalk) and either may stand on
+            // its own.
+            use_colour: if colour_gains.is_some() || colour_correction_matrix.is_some() {
+                1
+            } else {
+                0
+            },
             _pad0: 0,
             _pad1: 0,
             _pad2: 0,
