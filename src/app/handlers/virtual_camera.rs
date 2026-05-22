@@ -319,10 +319,16 @@ impl AppModel {
         let width = frame.width;
         let height = frame.height;
 
-        // Create and start virtual camera manager
+        // Create and start virtual camera manager.
+        //
+        // File sources are streamed exactly as they appear in the file — the
+        // app's `mirror_preview` setting is for selfie-cam ergonomics and
+        // doesn't apply here. Pin `flip_horizontal` to `false` defensively so
+        // a future change to the default can't silently start mirroring
+        // streamed images to consumer apps.
         let mut manager = VirtualCameraManager::new();
         manager.set_filter(initial_filter);
-        // File sources should not be mirrored - output exactly as the file content
+        manager.set_flip_horizontal(false);
 
         if let Err(e) = manager.start(width, height) {
             return Err(format!("Failed to start virtual camera: {}", e));
@@ -408,10 +414,16 @@ impl AppModel {
 
         let (width, height) = decoder.dimensions();
 
-        // Create and start virtual camera manager
+        // Create and start virtual camera manager.
+        //
+        // File sources are streamed exactly as they appear in the file — the
+        // app's `mirror_preview` setting is for selfie-cam ergonomics and
+        // doesn't apply here. Pin `flip_horizontal` to `false` defensively so
+        // a future change to the default can't silently start mirroring
+        // streamed video files to consumer apps.
         let mut manager = VirtualCameraManager::new();
         manager.set_filter(initial_filter);
-        // File sources should not be mirrored - output exactly as the file content
+        manager.set_flip_horizontal(false);
 
         if let Err(e) = manager.start(width, height) {
             return Err(format!("Failed to start virtual camera: {}", e));
