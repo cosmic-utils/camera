@@ -1669,6 +1669,9 @@ pub enum Message {
     SelectDefaultMode(usize),
     /// XDG portal color scheme changed (true = dark, false = light)
     PortalColorSchemeChanged(bool),
+    /// COSMIC theme config (light/dark palette or active mode) changed —
+    /// re-apply so accent / palette edits propagate without a manual toggle.
+    CosmicThemeChanged,
     /// Select audio input device
     SelectAudioDevice(usize),
     /// Select video encoder

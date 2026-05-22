@@ -1532,6 +1532,32 @@ impl cosmic::Application for AppModel {
             Subscription::none()
         };
 
+        // On COSMIC desktops, subscribe to the cosmic_config theme configs so
+        // accent / palette / mode edits made in COSMIC Settings propagate to
+        // the running app. Without this, an accent edit in the *current*
+        // light/dark mode wouldn't take effect until the user toggled the
+        // other mode and back (issue #290). The handler just re-evaluates
+        // `AppTheme::theme()`, which re-reads cosmic_config on each call.
+        let cosmic_theme_sub = if crate::config::is_cosmic_desktop() {
+            let dark = self
+                .core()
+                .watch_config::<cosmic::cosmic_theme::Theme>(cosmic::cosmic_theme::DARK_THEME_ID)
+                .map(|_| Message::CosmicThemeChanged);
+            let light = self
+                .core()
+                .watch_config::<cosmic::cosmic_theme::Theme>(cosmic::cosmic_theme::LIGHT_THEME_ID)
+                .map(|_| Message::CosmicThemeChanged);
+            let mode = self
+                .core()
+                .watch_config::<cosmic::cosmic_theme::ThemeMode>(
+                    cosmic::cosmic_theme::THEME_MODE_ID,
+                )
+                .map(|_| Message::CosmicThemeChanged);
+            Subscription::batch([dark, light, mode])
+        } else {
+            Subscription::none()
+        };
+
         // On non-COSMIC desktops, subscribe to XDG portal color-scheme changes
         // so theme updates when user changes their desktop appearance
         let portal_theme_sub = if !crate::config::is_cosmic_desktop()
@@ -1638,6 +1664,7 @@ impl cosmic::Application for AppModel {
             insights_update_sub,
             audio_level_sub,
             portal_theme_sub,
+            cosmic_theme_sub,
             keybind_sub,
             volume_keys_sub,
             window_focus_sub,

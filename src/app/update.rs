@@ -288,6 +288,7 @@ impl AppModel {
             Message::PortalColorSchemeChanged(is_dark) => {
                 self.handle_portal_color_scheme_changed(is_dark)
             }
+            Message::CosmicThemeChanged => self.handle_cosmic_theme_changed(),
             Message::SelectAudioDevice(index) => self.handle_select_audio_device(index),
             Message::SelectVideoEncoder(index) => self.handle_select_video_encoder(index),
             Message::SelectPhotoOutputFormat(index) => {

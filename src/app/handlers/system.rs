@@ -151,6 +151,21 @@ impl AppModel {
         Task::none()
     }
 
+    /// Re-apply the active theme after a COSMIC theme config edit (accent
+    /// color, palette, light/dark mode switch from outside the app, etc.).
+    ///
+    /// `AppTheme::theme()` re-reads from `cosmic_config` each call, so
+    /// running the same selector through `set_theme` again gives the app
+    /// the just-edited palette. Previously the app only re-applied on
+    /// light/dark *toggles* (via the portal subscription on non-COSMIC, or
+    /// implicitly via libcosmic's own restart heuristic on COSMIC), which
+    /// is why an accent change in the *current* mode looked stuck until
+    /// the user toggled to the other mode and back (issue #290).
+    pub(crate) fn handle_cosmic_theme_changed(&mut self) -> Task<cosmic::Action<Message>> {
+        info!("COSMIC theme config changed — re-applying active theme");
+        cosmic::command::set_theme(self.config.app_theme.theme())
+    }
+
     pub(crate) fn handle_portal_color_scheme_changed(
         &mut self,
         is_dark: bool,
