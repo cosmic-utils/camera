@@ -15,6 +15,15 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+/// Escape a filesystem path for safe embedding in a GStreamer
+/// `parse::launch` pipeline string. GStreamer's parse syntax treats `\` as
+/// an escape character inside double-quoted strings — paths containing
+/// `"` or `\` would otherwise break parsing or yield an unexpected element
+/// link (e.g. `/home/user/foo"bar.mp4`).
+fn escape_gst_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// Load a preview frame from an image or video file
 ///
 /// For images, loads the full image. For videos, extracts the first frame.
@@ -128,7 +137,7 @@ pub fn get_video_duration(path: &Path) -> BackendResult<f64> {
 
     gstreamer::init().map_err(|e| BackendError::Other(format!("GStreamer init failed: {}", e)))?;
 
-    let path_str = path.to_string_lossy();
+    let path_str = escape_gst_string(&path.to_string_lossy());
 
     // Create a simple discoverer pipeline to get duration
     let pipeline_str = format!("filesrc location=\"{}\" ! decodebin3 ! fakesink", path_str);
@@ -223,7 +232,7 @@ fn create_frame_extraction_pipeline(
 
     gstreamer::init().map_err(|e| BackendError::Other(format!("GStreamer init failed: {}", e)))?;
 
-    let path_str = path.to_string_lossy();
+    let path_str = escape_gst_string(&path.to_string_lossy());
     let pipeline_str = format!(
         "filesrc location=\"{}\" ! decodebin3 ! \
          videoconvert ! video/x-raw,format=RGBA ! \
@@ -338,7 +347,7 @@ impl VideoDecoder {
         gstreamer::init()
             .map_err(|e| BackendError::Other(format!("GStreamer init failed: {}", e)))?;
 
-        let path_str = path.to_string_lossy();
+        let path_str = escape_gst_string(&path.to_string_lossy());
 
         // Create video pipeline: filesrc → decodebin3 → videoconvert → appsink
         // Note: sync=true is important to play video at correct speed (matches video's native framerate)
@@ -442,7 +451,7 @@ impl VideoDecoder {
     fn create_audio_pipeline(path: &Path) -> Option<gstreamer::Pipeline> {
         use gstreamer::prelude::*;
 
-        let path_str = path.to_string_lossy();
+        let path_str = escape_gst_string(&path.to_string_lossy());
 
         // Create audio pipeline: filesrc → decodebin3 → audioconvert → audioresample → pipewiresink
         // The pipewiresink creates a virtual microphone that other apps can use
