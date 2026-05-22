@@ -88,6 +88,9 @@ impl AppModel {
                         cover_blend: None,
                         bar_top_px: 0.0,
                         bar_bottom_px: 0.0,
+                        // Filter previews don't use blur, so this is only here
+                        // to satisfy the struct — value is ignored downstream.
+                        letterbox_color: [0.0, 0.0, 0.0, 1.0],
                     },
                 )
             } else {
