@@ -503,20 +503,25 @@ pub fn process_burst_mode(
     Ok(())
 }
 
-/// Collect all image paths from input (files or directories)
+/// Collect all image paths from input (files or directories, recursive).
 fn collect_image_paths(input: &[PathBuf]) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let mut paths = Vec::new();
+    fn visit_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let file_path = entry.path();
+            if file_path.is_dir() {
+                visit_dir(&file_path, out)?;
+            } else if is_supported_image(&file_path) {
+                out.push(file_path);
+            }
+        }
+        Ok(())
+    }
 
+    let mut paths = Vec::new();
     for path in input {
         if path.is_dir() {
-            // Collect all PNG and DNG files from the directory
-            for entry in std::fs::read_dir(path)? {
-                let entry = entry?;
-                let file_path = entry.path();
-                if is_supported_image(&file_path) {
-                    paths.push(file_path);
-                }
-            }
+            visit_dir(path, &mut paths)?;
         } else if is_supported_image(path) {
             paths.push(path.clone());
         }
