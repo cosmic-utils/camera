@@ -138,10 +138,10 @@ impl AppModel {
             .get(new_index)
             .and_then(|c| c.camera_location.as_deref())
             == Some("back");
-        if self.flash_enabled && switching_to_back && self.flash_hardware.has_error() {
+        if self.flash.enabled && switching_to_back && self.flash.hardware.has_error() {
             info!("Switching to back camera with flash permission error — disabling flash");
-            self.flash_enabled = false;
-            self.flash_error_popup = self.flash_hardware.permission_error.clone();
+            self.flash.enabled = false;
+            self.flash.error_popup = self.flash.hardware.permission_error.clone();
         }
 
         // Turn off hardware flash when switching cameras (safety measure)

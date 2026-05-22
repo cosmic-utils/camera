@@ -564,6 +564,23 @@ impl Default for BurstModeState {
     }
 }
 
+/// Grouped flash-related state.
+///
+/// Keeping these four fields together makes it obvious which fields belong to
+/// the flash subsystem and reduces the risk of forgetting one during a reset
+/// (e.g. switching cameras must clear both `enabled` and the error popup).
+pub struct FlashState {
+    /// Flash enabled for photo capture (user toggle).
+    pub enabled: bool,
+    /// Flash overlay is currently being drawn (screen-flash path).
+    pub active: bool,
+    /// Detected flash hardware (LED nodes + permission status).
+    pub hardware: crate::flash::FlashHardware,
+    /// Permission error popup message — shown when hardware was detected but
+    /// is not writable from the current sandbox / user.
+    pub error_popup: Option<String>,
+}
+
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
 pub struct AppModel {
@@ -667,14 +684,9 @@ pub struct AppModel {
     /// Live filter code shared with the recording pusher (AtomicU32).
     /// Updated on every filter change so the recorder sees it in real-time.
     pub recording_filter_code: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    /// Flash enabled for photo capture
-    pub flash_enabled: bool,
-    /// Flash is currently active (showing white overlay)
-    pub flash_active: bool,
-    /// Detected flash hardware (LEDs + permission status)
-    pub flash_hardware: crate::flash::FlashHardware,
-    /// Flash permission error popup (shown when hardware found but not writable)
-    pub flash_error_popup: Option<String>,
+    /// All flash-related state, grouped to keep reset/configuration
+    /// transitions in one place. See [`FlashState`].
+    pub flash: FlashState,
     /// Photo timer setting (off, 3s, 5s, 10s)
     pub photo_timer_setting: PhotoTimerSetting,
     /// Photo timer countdown (remaining seconds, None when not counting)

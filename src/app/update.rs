@@ -179,7 +179,7 @@ impl AppModel {
                 self.burst_mode.reset();
                 // Ensure flash is turned off when burst mode resets (safety measure)
                 self.turn_off_flash_hardware();
-                self.flash_active = false;
+                self.flash.active = false;
                 debug!("Burst mode state reset");
                 Task::none()
             }
