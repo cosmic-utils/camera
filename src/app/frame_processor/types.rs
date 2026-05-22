@@ -354,28 +354,33 @@ pub(crate) fn urlencoding_encode(s: &str) -> String {
     result
 }
 
-/// Simple URL decoding for query parameters
+/// Simple URL decoding for query parameters.
+///
+/// Decodes consecutive `%XX` escapes into raw bytes, then interprets the byte
+/// stream as UTF-8 so that multi-byte sequences (common in mailto/sms/geo
+/// bodies) are reassembled correctly rather than producing mojibake.
 fn urlencoding_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    let mut out = Vec::with_capacity(s.len());
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
         if c == '%' {
             let hex: String = chars.by_ref().take(2).collect();
             if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                result.push(byte as char);
+                out.push(byte);
             } else {
-                result.push('%');
-                result.push_str(&hex);
+                out.push(b'%');
+                out.extend_from_slice(hex.as_bytes());
             }
         } else if c == '+' {
-            result.push(' ');
+            out.push(b' ');
         } else {
-            result.push(c);
+            let mut buf = [0u8; 4];
+            out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
         }
     }
 
-    result
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A detected QR code with its location and parsed content
