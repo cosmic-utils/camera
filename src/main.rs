@@ -201,7 +201,10 @@ fn run_gui(
             "prewarm: GStreamer + video encoders ready"
         );
 
-        let audio_devices = audio_handle.join().unwrap_or_default();
+        let audio_devices = audio_handle.join().unwrap_or_else(|e| {
+            tracing::warn!(error = ?e, "prewarm: audio enumeration thread panicked");
+            Vec::new()
+        });
 
         // Don't join camera_handle here — it takes ~170ms and would block init().
         // Pass it through so init() can wrap it in an async Task instead.
