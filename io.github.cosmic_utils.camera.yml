@@ -123,7 +123,7 @@ modules:
       - type: git
         url: https://github.com/FreddyFunk/libcamera.git
         branch: sandbox-ipa-fallback
-        commit: b16952df91907858c6d8e646b65478938a91ce08
+        commit: c2b1c39f8dc1a002c37130f0414f55e9b4f79c33
 
   - name: camera
     buildsystem: simple
