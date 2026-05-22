@@ -1077,6 +1077,20 @@ impl AppModel {
         Task::none()
     }
 
+    /// Terminate via the kernel's `_exit` syscall instead of libc `exit`.
+    /// `exit` runs atexit handlers — including Mesa's, which destroys the
+    /// EGL/GL context — while a libcamera `DebayerEGL` worker is mid-call
+    /// against that context, causing a SIGSEGV during teardown. The
+    /// application's libcamera pipeline lives in a long-running iced
+    /// subscription that we cannot shut down synchronously from here, so
+    /// we skip userspace cleanup entirely and let the kernel reap the
+    /// process; all worker threads die atomically with no in-flight calls.
+    fn shutdown_and_exit(&self, status: i32) -> ! {
+        // SAFETY: `_exit` makes no assumptions about program state; it
+        // unconditionally terminates the process via the syscall.
+        unsafe { libc::_exit(status) }
+    }
+
     /// Handle a window-close request. If a recording or timelapse is in
     /// progress, signal it to stop and defer the process exit until the
     /// completion handler (`handle_recording_stopped` /
@@ -1124,7 +1138,7 @@ impl AppModel {
         }
 
         info!("Window close — exiting");
-        std::process::exit(0);
+        self.shutdown_and_exit(0);
     }
 
     pub(crate) fn handle_toggle_recording(&mut self) -> Task<cosmic::Action<Message>> {
@@ -1189,7 +1203,7 @@ impl AppModel {
                 Ok(path) => info!(path = %path, "Recording finalized — exiting"),
                 Err(err) => error!(error = %err, "Recording finalize failed — exiting anyway"),
             }
-            std::process::exit(0);
+            self.shutdown_and_exit(0);
         }
 
         match result {
@@ -1999,7 +2013,7 @@ impl AppModel {
                 Ok(path) => info!(path = %path, "Timelapse finalized — exiting"),
                 Err(err) => error!(error = %err, "Timelapse finalize failed — exiting anyway"),
             }
-            std::process::exit(0);
+            self.shutdown_and_exit(0);
         }
 
         match result {
