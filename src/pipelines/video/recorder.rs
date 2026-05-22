@@ -257,6 +257,10 @@ pub struct VideoRecorder {
     /// drops) restores the user's prior PA volume. `None` for default-device
     /// recordings or when the PulseAudio socket is unreachable.
     _pulse_volume_guard: Option<crate::backends::audio::PulseSourceVolumeGuard>,
+    /// Handle to the appsrc pusher task. Stored so `stop()` / `Drop` can abort
+    /// it before transitioning the pipeline to NULL, avoiding races where the
+    /// detached task pushes into a finalising pipeline.
+    pusher_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Map sensor rotation to the GStreamer videoflip `video-direction` value.
@@ -972,12 +976,8 @@ impl VideoRecorder {
             initial_filter = initial_filter_code,
             "Pusher will apply live GPU filter (RGBA output)"
         );
-        drop(Self::spawn_filtered_pusher(
-            appsrc,
-            frame_rx,
-            framerate,
-            live_filter_code,
-        ));
+        let pusher_handle =
+            Self::spawn_filtered_pusher(appsrc, frame_rx, framerate, live_filter_code);
 
         // Publish diagnostics for the insights drawer
         let mode = if needs_rotation || needs_scaling {
@@ -997,6 +997,7 @@ impl VideoRecorder {
             pipeline,
             file_path: setup.output_path,
             _pulse_volume_guard: pulse_volume_guard,
+            pusher_handle: Some(pusher_handle),
         };
 
         // Eagerly start: if a hardware encoder fails (e.g. VA-API backed by
@@ -1301,7 +1302,7 @@ impl VideoRecorder {
             install_pts_trace_probe(&enc_element, "encoder-out");
         }
 
-        drop(Self::spawn_appsrc_jpeg_pusher(appsrc, frame_rx, framerate));
+        let pusher_handle = Self::spawn_appsrc_jpeg_pusher(appsrc, frame_rx, framerate);
 
         publish_recording_diagnostics(RecordingDiagnostics {
             mode: format!("JPEG zero-copy ({} → {})", va_jpeg_dec, setup.encoder_name),
@@ -1315,6 +1316,7 @@ impl VideoRecorder {
             pipeline,
             file_path: setup.output_path,
             _pulse_volume_guard: pulse_volume_guard,
+            pusher_handle: Some(pusher_handle),
         };
 
         // Eagerly start the pipeline so failures (e.g. NVIDIA encoder not
@@ -1638,6 +1640,12 @@ impl VideoRecorder {
             eos_timeout = true;
         }
 
+        // Abort the pusher task before tearing down the pipeline so it can't
+        // race with the NULL transition by pushing into a finalising appsrc.
+        if let Some(handle) = self.pusher_handle.take() {
+            handle.abort();
+        }
+
         // Set pipeline to NULL state - this will trigger final cleanup
         info!("Setting pipeline to NULL state");
         self.pipeline
@@ -1660,6 +1668,11 @@ impl VideoRecorder {
 
 impl Drop for VideoRecorder {
     fn drop(&mut self) {
+        // Abort the pusher first so it cannot keep pushing buffers into the
+        // pipeline while we transition it to NULL.
+        if let Some(handle) = self.pusher_handle.take() {
+            handle.abort();
+        }
         // Remove the bus sync handler to release its captured references
         if let Some(bus) = self.pipeline.bus() {
             bus.unset_sync_handler();
