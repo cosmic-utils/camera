@@ -11,14 +11,17 @@
 pub mod encoder_selection;
 pub mod muxer;
 pub mod recorder;
+pub mod stats;
 pub mod timelapse;
 
 // Re-export commonly used types
 pub use encoder_selection::EncoderConfig;
 pub use recorder::{
-    AppsrcRecorderConfig, AudioLevels, RecorderConfig, RecordingDiagnostics,
-    RecordingStatsSnapshot, SharedAudioLevels, VideoRecorder, check_available_encoders,
-    get_recording_diagnostics, get_recording_stats,
+    AppsrcRecorderConfig, AudioLevels, RecorderConfig, SharedAudioLevels, VideoRecorder,
+    check_available_encoders,
+};
+pub use stats::{
+    RecordingDiagnostics, RecordingStatsSnapshot, get_recording_diagnostics, get_recording_stats,
 };
 
 // Re-export encoder types for convenience

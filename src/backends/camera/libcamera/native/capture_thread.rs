@@ -880,12 +880,12 @@ fn run_capture_loop(
                             sequence: seq,
                         });
                         if send_result.is_err() {
-                            crate::pipelines::video::recorder::rec_stats_capture_dropped();
+                            crate::pipelines::video::stats::rec_stats_capture_dropped();
                             if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
                                 warn!(frame = frame_num, seq = ?seq, "JPEG recording frame dropped (channel full)");
                             }
                         } else {
-                            crate::pipelines::video::recorder::rec_stats_capture_sent();
+                            crate::pipelines::video::stats::rec_stats_capture_sent();
                         }
                         if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
                             debug!(
@@ -1055,9 +1055,9 @@ fn dispatch_viewfinder_frame(
         let seq = frame.libcamera_metadata.as_ref().and_then(|m| m.sequence);
         let send_result = tx.try_send(RecordingFrame::Decoded(Arc::new(frame.clone())));
         if send_result.is_err() {
-            crate::pipelines::video::recorder::rec_stats_capture_dropped();
+            crate::pipelines::video::stats::rec_stats_capture_dropped();
         } else {
-            crate::pipelines::video::recorder::rec_stats_capture_sent();
+            crate::pipelines::video::stats::rec_stats_capture_sent();
         }
         if frame_num.is_multiple_of(LOG_EVERY_N_FRAMES) {
             debug!(
