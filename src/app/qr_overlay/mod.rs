@@ -176,12 +176,16 @@ pub fn transform_detection_to_screen(
     }
 
     // Add video offset (for letterboxing)
-    let screen_x = x + offset_x;
-    let screen_y = y + offset_y;
+    let mut screen_x = x + offset_x;
+    let mut screen_y = y + offset_y;
 
-    // Ensure minimum size
+    // Ensure minimum size — when we grow the box to satisfy the lower bound,
+    // shift the origin so the expanded box stays centred on the original
+    // detection. Otherwise tiny detections drift toward the bottom-right.
     let screen_width = width.max(MIN_OVERLAY_SIZE);
     let screen_height = height.max(MIN_OVERLAY_SIZE);
+    screen_x -= (screen_width - width) * 0.5;
+    screen_y -= (screen_height - height) * 0.5;
 
     (screen_x, screen_y, screen_width, screen_height)
 }
