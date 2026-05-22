@@ -966,9 +966,10 @@ fn run_capture_loop(
             warn!("No viewfinder buffer in completed request");
         }
 
-        // Process raw buffer only when still capture is requested (multistream only)
+        // Process raw buffer only when still capture is requested (multistream only).
+        // Acquire pairs with the Release store in `request_still_capture`.
         if is_multistream
-            && params.still_requested.load(Ordering::Relaxed)
+            && params.still_requested.load(Ordering::Acquire)
             && let Some(sr) = stream_raw
         {
             let raw_pf = formats.raw_pixel_format.unwrap_or(PixelFormat::BayerRGGB);
@@ -992,7 +993,7 @@ fn run_capture_loop(
 
                 if let Ok(mut still) = params.latest_still.lock() {
                     *still = Some(still_frame);
-                    params.still_requested.store(false, Ordering::Relaxed);
+                    params.still_requested.store(false, Ordering::Release);
                 }
             }
         }
@@ -1030,8 +1031,9 @@ fn dispatch_viewfinder_frame(
         *latest = Some(frame.clone());
     }
 
-    // In single-stream mode, also handle still capture from preview
-    if !is_multistream && params.still_requested.load(Ordering::Relaxed) {
+    // In single-stream mode, also handle still capture from preview.
+    // Acquire pairs with the Release store in `request_still_capture`.
+    if !is_multistream && params.still_requested.load(Ordering::Acquire) {
         info!(
             frame = frame_num,
             width = frame.width,
@@ -1041,7 +1043,7 @@ fn dispatch_viewfinder_frame(
         if let Ok(mut still) = params.latest_still.lock() {
             *still = Some(frame.clone());
         }
-        params.still_requested.store(false, Ordering::Relaxed);
+        params.still_requested.store(false, Ordering::Release);
     }
 
     // Send ViewFinder frames to recording (via appsrc encoder pipeline).

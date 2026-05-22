@@ -160,10 +160,14 @@ impl NativeLibcameraPipeline {
         })
     }
 
-    /// Request a still capture (full resolution)
+    /// Request a still capture (full resolution).
+    ///
+    /// Uses `Release` ordering so the capture thread (reading with `Acquire`)
+    /// is guaranteed to observe the request even on weakly-ordered ISAs
+    /// (AArch64).
     pub(crate) fn request_still_capture(&self) {
         debug!("Still capture requested");
-        self.still_capture_requested.store(true, Ordering::Relaxed);
+        self.still_capture_requested.store(true, Ordering::Release);
     }
 
     /// Get the latest still frame (if available)
