@@ -80,6 +80,18 @@ pub fn take_photo(
     camera_index: usize,
     output: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Refuse to overwrite an existing file when the user has specified one.
+    if let Some(path) = output.as_ref()
+        && !path.is_dir()
+        && path.exists()
+    {
+        return Err(format!(
+            "Output file already exists: {} (refusing to overwrite)",
+            path.display()
+        )
+        .into());
+    }
+
     // Initialize GStreamer
     gstreamer::init()?;
 
@@ -187,6 +199,17 @@ pub fn record_video(
     output: Option<PathBuf>,
     enable_audio: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Refuse to overwrite an existing file when the user has specified one.
+    if let Some(path) = output.as_ref()
+        && path.exists()
+    {
+        return Err(format!(
+            "Output file already exists: {} (refusing to overwrite)",
+            path.display()
+        )
+        .into());
+    }
+
     // Initialize GStreamer
     gstreamer::init()?;
 
