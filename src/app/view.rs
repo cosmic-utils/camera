@@ -516,7 +516,16 @@ impl AppModel {
     /// Settled cover blend: 0.0 (Contain) when fit-to-view is enabled in a
     /// mode that supports it (Photo, View), 1.0 (Cover) everywhere else.
     /// The single source of truth for the preview's geometry target.
+    ///
+    /// Virtual mode is forced to Contain regardless of the toggle — the
+    /// fit/fill chip is hidden there anyway (it's gated on
+    /// `supports_fit_and_zoom`), and Cover would silently crop edges off
+    /// what's being streamed to consumer apps, which doesn't match the
+    /// "what you see is what you send" expectation.
     pub fn settled_blend(&self) -> f32 {
+        if matches!(self.mode, crate::app::state::CameraMode::Virtual) {
+            return 0.0;
+        }
         if self.preview_fit_to_view && self.mode.supports_fit_and_zoom() {
             0.0
         } else {
