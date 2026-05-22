@@ -534,13 +534,19 @@ impl AppModel {
             .map(|n| format!("/dev/{}", n))
             .collect();
 
-        // Check if the current camera's V4L2 device was removed
+        // Check if the current camera's V4L2 device was removed. When the
+        // active camera has no `v4l2_path()` (libcamera placeholder / non-V4L2
+        // backend) we can't correlate it to the removed udev node, so we
+        // assume the unplug event is unrelated and leave the stream running.
+        // The previous "assume affected" default tore down the active stream
+        // on every unrelated hotplug — and any failure to teardown cleanly
+        // tended to wedge the camera.
         let current_camera_removed = self
             .available_cameras
             .get(self.current_camera_index)
             .and_then(|c| c.v4l2_path())
             .map(|path| removed_paths.iter().any(|r| r == path))
-            .unwrap_or(true); // If no device_info, assume affected
+            .unwrap_or(false);
 
         if !current_camera_removed {
             // Current camera is fine — just remove the unplugged camera(s)
