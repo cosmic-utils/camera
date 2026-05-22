@@ -320,6 +320,16 @@ impl PrimitiveTrait for VideoPrimitive {
         use std::time::Instant;
         let prepare_start = Instant::now();
 
+        // Seed the compute-pipeline singleton with the renderer's own device
+        // and queue on the very first prepare. After this, burst-mode and
+        // virtual-camera filter work share the same GPU context as the iced
+        // renderer instead of opening a separate `wgpu::Instance`.
+        // Subsequent calls are cheap no-ops (the OnceCell guards them).
+        crate::gpu::try_seed_shared_gpu_from_renderer(
+            std::sync::Arc::new(device.clone()),
+            std::sync::Arc::new(queue.clone()),
+        );
+
         // Calculate physical bounds from logical bounds using scale factor
         // Then clamp to render target to ensure valid viewport rect
         let scale = viewport.scale_factor() as f32;

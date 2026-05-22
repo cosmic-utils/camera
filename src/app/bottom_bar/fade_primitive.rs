@@ -139,11 +139,21 @@ impl Primitive for FadePrimitive {
     fn prepare(
         &self,
         pipeline: &mut Self::Pipeline,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         bounds: &Rectangle,
         viewport: &Viewport,
     ) {
+        // Seed the compute-pipeline singleton with the renderer's device on
+        // first paint. The bottom-bar fade renders as soon as the UI shows up
+        // (no camera frame needed), so this fires well before `warmup_gpu_pipelines`
+        // would otherwise create a separate compute device. Subsequent calls
+        // are cheap no-ops (the OnceCell guards them).
+        crate::gpu::try_seed_shared_gpu_from_renderer(
+            std::sync::Arc::new(device.clone()),
+            std::sync::Arc::new(queue.clone()),
+        );
+
         let scale = viewport.scale_factor() as f32;
         let uniform = FadeUniform {
             color: self.color,

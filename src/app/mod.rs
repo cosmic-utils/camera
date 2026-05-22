@@ -705,9 +705,19 @@ impl cosmic::Application for AppModel {
             |_| cosmic::Action::App(Message::Noop),
         );
 
-        // Precompile GPU shader pipelines in background (eliminates ~270ms first-capture penalty)
+        // Precompile GPU shader pipelines in background (eliminates ~270ms first-capture penalty).
+        //
+        // Wait for the iced renderer to seed the shared GPU device first so warmup
+        // binds its pipelines to the renderer's device (no second wgpu::Instance).
+        // The 2s timeout protects against headless/test paths where no renderer
+        // ever calls `try_seed_shared_gpu_from_renderer` — there, warmup falls
+        // through and creates its own compute-only device.
         let gpu_warmup_task = Task::perform(
-            async { crate::shaders::warmup_gpu_pipelines().await },
+            async {
+                crate::gpu::wait_for_renderer_seed_or_timeout(std::time::Duration::from_secs(2))
+                    .await;
+                crate::shaders::warmup_gpu_pipelines().await
+            },
             |result| cosmic::Action::App(Message::GpuPipelinesWarmed(result)),
         );
 
