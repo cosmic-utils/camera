@@ -22,6 +22,9 @@ struct ViewportUniform {
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
     bar_top_height: f32,        // Top bar height in pixels (for contain centering)
     bar_bottom_height: f32,     // Bottom bar height in pixels
+    _pad0: f32,                 // pad to vec4 alignment for letterbox_color
+    _pad1: f32,
+    letterbox_color: vec4<f32>, // RGBA — only used by the blur pass; declared here so the struct matches
 }
 
 @group(0) @binding(2)

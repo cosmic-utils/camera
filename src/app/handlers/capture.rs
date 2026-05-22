@@ -559,6 +559,16 @@ impl AppModel {
             "Burst mode frames collected, starting processing"
         );
 
+        // Capture blur state up front so the HDR+ processing blur shows the
+        // burst still frame with the rotation/mirror of the camera that
+        // produced it. Without this, `blur_frame_rotation` keeps whatever
+        // value was set the last time a transition fired — or `None` if the
+        // user never switched cameras this session — and the burst frame
+        // renders rotated wrong on 90°/270° sensors. Mirrors the existing
+        // capture in `handle_burst_mode_complete`.
+        self.blur_frame_rotation = self.current_frame_rotation;
+        self.blur_frame_mirror = self.should_mirror_preview();
+
         // Turn off flash now that capture is complete (before processing)
         self.turn_off_flash_hardware();
         if self.flash.active {

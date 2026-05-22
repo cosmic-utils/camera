@@ -31,6 +31,9 @@ struct ViewportUniform {
     rotation: u32,
     bar_top_height: f32,
     bar_bottom_height: f32,
+    _pad0: f32,
+    _pad1: f32,
+    letterbox_color: vec4<f32>, // unused here; struct must match the shared ViewportUniform
 }
 
 @group(0) @binding(2)

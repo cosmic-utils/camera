@@ -120,6 +120,17 @@ struct ViewportUniform {
     bar_top_height: f32,
     /// Bottom bar height in pixels
     bar_bottom_height: f32,
+    /// Padding to align `letterbox_color` (vec4) to 16 bytes — required for the
+    /// struct to round-trip through wgpu's std140-ish uniform layout. Two
+    /// `f32`s after the three trailing `f32` fields above bring us to offset
+    /// 80, which is a vec4 boundary.
+    _pad0: f32,
+    _pad1: f32,
+    /// Theme background color (RGBA, sRGB straight) used by the blur shader
+    /// to fill letterbox areas instead of returning transparent (which would
+    /// let the COSMIC window background show through during Fit-mode blur
+    /// transitions). Other shaders accept the field but ignore it.
+    letterbox_color: [f32; 4],
 }
 
 /// Combined frame and viewport data to reduce mutex contention
@@ -156,6 +167,10 @@ pub struct VideoPrimitive {
     pub crop_uv: Option<(f32, f32, f32, f32)>,
     /// Zoom level (1.0 = no zoom, 2.0 = 2x zoom, etc.)
     pub zoom_level: f32,
+    /// Theme background color (sRGB straight, RGBA) — passed to the blur
+    /// shader so the letterbox in Contain / Fit mode is painted with the
+    /// app background instead of leaking through to the COSMIC window bg.
+    pub letterbox_color: [f32; 4],
 }
 
 /// Video texture (shared across filter variations)
@@ -272,6 +287,10 @@ impl VideoPrimitive {
             rotation: 0,
             crop_uv: None,
             zoom_level: 1.0,
+            // Black is a sensible default if no widget overrides it (e.g.
+            // headless tests). The real bg color is plumbed in via
+            // `VideoWidgetConfig::letterbox_color` from the active theme.
+            letterbox_color: [0.0, 0.0, 0.0, 1.0],
         }
     }
 
@@ -396,14 +415,28 @@ impl PrimitiveTrait for VideoPrimitive {
 
                 // For blur video (VIDEO_ID_BLUR), ensure intermediate textures exist
                 // and invalidate the blur cache so the new frame gets blurred.
+                //
+                // The blur pass 1 shader is configured with viewport_size in
+                // **display orientation** (sensor w/h swapped for 90°/270°
+                // rotation) so its Contain math computes the right aspect.
+                // The intermediate render target must match that orientation
+                // — otherwise the shader thinks it's drawing into a portrait
+                // viewport while wgpu rasterises to a landscape target, and
+                // the blur frame comes out stretched on rotated sensors
+                // (visible on the Pixel 3a / 90° mount).
                 if self.video_id == VIDEO_ID_BLUR {
                     pipeline
                         .blur_cached
                         .store(false, std::sync::atomic::Ordering::Relaxed);
+                    let (int_w, int_h) = if self.rotation == 1 || self.rotation == 3 {
+                        (frame.height, frame.width)
+                    } else {
+                        (frame.width, frame.height)
+                    };
                     pipeline.ensure_intermediate_textures(
                         device,
-                        frame.width,
-                        frame.height,
+                        int_w,
+                        int_h,
                         pipeline.output_format,
                     );
                 }
@@ -484,6 +517,9 @@ impl PrimitiveTrait for VideoPrimitive {
                             rotation: self.rotation,
                             bar_top_height: 0.0,
                             bar_bottom_height: 0.0,
+                            _pad0: 0.0,
+                            _pad1: 0.0,
+                            letterbox_color: self.letterbox_color,
                         };
                         queue.write_buffer(
                             &binding.viewport_buffer,
@@ -507,6 +543,9 @@ impl PrimitiveTrait for VideoPrimitive {
                         rotation: self.rotation,
                         bar_top_height: bar_top,
                         bar_bottom_height: bar_bottom,
+                        _pad0: 0.0,
+                        _pad1: 0.0,
+                        letterbox_color: self.letterbox_color,
                     };
                     queue.write_buffer(
                         &binding.viewport_buffer,
@@ -586,6 +625,9 @@ impl PrimitiveTrait for VideoPrimitive {
                             rotation: 0,     // Already rotated in preblur
                             bar_top_height: 0.0,
                             bar_bottom_height: 0.0,
+                            _pad0: 0.0,
+                            _pad1: 0.0,
+                            letterbox_color: self.letterbox_color,
                         };
                         queue.write_buffer(
                             &pb_binding.viewport_buffer,
@@ -614,6 +656,9 @@ impl PrimitiveTrait for VideoPrimitive {
                         rotation: 0,     // Already rotated in pass 1
                         bar_top_height: 0.0,
                         bar_bottom_height: 0.0,
+                        _pad0: 0.0,
+                        _pad1: 0.0,
+                        letterbox_color: self.letterbox_color,
                     };
                     queue.write_buffer(
                         &intermediate_1.viewport_buffer,
@@ -639,6 +684,9 @@ impl PrimitiveTrait for VideoPrimitive {
                         rotation: 0,     // Already rotated in pass 1
                         bar_top_height: bar_top,
                         bar_bottom_height: bar_bottom,
+                        _pad0: 0.0,
+                        _pad1: 0.0,
+                        letterbox_color: self.letterbox_color,
                     };
                     queue.write_buffer(
                         &intermediate_2.viewport_buffer,

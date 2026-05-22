@@ -81,6 +81,10 @@ pub struct VideoWidgetConfig {
     /// Bottom UI bar height in pixels — matches the actual UI footprint
     /// (capture button + bottom bar + optional zoom row).
     pub bar_bottom_px: f32,
+    /// Theme background color (sRGB straight, RGBA). Used by the blur shader
+    /// to fill the letterbox in Contain / Fit mode instead of returning
+    /// transparent — otherwise the COSMIC window background leaks through.
+    pub letterbox_color: [f32; 4],
 }
 
 /// Video widget that renders camera frames using a custom GPU primitive
@@ -114,6 +118,7 @@ impl VideoWidget {
         primitive.rotation = config.rotation;
         primitive.crop_uv = config.crop_uv;
         primitive.zoom_level = config.zoom_level;
+        primitive.letterbox_color = config.letterbox_color;
 
         // Calculate aspect ratio from frame dimensions, adjusted for crop and rotation
         // For 90° and 270° rotations, swap width and height

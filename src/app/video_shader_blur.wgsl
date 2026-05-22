@@ -21,6 +21,9 @@ struct ViewportUniform {
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
     bar_top_height: f32,        // Top bar height in pixels
     bar_bottom_height: f32,     // Bottom bar height in pixels
+    _pad0: f32,                 // pad to vec4 alignment for letterbox_color
+    _pad1: f32,
+    letterbox_color: vec4<f32>, // RGBA fill for letterbox in blur pass (alpha unused)
 }
 
 @group(0) @binding(2)
@@ -117,10 +120,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         tex_coords = (tex_coords - pivot) * scale + vec2<f32>(0.5, 0.5);
     }
 
-    // Discard letterbox before the crop remap — see video_shader.wgsl for the
-    // rationale (post-remap check can falsely keep fragments inside the crop).
+    // For the blur backdrop, paint letterbox with the theme's background
+    // color (opaque) instead of discarding to transparent — the previous
+    // discard let the COSMIC window background show through in Contain /
+    // Fit mode. Return *before* the crop remap so we can short-circuit;
+    // the regular post-remap letterbox check is unnecessary here because
+    // anything out of [0,1] is letterbox by definition.
     if (tex_coords.x < 0.0 || tex_coords.x > 1.0 || tex_coords.y < 0.0 || tex_coords.y > 1.0) {
-        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        return vec4<f32>(viewport.letterbox_color.rgb, 1.0);
     }
 
     // Apply the blended crop remap

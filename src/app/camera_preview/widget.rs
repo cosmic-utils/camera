@@ -125,6 +125,14 @@ impl AppModel {
             let zoom_level = self.current_zoom_level();
             let scroll_zoom_enabled = self.mode.supports_fit_and_zoom();
 
+            // Look up the COSMIC theme's window background color. The blur
+            // shader paints letterbox areas with this so the preview's
+            // out-of-image region matches the app background instead of
+            // letting the window bg leak through (issue: white letterbox
+            // during Fit-mode blur transitions).
+            let bg = cosmic::theme::active().cosmic().bg_color();
+            let letterbox_color = [bg.red, bg.green, bg.blue, 1.0];
+
             let video_elem = video_widget::video_widget(
                 frame.clone(),
                 video_widget::VideoWidgetConfig {
@@ -140,6 +148,7 @@ impl AppModel {
                     cover_blend: Some(cover_blend),
                     bar_top_px: self.top_ui_height(),
                     bar_bottom_px: self.bottom_ui_height(),
+                    letterbox_color,
                 },
             );
 
