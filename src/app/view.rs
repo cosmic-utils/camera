@@ -632,7 +632,7 @@ impl AppModel {
 
         // Flash mode - show only preview with white overlay, no UI
         // Only show screen flash overlay for front cameras (back cameras use hardware LED)
-        if self.flash_active && !self.use_hardware_flash() {
+        if self.flash.active && !self.use_hardware_flash() {
             let flash_overlay = widget::container(
                 widget::Space::new()
                     .width(Length::Fill)
@@ -884,7 +884,7 @@ impl AppModel {
                     .align_y(cosmic::iced::alignment::Vertical::Bottom)
             ];
 
-            if self.flash_error_popup.is_some() {
+            if self.flash.error_popup.is_some() {
                 main_stack = main_stack.push(self.build_flash_error_popup());
             }
 
@@ -1020,7 +1020,7 @@ impl AppModel {
             || ((self.mode == CameraMode::Video || self.mode == CameraMode::Timelapse)
                 && self.use_hardware_flash())
         {
-            let flash_icon_bytes = if self.flash_enabled {
+            let flash_icon_bytes = if self.flash.enabled {
                 FLASH_ICON
             } else {
                 FLASH_OFF_ICON
@@ -1040,7 +1040,7 @@ impl AppModel {
                 row = row.push(overlay_icon_button(
                     flash_icon,
                     Some(Message::ToggleFlash),
-                    self.flash_enabled,
+                    self.flash.enabled,
                 ));
             }
 
@@ -1869,7 +1869,8 @@ impl AppModel {
     /// when flash hardware was detected but cannot be controlled.
     fn build_flash_error_popup(&self) -> Element<'_, Message> {
         let error_msg = self
-            .flash_error_popup
+            .flash
+            .error_popup
             .as_deref()
             .unwrap_or("Flash permission error");
 
