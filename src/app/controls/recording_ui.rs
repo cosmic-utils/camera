@@ -151,7 +151,11 @@ impl AppModel {
             .push(widget::text(format_duration(position as u64)).size(12))
             .push(widget::space::horizontal().width(spacing.space_xs))
             .push(
+                // 0.05 s step (~20 Hz) so scrubbing feels continuous; iced's
+                // default step (1.0) would quantise the slider to whole-second
+                // jumps even though the underlying GStreamer seek is accurate.
                 widget::slider(0.0..=slider_max, position, Message::VideoFileSeek)
+                    .step(0.05_f64)
                     .width(Length::Fill),
             )
             .push(widget::space::horizontal().width(spacing.space_xs))

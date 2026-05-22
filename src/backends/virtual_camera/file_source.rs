@@ -96,10 +96,12 @@ pub fn load_video_frame_at_position(path: &Path, position_secs: f64) -> BackendR
         return Err(e);
     }
 
-    // Seek to the desired position
+    // Seek to the desired position. ACCURATE so the preview reflects the
+    // exact scrub position instead of the nearest keyframe (~4 s GOPs would
+    // otherwise quantise the preview to keyframe boundaries).
     let position = gstreamer::ClockTime::from_nseconds((position_secs * 1_000_000_000.0) as u64);
     if let Err(e) = pipeline.seek_simple(
-        gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::KEY_UNIT,
+        gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
         position,
     ) {
         warn!(?e, "Seek failed, trying to get frame anyway");
@@ -648,7 +650,13 @@ impl VideoDecoder {
         }
     }
 
-    /// Seek to a specific position in seconds
+    /// Seek to a specific position in seconds.
+    ///
+    /// Uses `ACCURATE` so the slider lands on the requested frame instead of
+    /// the nearest keyframe — otherwise videos with a long GOP (e.g. ~4 s for
+    /// H.264 in screen recordings) only scrub in those step sizes. The cost
+    /// is that GStreamer decodes from the previous keyframe up to the target
+    /// position, but for typical playback GOPs that's well under a second.
     pub fn seek(&self, position_secs: f64) {
         use gstreamer::prelude::*;
 
@@ -658,7 +666,7 @@ impl VideoDecoder {
 
         // Seek video pipeline
         if let Err(e) = self.video_pipeline.seek_simple(
-            gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::KEY_UNIT,
+            gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
             position,
         ) {
             warn!(?e, "Video seek failed");
@@ -667,7 +675,7 @@ impl VideoDecoder {
         // Also seek audio pipeline if present
         if let Some(ref audio_pipeline) = self.audio_pipeline
             && let Err(e) = audio_pipeline.seek_simple(
-                gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::KEY_UNIT,
+                gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
                 position,
             )
         {
