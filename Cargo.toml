@@ -31,7 +31,7 @@ gstreamer = "0.25.2"
 gstreamer-app = "0.25.2"
 gstreamer-video = "0.25.2"
 image = "0.25.10"
-chrono = "0.4.44"
+chrono = "0.4.45"
 ctrlc = "3.5.2"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 dirs = "6.0.0"
