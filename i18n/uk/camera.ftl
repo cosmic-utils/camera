@@ -10,13 +10,13 @@ git-description = Git {$hash} від {$date}
 mode-video = Відео
 mode-photo = Знімок
 mode-timelapse = Прискорено
-timelapse-saving = Збирання запису...
+timelapse-saving = Обробка...
 mode-virtual = Віртуальна
-mode-view = Вид
+mode-view = Перегляд
 
 # Virtual camera
 virtual-camera-title = Віртуальна камера (експериментально)
-virtual-camera-description = Транслюйте відеопотік камери в інші додатки через віртуальний пристрій камери. Потрібен PipeWire.
+virtual-camera-description = Транслюйте відеопотік камери до інших застосунків через віртуальний пристрій камери. Потрібен PipeWire.
 virtual-camera-enable = Увімкнути віртуальну камеру
 streaming-live = НАЖИВО
 virtual-camera-open-file = Відкрити файл
@@ -32,8 +32,8 @@ settings-theme = Тема
 match-desktop = Системна
 dark = Темна
 light = Світла
-settings-default-mode = Типовий режим
-settings-default-mode-description = Режим камери під час запуску застосунку
+settings-default-mode = Режим камери
+settings-default-mode-description = Типовий режим під час запуску застосунку
 settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
@@ -42,17 +42,21 @@ settings-format = Формат
 settings-microphone = Мікрофон
 settings-record-audio = Запис звуку
 settings-audio-encoder = Аудіокодувальник
+settings-mic-level = Рівень мікрофона
+settings-mic-level-initializing = Підготовка…
 settings-encoder = Кодувальник
 settings-quality = Якість
 settings-video-encoder = Відеокодувальник
 settings-video-quality = Якість відео
 settings-manual-override = Перевизначити вручну
 settings-mirror-preview = Дзеркалити
-settings-mirror-preview-description = Відобразити попередній перегляд по горизонталі
+settings-mirror-preview-description = Горизонтальне відображення попереднього перегляду
+settings-mirror-captures = Зберігати дзеркально
+settings-mirror-captures-description = Збереження знімків, відео й інтервальної зйомки в оберненому вигляді
 settings-haptic-feedback = Тактильний відгук
 settings-haptic-feedback-description = Вібрація під час зйомки, перемикання режиму та камери
-settings-reset-all = Скинути всі налаштування
-settings-bug-reports = Звіти про вади
+settings-reset-all = Скинути параметри
+settings-bug-reports = Зворотний зв'язок
 settings-stats-for-nerds = Для допитливих
 settings-report-bug = Повідомити про ваду
 settings-show-report = Показати звіт
@@ -67,7 +71,7 @@ device-info-path = Шлях
 device-info-real-path = Реальний шлях
 device-info-device-path = Шлях пристрою
 device-info-sensor = Сенсор
-device-info-pipeline = Pipeline
+device-info-pipeline = Ланцюг
 device-info-libcamera-version = libcamera
 device-info-multistream = Багатопотоковість
 device-info-multistream-yes = Підтримується
@@ -81,7 +85,7 @@ preset-medium = Середній
 preset-high = Високий
 
 # Camera preview
-initializing-camera = Підготовка камери…
+initializing-camera = Підготовка камери...
 preview-fit = Вписати
 preview-cover = Заповнити
 
@@ -169,9 +173,9 @@ hdr-plus-frames-8 = 8 кадрів
 hdr-plus-frames-50 = 50 кадрів
 
 # Photo settings
-settings-photo = Фото
-settings-photo-format = Формат збереження
-settings-photo-format-description = Формати для збережених знімків. JPEG — зі стисненням, PNG — без втрат, DNG зберігає найбільше даних для подальшої обробки.
+settings-photo = Знімок
+settings-photo-format = Формат знімків
+settings-photo-format-description = Формати для збережених знімків. JPEG (стиснений), PNG (без втрат якості), а DNG зберігає найбільше даних для подальшої обробки.
 settings-hdr-plus = HDR+ (експериментально)
 settings-hdr-plus-description = Багатокадрова зйомка для кращих знімків при слабкому освітленні та ширшого динамічного діапазону. Авто підбирає кількість кадрів залежно від яскравості сцени.
 settings-burst-mode-quality = Алгоритм HDR+
@@ -197,29 +201,29 @@ about-support = Підтримка та відгуки
 
 # Insights
 insights-title = Діагностика
-insights-pipeline = Pipeline
-insights-pipeline-full = GStreamer Pipeline
-insights-pipeline-full-libcamera = Pipeline
-insights-decoder-chain = Резервний ланцюг декодерів
+insights-pipeline = Ланцюг обробки
+insights-pipeline-full = Ланцюг GStreamer
+insights-pipeline-full-libcamera = Структура ланцюга
+insights-decoder-chain = Резервний ланцюг декодувальників
 
 insights-stream-combined = Перегляд + Зйомка
 
 insights-frame-latency = Затримка кадру
-insights-dropped-frames = Втрачені кадри
+insights-dropped-frames = Втрачено кадрів
 insights-frame-size-decoded = Розмір кадру
 insights-decode-time-gst = Обробка буфера
 insights-copy-time = Час копіювання кадру
-insights-gpu-upload-time = Час передачі на GPU
-insights-gpu-upload-bandwidth = Швидкість передачі на GPU
+insights-gpu-upload-time = Час передачі на ГП
+insights-gpu-upload-bandwidth = Швидкість передачі на ГП
 
 insights-format-source = Джерело
 insights-format-resolution = Роздільна здатність
 insights-format-framerate = Частота кадрів
-insights-format-native = Рідний формат
+insights-format-native = Початковий формат
 insights-format-gstreamer = Вивід GStreamer
-insights-cpu-processing = Обробка на CPU
-insights-cpu-decode-time = Час декодування CPU
-insights-format-wgpu = Обробка на GPU
+insights-cpu-processing = Обробка на ЦП
+insights-cpu-decode-time = Час декодування ЦП
+insights-format-wgpu = Обробка на ГП
 
 insights-selected = Обрано
 insights-available = Доступно
@@ -231,7 +235,7 @@ insights-backend-type = Тип
 insights-pipeline-handler = Обробник ланцюга
 insights-libcamera-version = Версія libcamera
 insights-sensor-model = Сенсор
-insights-mjpeg-decoder = Декодер MJPEG
+insights-mjpeg-decoder = Декодувальник MJPEG
 
 # Insights - Multi-stream
 insights-multistream-single = Один потік
@@ -258,7 +262,7 @@ insights-recording-fps = Ефективний FPS
 insights-recording-delay = Затримка обробки
 insights-recording-convert = Перетворення NV12
 insights-recording-pts = Поточний PTS
-insights-recording-pipeline = Pipeline
+insights-recording-pipeline = Ланцюг запису
 
 # Insights - Audio
 insights-audio = Аудіо
@@ -284,7 +288,7 @@ insights-meta-analogue-gain = Аналогове підсилення
 insights-meta-digital-gain = Цифрове підсилення
 insights-meta-colour-temp = Колірна температура
 insights-meta-sequence = Послідовність
-insights-meta-colour-gains = Підсил. ББ (R, B)
+insights-meta-colour-gains = Підсилення балансу білого (R, B)
 insights-meta-black-level = Рівень чорного
 insights-meta-lens-position = Позиція лінзи
 insights-meta-lux = Освітленість
@@ -292,7 +296,7 @@ insights-meta-focus-fom = Показник фокуса
 insights-meta-na = N/A
 
 # Timelapse
-settings-timelapse = Прискорення (інтервальна зйомка)
+settings-timelapse = Режим прискорення (інтервальна зйомка)
 settings-timelapse-interval = Інтервал
 settings-timelapse-interval-description = Час між послідовними знімками
 
@@ -310,14 +314,14 @@ insights-capture-burst = Серійна зйомка
 # Keyboard shortcuts — categories
 shortcut-category-capture = Зйомка
 shortcut-category-camera = Камера
-shortcut-category-pickers = Pickers
+shortcut-category-pickers = Вибір параметрів
 shortcut-category-display = Дисплей
 shortcut-category-zoom = Масштаб і кадрування
 shortcut-category-app = Застосунок
 
 # Keyboard shortcuts — action labels
 action-capture = Зйомка / Запис / Грати-Пауза
-action-photo-snapshot = Фото під час запису
+action-photo-snapshot = Знімок під час запису
 action-switch-camera = Перемкнути камеру
 action-toggle-focus-auto = Автофокус
 action-toggle-flash = Спалах
@@ -335,7 +339,7 @@ action-cycle-photo-aspect-ratio = Перемкнути пропорції фот
 action-open-gallery = Відкрити галерею
 action-toggle-about = Про застосунок
 action-reset-all-settings = Скинути всі налаштування
-action-show-shortcuts = Показати сполучення
+action-show-shortcuts = Сполучення
 action-quit-app = Вийти
 
 # Shortcuts help / settings page
