@@ -284,6 +284,7 @@ impl AppModel {
             // ===== Settings =====
             Message::UpdateConfig(config) => self.handle_update_config(config),
             Message::SetAppTheme(index) => self.handle_set_app_theme(index),
+            Message::SetOverlayEffect(index) => self.handle_set_overlay_effect(index),
             Message::SelectDefaultMode(index) => self.handle_select_default_mode(index),
             Message::PortalColorSchemeChanged(is_dark) => {
                 self.handle_portal_color_scheme_changed(is_dark)

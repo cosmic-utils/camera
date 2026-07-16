@@ -54,6 +54,10 @@ impl AppModel {
             AppTheme::Light => 2,
         };
 
+        // Overlay effect index. Indexes `available()`, which is shorter
+        // off-COSMIC — hence the shared mapping rather than a literal index.
+        let current_overlay_effect_index = self.config.overlay_effect.dropdown_index();
+
         // Default mode index (matches visible dropdown entries which may exclude Virtual)
         let visible_default_modes: Vec<crate::app::state::CameraMode> = {
             let mut modes = vec![
@@ -80,6 +84,15 @@ impl AppModel {
                     Some(current_theme_index),
                     Message::SetAppTheme,
                 )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-overlay-effect"))
+                    .description(fl!("settings-overlay-effect-description"))
+                    .control(widget::dropdown(
+                        &self.overlay_effect_dropdown_options,
+                        Some(current_overlay_effect_index),
+                        Message::SetOverlayEffect,
+                    )),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-default-mode"))

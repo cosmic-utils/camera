@@ -585,6 +585,7 @@ impl Default for BurstModeState {
 /// Keeping these four fields together makes it obvious which fields belong to
 /// the flash subsystem and reduces the risk of forgetting one during a reset
 /// (e.g. switching cameras must clear both `enabled` and the error popup).
+#[derive(Default)]
 pub struct FlashState {
     /// Flash enabled for photo capture (user toggle).
     pub enabled: bool,
@@ -599,6 +600,7 @@ pub struct FlashState {
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
+#[cfg_attr(test, derive(Default))]
 pub struct AppModel {
     /// Application state which is managed by the COSMIC runtime.
     pub core: cosmic::Core,
@@ -650,6 +652,11 @@ pub struct AppModel {
     pub blur_frame_rotation: crate::backends::camera::types::SensorRotation,
     /// Whether the blur frame was mirrored (captured at start of blur transition)
     pub blur_frame_mirror: bool,
+    /// Digital zoom the blur frame was rendered at (captured at start of blur
+    /// transition). The blurred frame is frozen, so it must keep the zoom it was
+    /// last displayed with — otherwise an in-flight zoom animation (mode switch,
+    /// zoom reset) eases the *still* image instead of the live preview.
+    pub blur_frame_zoom: f32,
     /// Video file playback progress (position_secs, duration_secs, progress 0.0-1.0)
     pub video_file_progress: Option<(f64, f64, f64)>,
     /// Video preview seek position (used when not streaming to store desired start position)
@@ -795,6 +802,10 @@ pub struct AppModel {
     pub bitrate_preset_dropdown_options: Vec<String>,
     /// Theme dropdown options (Match Desktop, Dark, Light)
     pub theme_dropdown_options: Vec<String>,
+    /// Overlay effect dropdown options (System, Frosted Glass, Translucent,
+    /// Off). Built from `OverlayEffect::available()`, so System is absent
+    /// off-COSMIC — index with that same slice, never with `ALL`.
+    pub overlay_effect_dropdown_options: Vec<String>,
     /// Burst mode merge mode dropdown options (Quality FFT, Fast Spatial)
     pub burst_mode_merge_dropdown_options: Vec<String>,
     /// Burst mode frame count dropdown options (Auto, 4, 6, 8 frames)
@@ -1665,6 +1676,8 @@ pub enum Message {
     UpdateConfig(Config),
     /// Set application theme (System, Dark, Light)
     SetAppTheme(usize),
+    /// Set the overlay effect. Index into `OverlayEffect::available()`.
+    SetOverlayEffect(usize),
     /// Set default camera mode on launch
     SelectDefaultMode(usize),
     /// XDG portal color scheme changed (true = dark, false = light)

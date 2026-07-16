@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Shader for rendering images with rounded corners
+// `rounded_box_sdf` is prepended by the Rust code from shaders/geometry.wgsl
 
 @group(0) @binding(0)
 var texture_img: texture_2d<f32>;
@@ -38,12 +39,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     out.tex_coords = vec2<f32>((x + 1.0) * 0.5, (y + 1.0) * 0.5);
 
     return out;
-}
-
-// Distance from point to rounded rectangle
-fn rounded_box_sdf(pos: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
-    let d = abs(pos) - size + vec2<f32>(radius, radius);
-    return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0, 0.0))) - radius;
 }
 
 // Fragment shader - renders image with rounded corners and cover fit

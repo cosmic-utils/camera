@@ -22,9 +22,12 @@ struct ViewportUniform {
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
     bar_top_height: f32,        // Top bar height in pixels (for contain centering)
     bar_bottom_height: f32,     // Bottom bar height in pixels
-    _pad0: f32,                 // pad to vec4 alignment for letterbox_color
-    _pad1: f32,
+    kawase_offset: f32,        // Unused here — read by the Kawase passes
+    dim_factor: f32,           // Unused here — applied by the frosted composite
     letterbox_color: vec4<f32>, // RGBA — only used by the blur pass; declared here so the struct matches
+    // The rect (x, y, w, h) the corners are cut from, in PHYSICAL px of the
+    // render target, i.e. the same space as `@builtin(position)`.
+    panel_rect: vec4<f32>,
 }
 
 @group(0) @binding(2)
@@ -35,34 +38,10 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
 }
 
-// Sample luminance at offset for edge detection (RGBA version)
-fn sample_luminance_rgba(uv: vec2<f32>) -> f32 {
-    let color = textureSample(texture_rgba, sampler_video, uv);
-    return luminance(color.rgb);
-}
-
-// Sobel edge detection for pencil effect (RGBA version)
-fn sobel_edge_rgba(uv: vec2<f32>, texel_size: vec2<f32>) -> f32 {
-    let tl = sample_luminance_rgba(uv + vec2<f32>(-texel_size.x, -texel_size.y));
-    let tm = sample_luminance_rgba(uv + vec2<f32>(0.0, -texel_size.y));
-    let tr = sample_luminance_rgba(uv + vec2<f32>(texel_size.x, -texel_size.y));
-    let ml = sample_luminance_rgba(uv + vec2<f32>(-texel_size.x, 0.0));
-    let mr = sample_luminance_rgba(uv + vec2<f32>(texel_size.x, 0.0));
-    let bl = sample_luminance_rgba(uv + vec2<f32>(-texel_size.x, texel_size.y));
-    let bm = sample_luminance_rgba(uv + vec2<f32>(0.0, texel_size.y));
-    let br = sample_luminance_rgba(uv + vec2<f32>(texel_size.x, texel_size.y));
-
-    let gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
-    let gy = -tl - 2.0 * tm - tr + bl + 2.0 * bm + br;
-
-    return sqrt(gx * gx + gy * gy);
-}
-
-// Distance from point to rounded rectangle
-fn rounded_box_sdf(pos: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
-    let d = abs(pos) - size + vec2<f32>(radius, radius);
-    return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0, 0.0))) - radius;
-}
+// `apply_texture_filter` comes from the shared texture-filter prelude
+// (src/shaders/texture_filters.wgsl) and `rounded_box_sdf` from the shared
+// geometry prelude (src/shaders/geometry.wgsl), both concatenated ahead of this
+// file in `VideoPipeline::new`.
 
 // Vertex shader - creates a fullscreen quad
 @vertex
@@ -194,46 +173,27 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var pixel = textureSample(texture_rgba, sampler_video, tex_coords);
     var color = pixel.rgb;
 
-    // Apply filter using shared filter function (filters 0-12)
-    if (viewport.filter_mode <= 12u) {
-        color = apply_filter(color, viewport.filter_mode, tex_coords);
-    } else if (viewport.filter_mode == 13u) {
-        // Chromatic Aberration: RGB channel split (needs texture re-sampling)
-        let offset_uv = 0.004; // 0.4% of width
-        let color_r = textureSample(texture_rgba, sampler_video, tex_coords + vec2<f32>(offset_uv, 0.0));
-        let color_b = textureSample(texture_rgba, sampler_video, tex_coords - vec2<f32>(offset_uv, 0.0));
-        color = vec3<f32>(color_r.r, color.g, color_b.b);
-    } else if (viewport.filter_mode == 14u) {
-        // Pencil: Pencil sketch drawing effect (needs texture re-sampling for Sobel)
-        // When used with multi-pass pre-blur, input is already smoothed for clean edges.
-        let tex_size = vec2<f32>(textureDimensions(texture_rgba));
-        let texel_size = 1.0 / tex_size;
-        let edge = sobel_edge_rgba(tex_coords, texel_size);
+    // Apply the filter (0-14) using the shared preludes.
+    color = apply_texture_filter(
+        color,
+        viewport.filter_mode,
+        tex_coords,
+        texture_rgba,
+        sampler_video,
+    );
 
-        // Use smooth edge response for natural pencil pressure variation
-        let edge_strength = smoothstep(0.02, 0.25, edge);
-
-        // Invert: dark strokes on light paper
-        let pencil = 1.0 - edge_strength;
-
-        // Two-layer paper texture: coarse grain + symmetric fine noise
-        let coarse = hash(floor(tex_coords * tex_size * 0.5) * 0.7) * 0.04;
-        let fine = (hash(tex_coords * tex_size) - 0.5) * 0.06;
-        let paper = 0.96 + coarse + fine;
-
-        let final_val = clamp(pencil * paper, 0.0, 1.0);
-        // Slight warm tint for natural paper look
-        color = vec3<f32>(final_val, final_val * 0.98, final_val * 0.95);
-    }
-
-    // Calculate alpha for rounded corners
+    // Round the corners off the widget's own rect, exactly as the frosted
+    // composite does: `panel_rect` and `corner_radius` in physical px, against
+    // `@builtin(position)`. NOT off `viewport_size` — that is the box the fit
+    // math works in, and passes that sample an intermediate match it to the
+    // intermediate rather than the widget (see the pre-blur's second pass), so a
+    // silhouette cut from it lands somewhere other than the widget's edge.
     var alpha = pixel.a;
-    if (viewport.corner_radius > 0.0) {
-        let pixel_pos = (in.tex_coords - vec2<f32>(0.5, 0.5)) * viewport.viewport_size;
-        let half_size = viewport.viewport_size * 0.5;
-        let dist = rounded_box_sdf(pixel_pos, half_size, viewport.corner_radius);
-        let corner_alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
-        alpha = pixel.a * corner_alpha;
+    if (viewport.corner_radius > 0.0 && viewport.panel_rect.z > 0.0) {
+        let half_size = viewport.panel_rect.zw * 0.5;
+        let center = viewport.panel_rect.xy + half_size;
+        let dist = rounded_box_sdf(in.position.xy - center, half_size, viewport.corner_radius);
+        alpha = pixel.a * (1.0 - smoothstep(-1.0, 1.0, dist));
     }
 
     return vec4<f32>(color, alpha);

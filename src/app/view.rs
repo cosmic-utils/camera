@@ -10,10 +10,14 @@
 //! - Format picker overlay (format_picker module)
 
 use crate::app::bottom_bar::slide_h::SlideH;
+use crate::app::overlay_style::{
+    OVERLAY_CONTAINER, PICKER_PANEL, POPUP_PANEL, overlay_chip_button_class,
+};
+use crate::app::preview_geometry::TOP_BAR_HEIGHT;
 use crate::app::qr_overlay::build_qr_overlay;
 use crate::app::state::{AppModel, BurstModeStage, CameraMode, FilterType, Message};
 use crate::constants::resolution_thresholds;
-use crate::constants::ui::{self, OVERLAY_BACKGROUND_ALPHA, POPUP_BACKGROUND_ALPHA};
+use crate::constants::ui;
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -63,80 +67,6 @@ const CAMERA_TILT_ICON: &[u8] = include_bytes!("../../resources/button_icons/cam
 /// Burst mode progress bar dimensions
 const BURST_MODE_PROGRESS_BAR_WIDTH: f32 = 200.0;
 const BURST_MODE_PROGRESS_BAR_HEIGHT: f32 = 8.0;
-
-/// Create a container style with semi-transparent themed background for overlay elements
-///
-/// Uses `radius_xl` to match COSMIC button corner radius (follows round/slightly round/square theme setting)
-/// Does not set text_color to allow buttons to use their native COSMIC theme colors.
-pub fn overlay_container_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let bg = cosmic.bg_color();
-    widget::container::Style {
-        background: Some(Background::Color(Color::from_rgba(
-            bg.red,
-            bg.green,
-            bg.blue,
-            OVERLAY_BACKGROUND_ALPHA,
-        ))),
-        border: cosmic::iced::Border {
-            // Use radius_xl to match COSMIC button styling
-            radius: cosmic.corner_radii.radius_xl.into(),
-            ..Default::default()
-        },
-        // Don't set text_color - let buttons use their native COSMIC theme colors
-        ..Default::default()
-    }
-}
-
-/// Button class for chips that sit on the translucent overlay scrim:
-/// transparent background (the surrounding `overlay_container_style` provides
-/// the colour) with `on_bg_color` text/icon. Avoids `Button::Text`, which uses
-/// the accent colour for foreground.
-fn overlay_chip_button_class() -> cosmic::theme::Button {
-    use cosmic::iced::{Background, Color};
-    use cosmic::widget::button::Style;
-    let plain = |theme: &cosmic::Theme| -> Style {
-        let on = Color::from(theme.cosmic().on_bg_color());
-        Style {
-            text_color: Some(on),
-            icon_color: Some(on),
-            ..Style::new()
-        }
-    };
-    let with_overlay = |theme: &cosmic::Theme, alpha: f32| -> Style {
-        let cosmic = theme.cosmic();
-        let on = cosmic.on_bg_color();
-        Style {
-            background: Some(Background::Color(Color::from_rgba(
-                on.red, on.green, on.blue, alpha,
-            ))),
-            // Match the wrapper container's corner radius so the hover/press
-            // overlay rounds with the chip instead of drawing a sharp box.
-            border_radius: cosmic.corner_radii.radius_xl.into(),
-            text_color: Some(Color::from(on)),
-            icon_color: Some(Color::from(on)),
-            ..Style::new()
-        }
-    };
-    cosmic::theme::Button::Custom {
-        active: Box::new(move |_focused, theme| plain(theme)),
-        disabled: Box::new(move |theme| {
-            let mut s = plain(theme);
-            if let Some(ref mut c) = s.text_color {
-                c.a *= 0.5;
-            }
-            if let Some(ref mut c) = s.icon_color {
-                c.a *= 0.5;
-            }
-            s
-        }),
-        hovered: Box::new(move |_focused, theme| with_overlay(theme, 0.08)),
-        pressed: Box::new(move |_focused, theme| with_overlay(theme, 0.16)),
-    }
-}
-
-/// Fixed pixel height for the top UI bar overlay (matches native COSMIC header bar).
-pub const TOP_BAR_HEIGHT: f32 = 47.0;
 
 /// Fallback aspect ratio used before the first window-resize event arrives.
 const FALLBACK_ASPECT_RATIO: f32 = 16.0 / 9.0;
@@ -255,186 +185,42 @@ impl AppModel {
         anim.from.capture_area_height
             + (target - anim.from.capture_area_height) * self.fit_animation_eased()
     }
-}
 
-/// On-screen "framed" rectangle that the canvas crop overlay highlights and
-/// that the captured photo's Cover-mode crop maps to. Sharing this helper
-/// between the canvas and the capture path guarantees the saved image
-/// matches what the user sees inside the translucent crop bars — including
-/// when the UI bars are asymmetric (top 47 px vs bottom ~174 px) and a
-/// sensor-centered crop would diverge from the on-screen content area.
-pub fn frame_rect_on_screen(
-    screen_w: f32,
-    screen_h: f32,
-    top_h: f32,
-    bottom_h: f32,
-    target_ratio: Option<f32>,
-) -> cosmic::iced::Rectangle {
-    let content_top = top_h;
-    let content_h = (screen_h - top_h - bottom_h).max(0.0);
-    let content_w = screen_w;
-    let content_rect = cosmic::iced::Rectangle {
-        x: 0.0,
-        y: content_top,
-        width: content_w,
-        height: content_h,
-    };
-    match target_ratio {
-        None => content_rect,
-        Some(ratio) if content_h > 0.0 && content_w > 0.0 => {
-            let content_aspect = content_w / content_h;
-            if ratio > content_aspect {
-                let h = content_w / ratio;
-                cosmic::iced::Rectangle {
-                    x: 0.0,
-                    y: content_top + (content_h - h) / 2.0,
-                    width: content_w,
-                    height: h,
-                }
-            } else {
-                let w = content_h * ratio;
-                cosmic::iced::Rectangle {
-                    x: (content_w - w) / 2.0,
-                    y: content_top,
-                    width: w,
-                    height: content_h,
-                }
-            }
+    /// Height the floating fit/zoom chip row occupies at the BOTTOM of the
+    /// preview content area, i.e. *inside* `frame_rect_on_screen` rather than
+    /// below it — the chips deliberately float over the live preview, so
+    /// `bottom_ui_height()` stops above them.
+    ///
+    /// **Invariant**: must match the row `view()` actually builds — the fit
+    /// chip's fixed `space_l` height plus the `control_spacing` (`space_xs`)
+    /// bottom padding of its centring container, under the same visibility
+    /// condition. The zoom chip is a `button::text` of the same standard
+    /// height, and the row is `align_y(Center)`, so `space_l` is the row's
+    /// height. Grep `show_zoom_label` if that row changes shape.
+    ///
+    /// Used by `build_overlay_popup` to keep popups out of the chip strip.
+    fn zoom_chip_strip_height(&self) -> f32 {
+        if self.mode.supports_fit_and_zoom() && !self.tools_menu_visible {
+            let spacing = cosmic::theme::spacing();
+            f32::from(spacing.space_l) + f32::from(spacing.space_xs)
+        } else {
+            0.0
         }
-        Some(_) => content_rect,
-    }
-}
-
-/// Map the on-screen `frame_rect_on_screen` to sensor coordinates via the
-/// preview's Cover scaling. The result is the sensor sub-rect the user
-/// actually sees in the framed area on screen — which is *not* a sensor-
-/// centered crop when the UI bars are asymmetric. Capture-mode crop logic
-/// uses this to keep the saved photo aligned with the on-screen framing.
-///
-/// `frame_w` / `frame_h` are display-oriented (rotation-swapped by the
-/// caller); the returned coords are in the same space.
-pub fn cover_capture_crop(
-    frame_w: u32,
-    frame_h: u32,
-    screen_w: f32,
-    screen_h: f32,
-    top_h: f32,
-    bottom_h: f32,
-    target_ratio: Option<f32>,
-) -> (u32, u32, u32, u32) {
-    let fw = frame_w as f32;
-    let fh = frame_h as f32;
-    if fw <= 0.0 || fh <= 0.0 || screen_w <= 0.0 || screen_h <= 0.0 {
-        // No screen geometry yet (window hasn't reported size). Fall back
-        // to no crop so we save *something* sensible.
-        return (0, 0, frame_w, frame_h);
-    }
-    // Cover scale: scale the frame so the wider dimension just covers the
-    // screen, the other overflows.
-    let scale = (screen_w / fw).max(screen_h / fh);
-    let scaled_x_off = (screen_w - fw * scale) / 2.0;
-    let scaled_y_off = (screen_h - fh * scale) / 2.0;
-    let frame_rect = frame_rect_on_screen(screen_w, screen_h, top_h, bottom_h, target_ratio);
-    // Inverse-map the on-screen frame rect back to sensor coords.
-    let sx = ((frame_rect.x - scaled_x_off) / scale).max(0.0);
-    let sy = ((frame_rect.y - scaled_y_off) / scale).max(0.0);
-    let scw = (frame_rect.width / scale).min(fw - sx);
-    let sch = (frame_rect.height / scale).min(fh - sy);
-    (sx as u32, sy as u32, scw as u32, sch as u32)
-}
-
-/// Canvas program that draws translucent top/bottom bars for UI backgrounds and crop framing.
-/// This is the single source of truth for all translucent overlays — the top bar and bottom
-/// controls containers have transparent backgrounds and rely on this canvas.
-struct OverlayBackgroundProgram {
-    /// Target aspect ratio (width / height), or None for no crop framing
-    target_ratio: Option<f32>,
-    /// Translucent overlay color
-    overlay_color: Color,
-    /// Fixed pixel height for the top UI bar
-    top_height: f32,
-    /// Fixed pixel height for the bottom UI controls scrim (matches the
-    /// actual UI footprint, not a fraction of the window).
-    bottom_height: f32,
-}
-
-impl cosmic::widget::canvas::Program<Message, cosmic::Theme> for OverlayBackgroundProgram {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &(),
-        renderer: &cosmic::Renderer,
-        _theme: &cosmic::Theme,
-        bounds: cosmic::iced::Rectangle,
-        _cursor: cosmic::iced::mouse::Cursor,
-    ) -> Vec<cosmic::widget::canvas::Geometry<cosmic::Renderer>> {
-        let mut frame = cosmic::widget::canvas::Frame::new(renderer, bounds.size());
-
-        // The framed rect is shared with the capture path
-        // (`cover_capture_crop`) so the saved photo matches what's
-        // visible inside the crop bars — including when the UI bars are
-        // asymmetric and a sensor-centered crop would diverge from the
-        // on-screen content area.
-        let frame_rect = frame_rect_on_screen(
-            bounds.width,
-            bounds.height,
-            self.top_height,
-            self.bottom_height,
-            self.target_ratio,
-        );
-
-        // Derive scrim bars from frame_rect. Each bar covers everything
-        // *outside* the frame, so the framed area is exactly target_ratio.
-        let top_bar = frame_rect.y;
-        let bottom_bar = (bounds.height - (frame_rect.y + frame_rect.height)).max(0.0);
-        let left_bar = frame_rect.x;
-        let right_bar = (bounds.width - (frame_rect.x + frame_rect.width)).max(0.0);
-
-        // Draw top bar
-        if top_bar > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::ORIGIN,
-                cosmic::iced::Size::new(bounds.width, top_bar),
-                self.overlay_color,
-            );
-        }
-
-        // Draw bottom bar
-        if bottom_bar > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::new(0.0, bounds.height - bottom_bar),
-                cosmic::iced::Size::new(bounds.width, bottom_bar),
-                self.overlay_color,
-            );
-        }
-
-        // Draw left bar (between top and bottom bars)
-        if left_bar > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::new(0.0, top_bar),
-                cosmic::iced::Size::new(left_bar, bounds.height - top_bar - bottom_bar),
-                self.overlay_color,
-            );
-        }
-
-        // Draw right bar (between top and bottom bars)
-        if right_bar > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::new(bounds.width - right_bar, top_bar),
-                cosmic::iced::Size::new(right_bar, bounds.height - top_bar - bottom_bar),
-                self.overlay_color,
-            );
-        }
-
-        vec![frame.into_geometry()]
     }
 }
 
 /// Build a centered overlay popup dialog with icon, title, body text, and optional button
 ///
-/// Used for modal-style popups (privacy warning, flash error) with a near-opaque background.
+/// Used for modal-style popups (privacy warning, flash error). Frosted like the
+/// rest of the overlay chrome: a live-blurred preview backdrop behind the theme's
+/// translucent surface when frosting is on, opaque when it's off. The blur is
+/// what keeps the text legible, so this no longer needs the near-opaque hardcoded
+/// alpha it used to carry.
+///
+/// Takes `model` (rather than standing alone) because the backdrop needs the
+/// current frame and preview transforms, which `frosted_panel` reads off it.
 fn build_overlay_popup<'a>(
+    model: &'a AppModel,
     icon: Element<'a, Message>,
     title: &str,
     body: &str,
@@ -457,32 +243,42 @@ fn build_overlay_popup<'a>(
         content = content.push(btn);
     }
 
-    let popup_box =
-        widget::container(content)
-            .padding(spacing.space_l)
-            .style(|theme: &cosmic::Theme| {
-                let cosmic = theme.cosmic();
-                let bg = cosmic.bg_color();
-                let on_bg = cosmic.on_bg_color();
-                widget::container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        bg.red,
-                        bg.green,
-                        bg.blue,
-                        POPUP_BACKGROUND_ALPHA,
-                    ))),
-                    border: cosmic::iced::Border {
-                        radius: cosmic.corner_radii.radius_m.into(),
-                        ..Default::default()
-                    },
-                    text_color: Some(Color::from(on_bg)),
-                    ..Default::default()
-                }
-            });
+    // Padding goes on an inner container: `frosted_panel` wraps `content` in the
+    // styled container itself, so the tint sizes to the padded content.
+    let popup_box = model.frosted_panel(
+        widget::container(content).padding(spacing.space_l).into(),
+        POPUP_PANEL,
+    );
 
+    // Centre the popup in the CAMERA PREVIEW, not the window. The popup layer
+    // is a full-window stack child, so window-centring dropped it below the
+    // preview's middle (the bottom UI is much taller than the top bar) and let
+    // it collide with the fit/zoom chips floating at the preview's bottom edge.
+    //
+    // Padding the layer by the UI bar heights reproduces `frame_rect_on_screen`
+    // without re-deriving it: that helper's content rect spans
+    // `top_ui_height()..H - bottom_ui_height()`, and both of its aspect-ratio
+    // branches keep the framed rect *concentric* with that content rect. So a
+    // Fill container inset by the two bar heights and centred lands exactly on
+    // the frame rect's centre — for every ratio, and animating in step with the
+    // bars during a Photo↔View transition.
+    //
+    // The bottom inset additionally reserves the chip strip, which lives INSIDE
+    // the content rect (`bottom_ui_height()` stops above the chips). Centring on
+    // the bare preview centre would clear today's popups by ~65 px but is not
+    // collision-proof — a long flash-error message grows the popup vertically
+    // and would reach the chips again. Reserving the strip makes the clearance
+    // structural, and costs only ~22 px of upward shift (half the strip), so the
+    // popup still reads as centred on the preview.
     widget::container(popup_box)
         .width(Length::Fill)
         .height(Length::Fill)
+        .padding([
+            model.top_ui_height(),
+            0.0,
+            model.bottom_ui_height() + model.zoom_chip_strip_height(),
+            0.0,
+        ])
         .align_x(cosmic::iced::alignment::Horizontal::Center)
         .align_y(cosmic::iced::alignment::Vertical::Center)
         .into()
@@ -858,16 +654,13 @@ impl AppModel {
                 } else {
                     overlay_chip_button_class()
                 });
-                // Inactive: wrap in the same translucent scrim used for the
-                // top/bottom bars so the button sits on a matching surface.
-                // Active: keep the Suggested (accent) fill so toggle state
-                // stays visible.
+                // Inactive: frosted like the top/bottom bars so the button sits
+                // on a matching surface. Active: keep the Suggested (accent)
+                // fill so toggle state stays visible.
                 let fit_button: Element<'_, Message> = if self.preview_fit_to_view {
                     fit_button_inner.into()
                 } else {
-                    widget::container(fit_button_inner)
-                        .style(overlay_container_style)
-                        .into()
+                    self.frosted_panel(fit_button_inner.into(), OVERLAY_CONTAINER)
                 };
 
                 let zoom_row = widget::Row::new()
@@ -894,6 +687,7 @@ impl AppModel {
 
             let mut main_stack = cosmic::iced::widget::stack![
                 camera_layer,
+                self.frosted_bars(),
                 self.build_crop_overlay(),
                 self.build_composition_overlay(),
                 self.build_qr_overlay(),
@@ -1306,7 +1100,7 @@ impl AppModel {
         // Wrap in container with themed semi-transparent background for visibility on camera preview
         widget::container(button)
             .style(move |theme| {
-                let mut style = overlay_container_style(theme);
+                let mut style = OVERLAY_CONTAINER.container_style(theme);
                 if is_disabled {
                     style.text_color = Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3));
                 }
@@ -1361,9 +1155,8 @@ impl AppModel {
 
         let is_zoomed = (self.zoom_level - 1.0).abs() > 0.01;
 
-        // Suggested (accent fill) when zoomed; otherwise a Text button wrapped
-        // in `overlay_container_style` so the resting background matches the
-        // top/bottom bars' translucent scrim.
+        // Suggested (accent fill) when zoomed; otherwise a frosted Text button
+        // so the resting background matches the top/bottom bars.
         let button = widget::button::text(zoom_text)
             .on_press(Message::ResetZoom)
             .class(if is_zoomed {
@@ -1374,9 +1167,7 @@ impl AppModel {
         if is_zoomed {
             button.into()
         } else {
-            widget::container(button)
-                .style(overlay_container_style)
-                .into()
+            self.frosted_panel(button.into(), OVERLAY_CONTAINER)
         }
     }
 
@@ -1538,23 +1329,7 @@ impl AppModel {
             .padding(spacing.space_s);
 
         // Build panel with semi-transparent themed background
-        let panel = widget::container(column).style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            let bg = cosmic.bg_color();
-            widget::container::Style {
-                background: Some(Background::Color(Color::from_rgba(
-                    bg.red,
-                    bg.green,
-                    bg.blue,
-                    OVERLAY_BACKGROUND_ALPHA,
-                ))),
-                border: cosmic::iced::Border {
-                    radius: cosmic.corner_radii.radius_s.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        });
+        let panel = self.frosted_panel(column.into(), PICKER_PANEL);
 
         // Position in top-right corner, below the custom title bar so the menu
         // doesn't overlap the window controls.
@@ -1620,7 +1395,7 @@ impl AppModel {
             button.into()
         } else {
             widget::container(button)
-                .style(overlay_container_style)
+                .style(OVERLAY_CONTAINER.style())
                 .into()
         };
 
@@ -1700,55 +1475,6 @@ impl AppModel {
             .unwrap_or(false)
     }
 
-    /// Build the translucent overlay background canvas.
-    /// Draws crop framing bars when an aspect ratio is selected (Photo mode only).
-    fn build_crop_overlay(&self) -> Element<'_, Message> {
-        // In fit-to-view mode, the frame is letterboxed — no crop bars needed, just default UI bars.
-        // In Cover mode with an aspect ratio, draw crop bars.
-        let target_ratio = if !self.preview_fit_to_view
-            && self.mode == CameraMode::Photo
-            && !self.current_frame_is_file_source
-        {
-            // Display-oriented ratio so the canvas crop bars match the
-            // rotated preview on portrait windows (e.g. a "2:1" pref
-            // produces a 1:2 portrait region on screen).
-            self.photo_aspect_ratio
-                .display_ratio(self.screen_is_portrait())
-        } else {
-            None
-        };
-
-        let theme = cosmic::theme::active();
-        let cosmic_theme = theme.cosmic();
-        let bg = cosmic_theme.bg_color();
-        // Derive the scrim alpha from the animated top-bar height so it
-        // fades in/out with the Photo↔View transition without needing its
-        // own animation channel. **Invariant**: this only behaves
-        // correctly because `settled_top_ui_height()` is binary today —
-        // either 0 (View) or `TOP_BAR_HEIGHT` (every other mode). If a
-        // future mode picks an intermediate top height, the alpha will
-        // settle at a fractional value and look permanently dimmed. In
-        // that case promote `scrim_alpha` to its own `FitFrom` channel.
-        let top_h = self.top_ui_height();
-        let alpha_t = (top_h / TOP_BAR_HEIGHT).clamp(0.0, 1.0);
-        let overlay_color = Color::from_rgba(
-            bg.red,
-            bg.green,
-            bg.blue,
-            OVERLAY_BACKGROUND_ALPHA * alpha_t,
-        );
-
-        cosmic::widget::canvas(OverlayBackgroundProgram {
-            target_ratio,
-            overlay_color,
-            top_height: top_h,
-            bottom_height: self.bottom_ui_height(),
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
-
     /// Build the privacy cover warning overlay
     ///
     /// Shows a centered warning when the camera's privacy cover is closed.
@@ -1761,6 +1487,7 @@ impl AppModel {
         }
 
         build_overlay_popup(
+            self,
             widget::text("\u{26A0}").size(48).into(),
             &fl!("privacy-cover-closed"),
             &fl!("privacy-cover-hint"),
@@ -1861,23 +1588,10 @@ impl AppModel {
             .align_x(Alignment::Center);
 
         // Semi-transparent background panel
-        let overlay_panel =
-            widget::container(overlay_content)
-                .padding(24)
-                .style(|theme: &cosmic::Theme| {
-                    let cosmic = theme.cosmic();
-                    let bg = cosmic.bg_color();
-                    widget::container::Style {
-                        background: Some(Background::Color(Color::from_rgba(
-                            bg.red, bg.green, bg.blue, 0.85,
-                        ))),
-                        border: cosmic::iced::Border {
-                            radius: cosmic.corner_radii.radius_m.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                });
+        let overlay_panel = self.frosted_panel(
+            widget::container(overlay_content).padding(24).into(),
+            POPUP_PANEL,
+        );
 
         widget::container(overlay_panel)
             .width(Length::Fill)
@@ -1899,6 +1613,7 @@ impl AppModel {
             .unwrap_or("Flash permission error");
 
         build_overlay_popup(
+            self,
             widget::text("\u{26A0}").size(48).into(),
             "Flash Permission Error",
             error_msg,

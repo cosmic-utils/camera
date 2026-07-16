@@ -35,12 +35,15 @@ pub mod exposure_picker;
 mod filter_picker;
 mod format_picker;
 pub mod frame_processor;
+mod frosted_backdrop;
 mod gallery_primitive;
 mod gallery_widget;
 mod handlers;
 pub mod insights;
 pub mod keybind;
 mod motor_picker;
+mod overlay_style;
+mod preview_geometry;
 pub mod qr_overlay;
 pub mod settings;
 mod state;
@@ -289,6 +292,10 @@ impl cosmic::Application for AppModel {
                 }
             };
 
+        // Publish the overlay effect before the first draw: the colour roots in
+        // `overlay_style` read a global, not `self.config`.
+        crate::app::overlay_style::init_overlay_effect(config.overlay_effect);
+
         // Recover from a previous crash: if a camera switch was in flight and
         // the app died before the new camera produced a frame, that path is
         // still in `pending_camera_path`. Add it to the failed list so we
@@ -430,6 +437,7 @@ impl cosmic::Application for AppModel {
             current_frame_rotation: crate::backends::camera::types::SensorRotation::None,
             blur_frame_rotation: crate::backends::camera::types::SensorRotation::None,
             blur_frame_mirror: false,
+            blur_frame_zoom: 1.0,
             video_file_progress: None,
             video_preview_seek_position: 0.0,
             video_file_paused: false,
@@ -525,6 +533,16 @@ impl cosmic::Application for AppModel {
                 .map(|p| p.display_name().to_string())
                 .collect(),
             theme_dropdown_options: vec![fl!("match-desktop"), fl!("dark"), fl!("light")],
+            // Built from `available()`, so `System` is absent off-COSMIC.
+            overlay_effect_dropdown_options: crate::config::OverlayEffect::available()
+                .iter()
+                .map(|effect| match effect {
+                    crate::config::OverlayEffect::System => fl!("overlay-effect-system"),
+                    crate::config::OverlayEffect::Frosted => fl!("overlay-effect-frosted"),
+                    crate::config::OverlayEffect::Translucent => fl!("overlay-effect-translucent"),
+                    crate::config::OverlayEffect::Off => fl!("overlay-effect-off"),
+                })
+                .collect(),
             burst_mode_merge_dropdown_options: vec![
                 fl!("burst-mode-quality"),
                 fl!("burst-mode-fast"),

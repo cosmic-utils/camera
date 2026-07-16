@@ -38,6 +38,8 @@ pub mod pipelines;
 pub mod shaders;
 pub mod storage;
 pub mod terminal;
+#[cfg(test)]
+pub(crate) mod test_gpu;
 
 // Re-export commonly used types
 pub use app::frame_processor::{QrAction, QrDetection};

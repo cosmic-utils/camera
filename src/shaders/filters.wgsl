@@ -108,8 +108,11 @@ fn apply_filter(color: vec3<f32>, filter_mode: u32, tex_coords: vec2<f32>) -> ve
         if (b > threshold) { b = 1.0 - b; }
         result = vec3<f32>(r, g, b);
     }
-    // Note: Filters 13 (ChromaticAberration) and 14 (Pencil) require texture sampling
-    // and are handled separately in each shader that supports them.
+    // Note: Filters 13 (ChromaticAberration) and 14 (Pencil) require texture
+    // sampling, which is fragment-only, and this prelude is concatenated into
+    // compute modules too. Fragment shaders get them from `texture_filters.wgsl`
+    // via `apply_texture_filter`, which delegates 0-12 back to here; compute
+    // shaders carry their own (`filter_compute.wgsl`).
 
     return result;
 }

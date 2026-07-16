@@ -313,6 +313,15 @@ The night mode photo feature implements a simplified version of the HDR+ algorit
 
 - **Night Sight Paper** - "Handheld Mobile Photography in Very Low Light" (Liba et al., SIGGRAPH Asia 2019)
 
+### Frosted Glass Overlays
+
+The blur behind the app's overlay chrome reuses shader work from:
+
+- **cosmic-comp** by System76 ([GitHub](https://github.com/pop-os/cosmic-comp)) - GPL-3.0-only
+  - Dual-Kawase downsample/upsample blur kernels, transcribed to WGSL
+  - The `BLUR_PARAMS` radius/iteration/offset table
+  - The film-grain hash, which cosmic-comp in turn took from [niri](https://github.com/YaLTeR/niri)
+
 ## License
 
 Licensed under the [GNU Public License 3.0](https://choosealicense.com/licenses/gpl-3.0).

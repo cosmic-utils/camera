@@ -156,7 +156,11 @@ impl PrimitiveTrait for GalleryPrimitive {
 impl GalleryPipeline {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         // Load shader
-        let shader_source = include_str!("gallery_rounded_shader.wgsl");
+        let shader_source = format!(
+            "{}\n{}",
+            crate::shaders::GEOMETRY_FUNCTIONS,
+            include_str!("gallery_rounded_shader.wgsl")
+        );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gallery rounded shader"),
             source: wgpu::ShaderSource::Wgsl(shader_source.into()),
@@ -489,5 +493,80 @@ impl GalleryPipeline {
             render_pass.set_bind_group(0, Some(&gallery_texture.bind_group), &[]);
             render_pass.draw(0..3, 0..1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_gpu::{headless_device, skip_no_gpu};
+
+    /// `GalleryPipeline::new` must actually compile its shader.
+    ///
+    /// # Why this exists
+    ///
+    /// The gallery shader's `rounded_box_sdf` was deleted in favour of the shared
+    /// `shaders/geometry.wgsl` prelude, which `new` prepends by hand:
+    ///
+    /// ```ignore
+    /// format!("{}\n{}", crate::shaders::GEOMETRY_FUNCTIONS, include_str!("gallery_rounded_shader.wgsl"))
+    /// ```
+    ///
+    /// Nothing else in the crate constructs a `GalleryPipeline`. WGSL is compiled
+    /// at `create_shader_module`, i.e. at runtime, so a prelude that stopped being
+    /// prepended — or a `rounded_box_sdf` that changed signature — is not a build
+    /// error here. It is a panic on the device, the first time a thumbnail is
+    /// drawn, in a shipped binary.
+    ///
+    /// `VideoPipeline::new` compiles all six of its modules in one function, so
+    /// the existing GPU tests already cover those. This closes the one path where
+    /// a prelude-wiring mistake reached the device unchallenged. It is a smoke
+    /// test on purpose: it asserts construction, because construction is exactly
+    /// the step that validates the shader.
+    #[test]
+    fn gallery_pipeline_compiles_its_shader() {
+        let Some((device, _queue)) = headless_device() else {
+            skip_no_gpu("gallery_pipeline_compiles_its_shader");
+            return;
+        };
+        // wgpu reports a shader compile failure on the device's error scope
+        // rather than by returning, so capture it rather than trusting a
+        // non-panicking return.
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let _pipeline = GalleryPipeline::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let err = pollster::block_on(scope.pop());
+        assert!(
+            err.is_none(),
+            "GalleryPipeline::new failed to build: {err:?} — the gallery shader is \
+             only compiled at runtime, so this is a device-side panic on the first \
+             thumbnail, not a build error"
+        );
+    }
+
+    /// The prelude really is what supplies the gallery's SDF.
+    ///
+    /// The smoke test above passes either way if the shader ever grows its own
+    /// copy of `rounded_box_sdf` back — and a second copy silently forking from
+    /// `geometry.wgsl` is the exact thing deleting it was meant to prevent. So
+    /// pin the split: the shader calls the function and does not define it, and
+    /// the prelude defines it.
+    #[test]
+    fn the_gallery_shader_takes_its_sdf_from_the_prelude() {
+        let shader = include_str!("gallery_rounded_shader.wgsl");
+        assert!(
+            shader.contains("rounded_box_sdf("),
+            "the gallery shader should still USE the shared SDF"
+        );
+        assert!(
+            !shader.contains("fn rounded_box_sdf"),
+            "the gallery shader defines its own `rounded_box_sdf` again — that is \
+             the duplicate `geometry.wgsl` exists to replace, and a second copy \
+             will drift from the video shader's silhouette"
+        );
+        assert!(
+            crate::shaders::GEOMETRY_FUNCTIONS.contains("fn rounded_box_sdf"),
+            "the shared prelude must define `rounded_box_sdf`, or every shader \
+             that stopped defining it fails to compile on device"
+        );
     }
 }

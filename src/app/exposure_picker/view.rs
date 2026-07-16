@@ -5,11 +5,12 @@
 //! Floating overlay for exposure controls with semi-transparent background.
 
 use super::ControlRange;
+use crate::app::overlay_style::PICKER_PANEL;
+use crate::app::preview_geometry::TOP_BAR_HEIGHT;
 use crate::app::state::{AppModel, Message};
-use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::fl;
 use cosmic::Element;
-use cosmic::iced::{Alignment, Background, Color, Length};
+use cosmic::iced::{Alignment, Length};
 use cosmic::widget;
 
 // UI Constants
@@ -21,25 +22,6 @@ const SLIDER_WIDTH_COLOR: f32 = 120.0;
 const VALUE_WIDTH_EXPOSURE: f32 = 50.0;
 const VALUE_WIDTH_COLOR: f32 = 40.0;
 const CONTROL_SPACING: u16 = 8;
-
-/// Create a container style for the picker panel background
-fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let bg = cosmic.bg_color();
-    widget::container::Style {
-        background: Some(Background::Color(Color::from_rgba(
-            bg.red,
-            bg.green,
-            bg.blue,
-            OVERLAY_BACKGROUND_ALPHA,
-        ))),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
 
 impl AppModel {
     /// Build the exposure picker overlay
@@ -66,8 +48,7 @@ impl AppModel {
 
         // Build picker panel with semi-transparent themed background
         let picker_panel = widget::mouse_area(
-            widget::container(column)
-                .style(picker_panel_style)
+            widget::container(self.frosted_panel(column.into(), PICKER_PANEL))
                 .width(Length::Fixed(PICKER_PANEL_WIDTH)),
         )
         .on_press(Message::Noop);
@@ -81,7 +62,7 @@ impl AppModel {
             )
             .push(picker_panel)
             .padding([
-                crate::app::view::TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                TOP_BAR_HEIGHT as u16 + spacing.space_xs,
                 spacing.space_xs,
                 0,
                 spacing.space_xs,
@@ -520,8 +501,7 @@ impl AppModel {
         column = self.add_white_balance_controls(column, color_data);
 
         let picker_panel = widget::mouse_area(
-            widget::container(column)
-                .style(picker_panel_style)
+            widget::container(self.frosted_panel(column.into(), PICKER_PANEL))
                 .width(Length::Fixed(COLOR_PICKER_WIDTH)),
         )
         .on_press(Message::Noop);
@@ -534,7 +514,7 @@ impl AppModel {
             )
             .push(picker_panel)
             .padding([
-                crate::app::view::TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                TOP_BAR_HEIGHT as u16 + spacing.space_xs,
                 spacing.space_xs,
                 0,
                 spacing.space_xs,
