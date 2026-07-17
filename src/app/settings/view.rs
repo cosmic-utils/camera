@@ -2,7 +2,7 @@
 
 //! Settings drawer view
 
-use crate::app::state::{AppModel, Message};
+use crate::app::state::{AppModel, ContextPage, Message, SettingsPage};
 use crate::config::{AppTheme, AudioEncoder, PhotoOutputFormat, TimelapseInterval};
 use crate::constants::BitratePreset;
 use crate::fl;
@@ -30,33 +30,194 @@ fn disabled_text(value: String) -> Element<'static, Message> {
 }
 
 impl AppModel {
-    /// Create the settings view for the context drawer.
+    /// Build the Settings context drawer for the current sub-page.
     ///
-    /// Shows camera selection, format options, and backend settings.
+    /// The drawer is a drill-down: [`SettingsPage::Root`] shows a short category
+    /// menu, and every other page is a focused list reached from it with a back
+    /// button. Keeping the root short avoids the single long scroll that used to
+    /// make About/Insights inherit its scroll position.
     pub fn settings_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
-        self.settings_view_main()
+        match self.settings_page {
+            SettingsPage::Root => self.settings_root_view(),
+            SettingsPage::Camera => {
+                self.settings_subpage(fl!("settings-camera"), self.camera_sections())
+            }
+            SettingsPage::Photo => {
+                self.settings_subpage(fl!("settings-photo"), self.photo_sections())
+            }
+            SettingsPage::Video => {
+                self.settings_subpage(fl!("settings-video"), self.video_sections())
+            }
+            SettingsPage::Timelapse => {
+                self.settings_subpage(fl!("settings-timelapse"), self.timelapse_sections())
+            }
+            SettingsPage::Appearance => {
+                self.settings_subpage(fl!("settings-appearance"), self.appearance_sections())
+            }
+            SettingsPage::VirtualCamera => {
+                self.settings_subpage(fl!("virtual-camera-title"), self.virtual_camera_sections())
+            }
+            SettingsPage::BugReports => {
+                self.settings_subpage(fl!("settings-bug-reports"), self.bug_reports_sections())
+            }
+            SettingsPage::About => self.settings_about_view(),
+        }
     }
 
-    /// Main settings page — shows camera selection, format options, and backend settings.
-    fn settings_view_main(&self) -> context_drawer::ContextDrawer<'_, Message> {
+    /// Back button that returns to the top-level Settings category menu.
+    ///
+    /// Also used by the Insights and Keyboard Shortcuts drawers, which are
+    /// reached from that menu.
+    pub(crate) fn settings_back_button(&self) -> Element<'_, Message> {
+        widget::button::icon(icon::from_name("go-previous-symbolic").symbolic(true))
+            .on_press(Message::OpenSettingsPage(SettingsPage::Root))
+            .into()
+    }
+
+    /// Top-level Settings menu: a short list of categories that drill into
+    /// focused sub-pages, plus links to Insights, Shortcuts, and About.
+    fn settings_root_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
+        let categories = widget::list_column()
+            .add(self.settings_nav_row(
+                "camera-photo-symbolic",
+                fl!("settings-camera"),
+                Message::OpenSettingsPage(SettingsPage::Camera),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "image-x-generic-symbolic",
+                fl!("settings-photo"),
+                Message::OpenSettingsPage(SettingsPage::Photo),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "camera-video-symbolic",
+                fl!("settings-video"),
+                Message::OpenSettingsPage(SettingsPage::Video),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "camera-video-symbolic",
+                fl!("settings-timelapse"),
+                Message::OpenSettingsPage(SettingsPage::Timelapse),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "applications-graphics-symbolic",
+                fl!("settings-appearance"),
+                Message::OpenSettingsPage(SettingsPage::Appearance),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "camera-web-symbolic",
+                fl!("virtual-camera-title"),
+                Message::OpenSettingsPage(SettingsPage::VirtualCamera),
+                true,
+            ));
+
+        let tools = widget::list_column()
+            .add(self.settings_nav_row(
+                "utilities-system-monitor-symbolic",
+                fl!("insights-title"),
+                Message::ToggleContextPage(ContextPage::Insights),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "input-keyboard-symbolic",
+                fl!("keybindings-page-title"),
+                Message::ToggleContextPage(ContextPage::KeyBindings),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "dialog-warning-symbolic",
+                fl!("settings-bug-reports"),
+                Message::OpenSettingsPage(SettingsPage::BugReports),
+                true,
+            ));
+
+        let about = widget::list_column()
+            .add(self.settings_nav_row(
+                "help-about-symbolic",
+                fl!("about"),
+                Message::OpenSettingsPage(SettingsPage::About),
+                true,
+            ))
+            .add(self.settings_nav_row(
+                "edit-undo-symbolic",
+                fl!("settings-reset-all"),
+                Message::ResetAllSettings,
+                false,
+            ));
+
+        let content: Element<'_, Message> =
+            widget::settings::view_column(vec![categories.into(), tools.into(), about.into()])
+                .into();
+
+        context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Settings))
+            .title(fl!("settings-title"))
+    }
+
+    /// Wrap a sub-page's sections in a context drawer titled `title`, with a
+    /// back button (top-left) that returns to the category menu.
+    fn settings_subpage<'a>(
+        &'a self,
+        title: String,
+        sections: Vec<Element<'a, Message>>,
+    ) -> context_drawer::ContextDrawer<'a, Message> {
+        let content: Element<'a, Message> = widget::settings::view_column(sections).into();
+        context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Settings))
+            .title(title)
+            .actions(self.settings_back_button())
+    }
+
+    /// About sub-page: the standard COSMIC about panel with a back button.
+    fn settings_about_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
+        let about = widget::about(&self.about, |url| Message::LaunchUrl(url.to_string()));
+        context_drawer::context_drawer(about, Message::ToggleContextPage(ContextPage::Settings))
+            .title(fl!("about"))
+            .actions(self.settings_back_button())
+    }
+
+    /// A full-width menu row: leading icon, label, and (for drill-down rows) a
+    /// trailing chevron.
+    fn settings_nav_row(
+        &self,
+        icon_name: &str,
+        label: String,
+        message: Message,
+        drill: bool,
+    ) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let mut row = widget::Row::new()
+            .push(
+                widget::icon::from_name(icon_name)
+                    .symbolic(true)
+                    .icon()
+                    .size(16),
+            )
+            .push(widget::text::body(label))
+            .push(widget::space::horizontal().width(Length::Fill))
+            .spacing(spacing.space_s)
+            .align_y(Alignment::Center);
+        if drill {
+            row = row.push(
+                widget::icon::from_name("go-next-symbolic")
+                    .symbolic(true)
+                    .icon()
+                    .size(16),
+            );
+        }
+        widget::button::custom(row)
+            .class(cosmic::theme::Button::MenuItem)
+            .width(Length::Fill)
+            .padding([spacing.space_xs, spacing.space_s])
+            .on_press(message)
+            .into()
+    }
+
+    /// Camera sub-page: device selection, default mode, and mirroring.
+    fn camera_sections(&self) -> Vec<Element<'_, Message>> {
         let is_recording = self.recording.is_recording();
-
-        // Bitrate preset index
-        let current_bitrate_index = BitratePreset::ALL
-            .iter()
-            .position(|p| *p == self.config.bitrate_preset)
-            .unwrap_or(1); // Default to Medium (index 1)
-
-        // Theme index (System = 0, Dark = 1, Light = 2)
-        let current_theme_index = match self.config.app_theme {
-            AppTheme::System => 0,
-            AppTheme::Dark => 1,
-            AppTheme::Light => 2,
-        };
-
-        // Overlay effect index. Indexes `available()`, which is shorter
-        // off-COSMIC — hence the shared mapping rather than a literal index.
-        let current_overlay_effect_index = self.config.overlay_effect.dropdown_index();
 
         // Default mode index (matches visible dropdown entries which may exclude Virtual)
         let visible_default_modes: Vec<crate::app::state::CameraMode> = {
@@ -75,36 +236,6 @@ impl AppModel {
             .position(|m| *m == self.config.default_mode)
             .unwrap_or(0);
 
-        // Appearance section
-        let appearance_section = widget::settings::section()
-            .title(fl!("settings-appearance"))
-            .add(
-                widget::settings::item::builder(fl!("settings-theme")).control(widget::dropdown(
-                    &self.theme_dropdown_options,
-                    Some(current_theme_index),
-                    Message::SetAppTheme,
-                )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-overlay-effect"))
-                    .description(fl!("settings-overlay-effect-description"))
-                    .control(widget::dropdown(
-                        &self.overlay_effect_dropdown_options,
-                        Some(current_overlay_effect_index),
-                        Message::SetOverlayEffect,
-                    )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-default-mode"))
-                    .description(fl!("settings-default-mode-description"))
-                    .control(widget::dropdown(
-                        &self.default_mode_dropdown_options,
-                        Some(current_default_mode_index),
-                        Message::SelectDefaultMode,
-                    )),
-            );
-
-        // Camera section
         // Custom device row with label, info button, and dropdown
         let device_control: Element<'_, Message> = if is_recording {
             disabled_text(
@@ -139,20 +270,106 @@ impl AppModel {
             .title(fl!("settings-camera"))
             .add(widget::settings::item_row(vec![
                 device_label_with_info.into(),
-            ]));
+            ]))
+            .add(
+                widget::settings::item::builder(fl!("settings-default-mode"))
+                    .description(fl!("settings-default-mode-description"))
+                    .control(widget::dropdown(
+                        &self.default_mode_dropdown_options,
+                        Some(current_default_mode_index),
+                        Message::SelectDefaultMode,
+                    )),
+            );
 
         // Add device info panel if visible
         if self.device_info_visible {
             camera_section = camera_section.add(self.build_device_info_panel());
         }
 
-        // Audio encoder index
+        // Mirror preview section (preview flip + optional capture flip)
+        let mut mirror_section = widget::settings::section().add(
+            widget::settings::item::builder(fl!("settings-mirror-preview"))
+                .description(fl!("settings-mirror-preview-description"))
+                .toggler(self.config.mirror_preview, |_| Message::ToggleMirrorPreview),
+        );
+        if self.config.mirror_preview {
+            mirror_section = mirror_section.add(
+                widget::settings::item::builder(fl!("settings-mirror-captures"))
+                    .description(fl!("settings-mirror-captures-description"))
+                    .toggler(self.config.mirror_captures, |_| {
+                        Message::ToggleMirrorCaptures
+                    }),
+            );
+        }
+
+        vec![camera_section.into(), mirror_section.into()]
+    }
+
+    /// Photo sub-page: output format and HDR+ settings.
+    fn photo_sections(&self) -> Vec<Element<'_, Message>> {
+        use crate::config::BurstModeSetting;
+        // Index 0 = Off, 1 = Auto, 2 = 4 frames, 3 = 6 frames, 4 = 8 frames, 5 = 50 frames
+        let current_hdr_index = match self.config.burst_mode_setting {
+            BurstModeSetting::Off => 0,
+            BurstModeSetting::Auto => 1,
+            BurstModeSetting::Frames4 => 2,
+            BurstModeSetting::Frames6 => 3,
+            BurstModeSetting::Frames8 => 4,
+            BurstModeSetting::Frames50 => 5,
+        };
+
+        // Photo output format index
+        let current_photo_format_index = PhotoOutputFormat::ALL
+            .iter()
+            .position(|f| *f == self.config.photo_output_format)
+            .unwrap_or(0); // Default to JPEG (index 0)
+
+        let mut photo_section = widget::settings::section()
+            .title(fl!("settings-photo"))
+            .add(
+                widget::settings::item::builder(fl!("settings-photo-format"))
+                    .description(fl!("settings-photo-format-description"))
+                    .control(widget::dropdown(
+                        &self.photo_output_format_dropdown_options,
+                        Some(current_photo_format_index),
+                        Message::SelectPhotoOutputFormat,
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-hdr-plus"))
+                    .description(fl!("settings-hdr-plus-description"))
+                    .control(widget::dropdown(
+                        &self.burst_mode_frame_count_dropdown_options,
+                        Some(current_hdr_index),
+                        Message::SetBurstModeFrameCount,
+                    )),
+            );
+
+        if self.config.burst_mode_setting != BurstModeSetting::Off {
+            photo_section = photo_section.add(
+                widget::settings::item::builder(fl!("settings-save-burst-raw"))
+                    .description(fl!("settings-save-burst-raw-description"))
+                    .toggler(self.config.save_burst_raw, |_| Message::ToggleSaveBurstRaw),
+            );
+        }
+
+        vec![photo_section.into()]
+    }
+
+    /// Video sub-page: encoder, quality, and audio settings.
+    fn video_sections(&self) -> Vec<Element<'_, Message>> {
+        let is_recording = self.recording.is_recording();
+
+        let current_bitrate_index = BitratePreset::ALL
+            .iter()
+            .position(|p| *p == self.config.bitrate_preset)
+            .unwrap_or(1); // Default to Medium (index 1)
+
         let current_audio_encoder_index = AudioEncoder::ALL
             .iter()
             .position(|e| *e == self.config.audio_encoder)
             .unwrap_or(0); // Default to Opus (index 0)
 
-        // Video section
         let mut video_section = if is_recording {
             widget::settings::section()
                 .title(fl!("settings-video"))
@@ -289,54 +506,11 @@ impl AppModel {
             video_section = video_section.add(widget::settings::item_row(vec![meter_row.into()]));
         }
 
-        // Photo section (output format and HDR+ settings)
-        use crate::config::BurstModeSetting;
-        // Index 0 = Off, 1 = Auto, 2 = 4 frames, 3 = 6 frames, 4 = 8 frames, 5 = 50 frames
-        let current_hdr_index = match self.config.burst_mode_setting {
-            BurstModeSetting::Off => 0,
-            BurstModeSetting::Auto => 1,
-            BurstModeSetting::Frames4 => 2,
-            BurstModeSetting::Frames6 => 3,
-            BurstModeSetting::Frames8 => 4,
-            BurstModeSetting::Frames50 => 5,
-        };
+        vec![video_section.into()]
+    }
 
-        // Photo output format index
-        let current_photo_format_index = PhotoOutputFormat::ALL
-            .iter()
-            .position(|f| *f == self.config.photo_output_format)
-            .unwrap_or(0); // Default to JPEG (index 0)
-
-        let mut photo_section = widget::settings::section()
-            .title(fl!("settings-photo"))
-            .add(
-                widget::settings::item::builder(fl!("settings-photo-format"))
-                    .description(fl!("settings-photo-format-description"))
-                    .control(widget::dropdown(
-                        &self.photo_output_format_dropdown_options,
-                        Some(current_photo_format_index),
-                        Message::SelectPhotoOutputFormat,
-                    )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-hdr-plus"))
-                    .description(fl!("settings-hdr-plus-description"))
-                    .control(widget::dropdown(
-                        &self.burst_mode_frame_count_dropdown_options,
-                        Some(current_hdr_index),
-                        Message::SetBurstModeFrameCount,
-                    )),
-            );
-
-        if self.config.burst_mode_setting != BurstModeSetting::Off {
-            photo_section = photo_section.add(
-                widget::settings::item::builder(fl!("settings-save-burst-raw"))
-                    .description(fl!("settings-save-burst-raw-description"))
-                    .toggler(self.config.save_burst_raw, |_| Message::ToggleSaveBurstRaw),
-            );
-        }
-
-        // Timelapse section
+    /// Timelapse sub-page: capture interval.
+    fn timelapse_sections(&self) -> Vec<Element<'_, Message>> {
         let current_timelapse_interval_index = TimelapseInterval::ALL
             .iter()
             .position(|i| *i == self.config.timelapse_interval)
@@ -369,42 +543,46 @@ impl AppModel {
                 )
         };
 
-        // Mirror preview section (preview flip + optional capture flip)
-        let mut mirror_section = widget::settings::section().add(
-            widget::settings::item::builder(fl!("settings-mirror-preview"))
-                .description(fl!("settings-mirror-preview-description"))
-                .toggler(self.config.mirror_preview, |_| Message::ToggleMirrorPreview),
-        );
-        if self.config.mirror_preview {
-            mirror_section = mirror_section.add(
-                widget::settings::item::builder(fl!("settings-mirror-captures"))
-                    .description(fl!("settings-mirror-captures-description"))
-                    .toggler(self.config.mirror_captures, |_| {
-                        Message::ToggleMirrorCaptures
-                    }),
-            );
-        }
+        vec![timelapse_section.into()]
+    }
 
-        // Haptic feedback section (only show if device has haptics)
-        let haptic_section = if crate::backends::haptic::is_available() {
-            Some(
-                widget::settings::section().add(
-                    widget::settings::item::builder(fl!("settings-haptic-feedback"))
-                        .description(fl!("settings-haptic-feedback-description"))
-                        .toggler(self.config.haptic_feedback, |_| {
-                            Message::ToggleHapticFeedback
-                        }),
-                ),
-            )
-        } else {
-            None
+    /// Appearance sub-page: theme, overlay effect, composition guide, and
+    /// (where supported) haptic feedback.
+    fn appearance_sections(&self) -> Vec<Element<'_, Message>> {
+        // Theme index (System = 0, Dark = 1, Light = 2)
+        let current_theme_index = match self.config.app_theme {
+            AppTheme::System => 0,
+            AppTheme::Dark => 1,
+            AppTheme::Light => 2,
         };
 
-        // Composition guide section
+        // Overlay effect index. Indexes `available()`, which is shorter
+        // off-COSMIC — hence the shared mapping rather than a literal index.
+        let current_overlay_effect_index = self.config.overlay_effect.dropdown_index();
+
         let current_guide_index = crate::config::CompositionGuide::ALL
             .iter()
             .position(|g| *g == self.config.composition_guide)
             .unwrap_or(0);
+
+        let appearance_section = widget::settings::section()
+            .title(fl!("settings-appearance"))
+            .add(
+                widget::settings::item::builder(fl!("settings-theme")).control(widget::dropdown(
+                    &self.theme_dropdown_options,
+                    Some(current_theme_index),
+                    Message::SetAppTheme,
+                )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-overlay-effect"))
+                    .description(fl!("settings-overlay-effect-description"))
+                    .control(widget::dropdown(
+                        &self.overlay_effect_dropdown_options,
+                        Some(current_overlay_effect_index),
+                        Message::SetOverlayEffect,
+                    )),
+            );
 
         let composition_guide_section = widget::settings::section().add(
             widget::settings::item::builder(fl!("settings-composition-guide"))
@@ -416,7 +594,25 @@ impl AppModel {
                 )),
         );
 
-        // Virtual camera section
+        let mut sections = vec![appearance_section.into(), composition_guide_section.into()];
+
+        // Haptic feedback (only where the device has haptics)
+        if crate::backends::haptic::is_available() {
+            let haptic_section = widget::settings::section().add(
+                widget::settings::item::builder(fl!("settings-haptic-feedback"))
+                    .description(fl!("settings-haptic-feedback-description"))
+                    .toggler(self.config.haptic_feedback, |_| {
+                        Message::ToggleHapticFeedback
+                    }),
+            );
+            sections.push(haptic_section.into());
+        }
+
+        sections
+    }
+
+    /// Virtual camera sub-page.
+    fn virtual_camera_sections(&self) -> Vec<Element<'_, Message>> {
         let virtual_camera_section = widget::settings::section().add(
             widget::settings::item::builder(fl!("virtual-camera-title"))
                 .description(fl!("virtual-camera-description"))
@@ -425,7 +621,11 @@ impl AppModel {
                 }),
         );
 
-        // Bug reports section
+        vec![virtual_camera_section.into()]
+    }
+
+    /// Bug reports sub-page.
+    fn bug_reports_sections(&self) -> Vec<Element<'_, Message>> {
         let bug_report_button = widget::button::standard(fl!("settings-report-bug"))
             .on_press(Message::GenerateBugReport);
 
@@ -446,63 +646,7 @@ impl AppModel {
             .title(fl!("settings-bug-reports"))
             .add(widget::settings::item_row(vec![bug_report_control]));
 
-        // Reset section
-        let reset_section = widget::settings::section().add(widget::settings::item_row(vec![
-            widget::button::standard(fl!("settings-reset-all"))
-                .on_press(Message::ResetAllSettings)
-                .into(),
-        ]));
-
-        // Insights section
-        let insights_section = widget::settings::section()
-            .title(fl!("settings-stats-for-nerds"))
-            .add(widget::settings::item_row(vec![
-                widget::button::standard(fl!("insights-title"))
-                    .on_press(Message::ToggleContextPage(
-                        crate::app::state::ContextPage::Insights,
-                    ))
-                    .into(),
-            ]));
-
-        // Keyboard shortcuts section — opens a separate context drawer (like Insights).
-        let shortcuts_section = widget::settings::section()
-            .title(fl!("keybindings-page-title"))
-            .add(widget::settings::item_row(vec![
-                widget::button::standard(fl!("keybindings-page-title"))
-                    .on_press(Message::ToggleContextPage(
-                        crate::app::state::ContextPage::KeyBindings,
-                    ))
-                    .into(),
-            ]));
-
-        // Combine all sections
-        let mut sections = vec![
-            appearance_section.into(),
-            camera_section.into(),
-            photo_section.into(),
-            timelapse_section.into(),
-            video_section.into(),
-            mirror_section.into(),
-        ];
-        if let Some(haptic) = haptic_section {
-            sections.push(haptic.into());
-        }
-        sections.extend([
-            composition_guide_section.into(),
-            virtual_camera_section.into(),
-            shortcuts_section.into(),
-            bug_reports_section.into(),
-            reset_section.into(),
-            insights_section.into(),
-        ]);
-
-        let settings_content: Element<'_, Message> = widget::settings::view_column(sections).into();
-
-        context_drawer::context_drawer(
-            settings_content,
-            Message::ToggleContextPage(crate::app::state::ContextPage::Settings),
-        )
-        .title(fl!("settings-title"))
+        vec![bug_reports_section.into()]
     }
 
     /// Build the device info panel (shown when info button is clicked)

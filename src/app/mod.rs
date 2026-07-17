@@ -415,6 +415,7 @@ impl cosmic::Application for AppModel {
         let mut app = AppModel {
             core,
             context_page: ContextPage::default(),
+            settings_page: crate::app::state::SettingsPage::default(),
             bindings: crate::app::keybind::Bindings::with_overrides(&config.key_bindings),
             recording_keybind: None,
             about,
@@ -814,11 +815,6 @@ impl cosmic::Application for AppModel {
         }
 
         Some(match self.context_page {
-            ContextPage::About => context_drawer::about(
-                &self.about,
-                |url| Message::LaunchUrl(url.to_string()),
-                Message::ToggleContextPage(ContextPage::About),
-            ),
             ContextPage::Settings => self.settings_view(),
             ContextPage::Filters => self.filters_view(),
             ContextPage::Insights => self.insights_view(),

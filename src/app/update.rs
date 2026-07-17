@@ -33,6 +33,7 @@ impl AppModel {
             // ===== UI Navigation =====
             Message::LaunchUrl(url) => self.handle_launch_url(url),
             Message::ToggleContextPage(page) => self.handle_toggle_context_page(page),
+            Message::OpenSettingsPage(page) => self.handle_open_settings_page(page),
             Message::ToggleFormatPicker => self.handle_toggle_format_picker(),
             Message::CloseFormatPicker => self.handle_close_format_picker(),
             Message::ToggleDeviceInfo => self.handle_toggle_device_info(),

@@ -959,15 +959,8 @@ impl AppModel {
             ));
         }
 
-        // About and settings buttons (normally in header_end)
+        // Settings button (normally in header_end)
         if !is_disabled {
-            row = row.push(
-                widget::button::icon(icon::from_name("help-about-symbolic").symbolic(true))
-                    .extra_small()
-                    .on_press(Message::ToggleContextPage(
-                        crate::app::state::ContextPage::About,
-                    )),
-            );
             row = row.push(
                 widget::button::icon(icon::from_name("preferences-system-symbolic").symbolic(true))
                     .extra_small()

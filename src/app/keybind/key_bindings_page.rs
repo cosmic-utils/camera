@@ -101,6 +101,7 @@ pub fn view<'a>(app: &'a AppModel) -> context_drawer::ContextDrawer<'a, Message>
         Message::ToggleContextPage(crate::app::state::ContextPage::KeyBindings),
     )
     .title(fl!("keybindings-page-title"))
+    .actions(app.settings_back_button())
 }
 
 fn has_override(app: &AppModel, action: Action) -> bool {
