@@ -251,7 +251,12 @@ jobs:
           addgroup builder abuild
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           sudo -Hu builder abuild-keygen -a -n
-          cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/
+          # Newer abuild writes keys to ~/.config/abuild; older versions use ~/.abuild
+          for d in /home/builder/.config/abuild /home/builder/.abuild; do
+            [ -d "$d" ] && cp "$d"/*.rsa.pub /etc/apk/keys/ || true
+          done
+          # Fail loudly here rather than midway through abuild -r if no key was found
+          ls /etc/apk/keys/*.rsa.pub
 
       - name: Checkout repository
         uses: actions/checkout@v7

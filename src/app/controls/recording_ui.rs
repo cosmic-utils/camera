@@ -2,8 +2,8 @@
 
 //! Recording and streaming UI components (indicator and timer)
 
+use crate::app::overlay_style::OVERLAY_CONTAINER;
 use crate::app::state::{AppModel, CameraMode, FileSource, Message};
-use crate::app::view::overlay_container_style;
 use crate::fl;
 use cosmic::Element;
 use cosmic::iced::{Alignment, Background, Color, Length};
@@ -33,6 +33,18 @@ fn format_duration(seconds: u64) -> String {
 }
 
 impl AppModel {
+    /// Wrap a status-indicator `row` (dot + label) in the standard frosted
+    /// overlay pill shared by the recording, streaming and timelapse indicators.
+    fn indicator_pill<'a>(
+        &self,
+        row: widget::Row<'a, Message, cosmic::Theme>,
+    ) -> Element<'a, Message> {
+        self.frosted_panel(
+            widget::container(row).padding([4, 8]).into(),
+            OVERLAY_CONTAINER,
+        )
+    }
+
     /// Check if we have a video file source in Virtual mode
     fn has_video_file_source(&self) -> bool {
         matches!(
@@ -59,12 +71,7 @@ impl AppModel {
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
 
-        Some(
-            widget::container(row)
-                .padding([4, 8])
-                .style(overlay_container_style)
-                .into(),
-        )
+        Some(self.indicator_pill(row))
     }
 
     /// Build the virtual camera streaming indicator widget
@@ -84,12 +91,7 @@ impl AppModel {
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
 
-        Some(
-            widget::container(row)
-                .padding([4, 8])
-                .style(overlay_container_style)
-                .into(),
-        )
+        Some(self.indicator_pill(row))
     }
 
     /// Build the timelapse indicator widget
@@ -121,12 +123,7 @@ impl AppModel {
             .align_y(Alignment::Center)
             .spacing(spacing.space_xxs);
 
-        Some(
-            widget::container(row)
-                .padding([4, 8])
-                .style(overlay_container_style)
-                .into(),
-        )
+        Some(self.indicator_pill(row))
     }
 
     /// Build a full-width video progress bar for video file streaming

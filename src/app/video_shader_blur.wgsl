@@ -1,5 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// GPU shader for Gaussian blur (for multi-pass blur transitions)
+// PASS 0 of the blur chain: the TRANSFORM pass.
+//
+// It applies every preview transform — scroll clip, mirror, sensor rotation,
+// cover/contain fit, letterbox fill, crop remap, digital zoom, colour filter —
+// and renders the result into a PHYSICAL SCREEN RESOLUTION target. It runs NO
+// blur kernel at all.
+//
+// # Why the kernel is gone
+//
+// This pass used to double as a blur pass: it sampled the sharp, full-resolution
+// sensor frame through a 37-tap ring rosette. At high frost thickness the ring
+// spacing reached ~18 sensor texels between taps across un-prefiltered data, and
+// the 12-fold ring structure ghosted into the output as visible BANDING (found
+// on device). A sparse lattice sampling sharp data is a structurally bad idea and
+// no radius tuning fixes it.
+//
+// The chain now separates the two jobs. This pass only RESAMPLES (one bilinear
+// tap), and `video_shader_kawase.wgsl` — a verbatim port of cosmic-comp's own
+// dual-Kawase — does all the blurring, over progressively halved copies of THIS
+// pass's output. Every Kawase kernel is dense relative to its own level and only
+// ever samples data the previous pass band-limited, so it cannot band.
+//
+// This pass is also what makes the Kawase offsets literally cosmic-comp's: they
+// are authored in physical screen px, and by rendering into a screen-resolution
+// screen-space target here, the rest of the chain works in exactly that unit. No
+// texel-to-screen conversion exists any more, because there is nothing to
+// convert.
 
 @group(0) @binding(0)
 var texture_blur: texture_2d<f32>;
@@ -10,20 +36,21 @@ var sampler_blur: sampler;
 struct ViewportUniform {
     viewport_size: vec2<f32>,   // Full widget size
     content_fit_mode: f32,      // 0.0 = Contain, 1.0 = Cover
-    filter_mode: u32,           // Filter index (applied in Pass 1, 0 = none in later passes)
-    corner_radius: f32,         // Unused in blur
+    filter_mode: u32,           // Filter index (this pass owns the filter; 0 = none)
+    corner_radius: f32,         // Unused here — the final composite rounds the corners
     mirror_horizontal: u32,     // 0 = normal, 1 = mirrored horizontally
     uv_offset: vec2<f32>,       // UV offset for scroll clipping (0-1)
     uv_scale: vec2<f32>,        // UV scale for scroll clipping (0-1)
     crop_uv_min: vec2<f32>,     // Crop UV min (u_min, v_min) - normalized 0-1
     crop_uv_max: vec2<f32>,     // Crop UV max (u_max, v_max) - normalized 0-1
-    zoom_level: f32,            // Unused in blur, but kept for struct compatibility
+    zoom_level: f32,            // Digital zoom (1.0 = none); applied HERE, and only here
     rotation: u32,              // Sensor rotation: 0=None, 1=90CW, 2=180, 3=270CW
     bar_top_height: f32,        // Top bar height in pixels
     bar_bottom_height: f32,     // Bottom bar height in pixels
-    _pad0: f32,                 // pad to vec4 alignment for letterbox_color
-    _pad1: f32,
-    letterbox_color: vec4<f32>, // RGBA fill for letterbox in blur pass (alpha unused)
+    kawase_offset: f32,         // Unused here — read by the Kawase passes
+    dim_factor: f32,            // Unused here — applied by the final composite
+    letterbox_color: vec4<f32>, // RGBA fill for letterbox (alpha unused)
+    panel_rect: vec4<f32>,      // Unused here — read by the final composite
 }
 
 @group(0) @binding(2)
@@ -49,7 +76,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-// Fragment shader - Gaussian blur on RGB texture
+// Fragment shader — transform only, one bilinear tap.
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Apply scroll clipping UV transformation
@@ -133,66 +160,58 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Apply the blended crop remap
     tex_coords = mix(effective_crop_min, effective_crop_max, tex_coords);
 
-    // Get texture dimensions
-    let tex_size = textureDimensions(texture_blur);
-
-    // Blur settings — runs on 1/4 resolution textures so a moderate radius
-    // gives a strong visual blur. 3 rings × 12 samples + center = 37 samples.
-
-    let blur_radius = 16.0;
-    let samples = 12;
-
-    let pixel_step = vec2<f32>(1.0 / f32(tex_size.x), 1.0 / f32(tex_size.y));
-
-    var rgb_sum = vec3<f32>(0.0, 0.0, 0.0);
-    var weight_sum = 0.0;
-
-    let sigma = blur_radius / 2.5;
-    let sigma_squared_2 = 2.0 * sigma * sigma;
-
-    let angle_step = 6.28318530718 / f32(samples);
-    let golden_angle = 2.399963229728653;
-
-    for (var ring = 1; ring <= 3; ring++) {
-        let ring_factor = f32(ring) / 3.0;
-        let radius = blur_radius * ring_factor;
-
-        let ring_offset = f32(ring - 1) * golden_angle;
-
-        for (var i = 0; i < samples; i++) {
-            let angle = f32(i) * angle_step + ring_offset;
-            let offset_tex = vec2<f32>(
-                cos(angle) * radius * pixel_step.x,
-                sin(angle) * radius * pixel_step.y,
-            );
-            let rgb = textureSample(texture_blur, sampler_blur, tex_coords + offset_tex).rgb;
-
-            let dist_squared = radius * radius;
-            let weight = exp(-dist_squared / sigma_squared_2);
-
-            rgb_sum += rgb * weight;
-            weight_sum += weight;
-        }
+    // Apply digital zoom (center crop), AFTER the crop remap and AFTER the
+    // letterbox early-out — the same place video_shader.wgsl applies it, so the
+    // frosted backdrop samples exactly the region the sharp preview shows. The
+    // order matters and is not cosmetic:
+    //
+    // * after the crop remap, so the pivot is the centre of the FULL texture in
+    //   texture UV space, as it is in video_shader.wgsl. Zooming before the
+    //   remap would pivot on the centre of the *crop* instead, which only
+    //   coincides while the crop is centred.
+    // * after the letterbox early-out, so the letterbox extent stays a property
+    //   of the fit, not of the zoom — again matching video_shader.wgsl, whose
+    //   early-out also precedes its zoom.
+    //
+    // THIS IS THE ONLY PASS THAT ZOOMS, because it is the only pass that ever
+    // samples the source frame. Everything downstream — the Kawase ping-pong and
+    // the final composite — works on this pass's screen-space output, in which
+    // the zoom is already baked, and leaves `zoom_level` at its 1.0 default.
+    if (viewport.zoom_level > 1.0) {
+        let inv_zoom = 1.0 / viewport.zoom_level;
+        tex_coords = (tex_coords - vec2<f32>(0.5, 0.5)) * inv_zoom + vec2<f32>(0.5, 0.5);
     }
 
-    // Center sample
-    let center_rgb = textureSample(texture_blur, sampler_blur, tex_coords).rgb;
-    rgb_sum += center_rgb;
-    weight_sum += 1.0;
+    // ONE bilinear tap. This pass resamples; it does not blur. See the header
+    // for why the 37-tap ring rosette that used to live here was the cause of
+    // the banding, and `video_shader_kawase.wgsl` for what replaced it.
+    var rgb_val = textureSample(texture_blur, sampler_blur, tex_coords).rgb;
 
-    // Normalize by total weight
-    var rgb_val = rgb_sum / weight_sum;
-
-    // Apply filter if enabled (Pass 1 only — later passes have filter_mode=0)
-    if (viewport.filter_mode > 0u && viewport.filter_mode <= 12u) {
-        rgb_val = apply_filter(rgb_val, viewport.filter_mode, tex_coords);
-    }
-
-    // Apply slight darkening for subtle transition indication
-    return vec4<f32>(
-        clamp(rgb_val.r * 0.85, 0.0, 1.0),
-        clamp(rgb_val.g * 0.85, 0.0, 1.0),
-        clamp(rgb_val.b * 0.85, 0.0, 1.0),
-        1.0
+    // Apply the filter here — the one pass that sees the source frame, so the
+    // filter is visible in the blur exactly as it is in the sharp preview. The
+    // whole range, including the two filters that re-sample: the backdrop that
+    // stops at 12 is the backdrop that blurs a colour scene behind a pencil
+    // sketch (found on device).
+    //
+    // Pencil arrives here WITHOUT the preblur the sharp preview gets — `render`
+    // routes VIDEO_ID_FROSTED down the Kawase branch, which has no preblur pass.
+    // That is the right trade and not an omission: the preblur exists to keep
+    // Sobel off sensor noise, and every edge this pass emits is about to be
+    // dual-Kawase'd across the screen anyway, so the extra noise is destroyed by
+    // the next pass rather than shown. Buying it back would cost a full-res
+    // pass on top of a chain already at ~2.6x screen area per frame.
+    rgb_val = apply_texture_filter(
+        rgb_val,
+        viewport.filter_mode,
+        tex_coords,
+        texture_blur,
+        sampler_blur,
     );
+
+    // Opaque, always. The Kawase passes normalize by `sum.a` and treat a = 0 as
+    // "outside the region" (see `video_shader_kawase.wgsl`), so this pass MUST
+    // emit alpha = 1 across the whole target — letterbox included, which is why
+    // the early-out above fills rather than discards. The rounded silhouette and
+    // the dim belong to the final composite, not here.
+    return vec4<f32>(rgb_val, 1.0);
 }

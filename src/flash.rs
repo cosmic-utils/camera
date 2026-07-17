@@ -74,6 +74,7 @@ impl FlashDevice {
 ///
 /// Separates "hardware exists" from "we can control it" so the UI can show
 /// a helpful permission error instead of silently hiding the flash button.
+#[derive(Default)]
 pub struct FlashHardware {
     /// Devices we can actually control (writable)
     pub devices: Vec<FlashDevice>,

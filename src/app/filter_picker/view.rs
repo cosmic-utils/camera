@@ -73,10 +73,17 @@ impl AppModel {
                     .map(|c| c.rotation.gpu_rotation_code())
                     .unwrap_or(0);
 
+                // `Arc::clone` of the preview's own `current_frame`, and that is
+                // load-bearing: the pipeline maps VIDEO_ID_FILTER_PREVIEW onto
+                // the preview's source texture and dedups by frame-data pointer
+                // (see `video_primitive::source_texture_id`). A swatch built from
+                // any other frame would race the preview for that texture.
                 video_widget::video_widget(
                     Arc::clone(frame),
                     video_widget::VideoWidgetConfig {
-                        video_id: 99, // Shared source texture ID for all filter previews
+                        // One id for all fifteen: the filter lives in the
+                        // per-`(video_id, filter_mode)` binding, not the texture.
+                        video_id: crate::app::video_primitive::VIDEO_ID_FILTER_PREVIEW,
                         content_fit: VideoContentFit::Cover,
                         filter_type,
                         corner_radius,

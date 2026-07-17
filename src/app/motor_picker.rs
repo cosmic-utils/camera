@@ -5,36 +5,18 @@
 //! Provides a floating overlay for camera motor controls including:
 //! - V4L2 pan/tilt/zoom controls (for PTZ cameras)
 
+use crate::app::overlay_style::PICKER_PANEL;
+use crate::app::preview_geometry::TOP_BAR_HEIGHT;
 use crate::app::state::{AppModel, Message};
 use crate::backends::camera::v4l2_controls;
-use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::fl;
 use cosmic::Element;
-use cosmic::iced::{Background, Color, Length};
+use cosmic::iced::Length;
 use cosmic::widget;
 use tracing::warn;
 
 /// Width of the motor picker panel
 const PICKER_PANEL_WIDTH: f32 = 280.0;
-
-/// Create a container style for the picker panel background
-fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let bg = cosmic.bg_color();
-    widget::container::Style {
-        background: Some(Background::Color(Color::from_rgba(
-            bg.red,
-            bg.green,
-            bg.blue,
-            OVERLAY_BACKGROUND_ALPHA,
-        ))),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
 
 impl AppModel {
     /// Check if any motor controls are available (V4L2 PTZ)
@@ -98,10 +80,11 @@ impl AppModel {
         // Note: Zoom control is handled separately via normal camera zoom
         // (hardware zoom is preferred, shader zoom is fallback)
 
-        // Build picker panel with semi-transparent themed background
+        // Build picker panel with semi-transparent themed background. When
+        // frosted glass is active, `frosted_panel` stacks a live-blurred preview
+        // backdrop behind the translucent panel.
         let picker_panel = widget::mouse_area(
-            widget::container(column)
-                .style(picker_panel_style)
+            widget::container(self.frosted_panel(column.into(), PICKER_PANEL))
                 .width(Length::Fixed(PICKER_PANEL_WIDTH)),
         )
         .on_press(Message::Noop);
@@ -115,7 +98,7 @@ impl AppModel {
             )
             .push(picker_panel)
             .padding([
-                crate::app::view::TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                TOP_BAR_HEIGHT as u16 + spacing.space_xs,
                 spacing.space_xs,
                 0,
                 spacing.space_xs,

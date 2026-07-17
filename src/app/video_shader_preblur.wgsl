@@ -31,8 +31,8 @@ struct ViewportUniform {
     rotation: u32,
     bar_top_height: f32,
     bar_bottom_height: f32,
-    _pad0: f32,
-    _pad1: f32,
+    kawase_offset: f32,        // Unused here — read by the Kawase passes
+    dim_factor: f32,           // Unused here — applied by the frosted composite
     letterbox_color: vec4<f32>, // unused here; struct must match the shared ViewportUniform
 }
 

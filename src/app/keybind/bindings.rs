@@ -17,6 +17,14 @@ pub struct Bindings {
     pub version: u64,
 }
 
+/// The default bindings ARE [`Bindings::defaults`] — not an empty map, which
+/// would leave the app with no keyboard control at all.
+impl Default for Bindings {
+    fn default() -> Self {
+        Self::defaults()
+    }
+}
+
 impl Bindings {
     pub fn defaults() -> Self {
         let mut map = HashMap::new();

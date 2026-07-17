@@ -150,18 +150,20 @@ pub mod ui {
     /// Capture button size (inner)
     pub const CAPTURE_BUTTON_INNER: f32 = 60.0;
 
-    /// Overlay button/container background transparency (0.0 = transparent, 1.0 = opaque)
+    /// Overlay button/container background alpha for the Translucent overlay
+    /// effect (0.0 = transparent, 1.0 = opaque).
     ///
-    /// Used for semi-transparent backgrounds on buttons and panels overlaid on the camera preview.
+    /// A hardcoded alpha bolted onto the theme's *opaque* background colour —
+    /// deliberately not the transparent container's own alpha, which tracks the
+    /// theme's blur-strength `alpha_map` and is only coherent behind a blur.
     pub const OVERLAY_BACKGROUND_ALPHA: f32 = 0.7;
 
-    /// Popup dialog background opacity (0.0 = transparent, 1.0 = opaque)
+    /// Popup dialog background alpha for the Translucent overlay effect.
     ///
-    /// Used for near-opaque backgrounds on centered popup dialogs (privacy warning, flash error).
+    /// Near-opaque: centred popups (permission warnings, HDR+ progress) are
+    /// read, not looked through, so they let far less preview through than the
+    /// chrome around them.
     pub const POPUP_BACKGROUND_ALPHA: f32 = 0.95;
-
-    /// Format picker border radius
-    pub const PICKER_BORDER_RADIUS: f32 = 8.0;
 
     /// Placeholder button width when camera switch is hidden
     pub const PLACEHOLDER_BUTTON_WIDTH: f32 = 44.0;

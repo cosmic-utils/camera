@@ -261,6 +261,133 @@ impl AppTheme {
     }
 }
 
+/// User override for how overlay chrome is painted over the live preview.
+///
+/// [`Self::System`] defers to the desktop (see
+/// `crate::app::overlay_style::overlay_surface`); the other three pin one
+/// surface regardless of what the desktop asks for. Offered because the frosted
+/// backdrop costs a blur chain per frame, which is not a trade every machine —
+/// or every user — wants to make.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum OverlayEffect {
+    /// Follow COSMIC's window-frosting setting. Only meaningful on COSMIC — see
+    /// [`Self::available_for`].
+    System,
+    /// Always paint the live-blurred frosted backdrop.
+    Frosted,
+    /// Flat translucent tint over the sharp preview; never blurs.
+    Translucent,
+    /// Opaque panels; never blurs.
+    Off,
+}
+
+/// Defaults to whatever preserves the behaviour the app had before this setting
+/// existed: follow COSMIC where there is a setting to follow, frosted elsewhere
+/// (which is what the old code hardcoded off-COSMIC).
+///
+/// Environment-dependent, like [`AppTheme::theme`] — and stable for the process
+/// lifetime, since `is_cosmic_desktop()` caches.
+impl Default for OverlayEffect {
+    fn default() -> Self {
+        if is_cosmic_desktop() {
+            Self::System
+        } else {
+            Self::Frosted
+        }
+    }
+}
+
+impl OverlayEffect {
+    /// Every variant, in dropdown order. **Not** the list to offer the user —
+    /// that is [`Self::available`]. This is the stable, environment-independent
+    /// order used to encode the value (config, the draw-time global) and to
+    /// drive exhaustive tests.
+    pub const ALL: [OverlayEffect; 4] = [
+        OverlayEffect::System,
+        OverlayEffect::Frosted,
+        OverlayEffect::Translucent,
+        OverlayEffect::Off,
+    ];
+
+    /// [`Self::ALL`] minus [`Self::System`], for desktops that have no frosting
+    /// setting to follow.
+    const WITHOUT_SYSTEM: [OverlayEffect; 3] = [
+        OverlayEffect::Frosted,
+        OverlayEffect::Translucent,
+        OverlayEffect::Off,
+    ];
+
+    /// The effects to offer the user, in dropdown order.
+    ///
+    /// **This slice, not [`Self::ALL`], defines the dropdown's index space** —
+    /// it is shorter off-COSMIC, so indices are NOT variant discriminants. Both
+    /// the value→index read and the index→value write must go through here or
+    /// they will disagree off-COSMIC.
+    pub fn available() -> &'static [Self] {
+        Self::available_for(is_cosmic_desktop())
+    }
+
+    /// [`Self::available`] as a pure function of the environment.
+    ///
+    /// Off-COSMIC there is no desktop flag to follow, so `System` would resolve
+    /// to exactly [`Self::Frosted`] — a choice the user could make that changes
+    /// nothing. Hiding it removes a distinction without a difference.
+    fn available_for(is_cosmic: bool) -> &'static [Self] {
+        if is_cosmic {
+            &Self::ALL
+        } else {
+            &Self::WITHOUT_SYSTEM
+        }
+    }
+
+    /// This effect as the user's desktop can actually honour it.
+    ///
+    /// A config written on COSMIC can be read on a desktop that does not offer
+    /// `System` (shared home directory, changed `XDG_CURRENT_DESKTOP`). Resolved
+    /// at READ time rather than normalised on load, so the stored `System`
+    /// survives a trip through another desktop and still means "follow COSMIC"
+    /// when the user comes back.
+    pub fn effective(self) -> Self {
+        self.effective_for(is_cosmic_desktop())
+    }
+
+    /// [`Self::effective`] as a pure function of the environment.
+    pub(crate) fn effective_for(self, is_cosmic: bool) -> Self {
+        if self == Self::System && !is_cosmic {
+            Self::Frosted
+        } else {
+            self
+        }
+    }
+
+    /// This effect's position in the dropdown, via [`Self::effective`] so a
+    /// stored `System` read off-COSMIC selects the entry it fell back to rather
+    /// than leaving the dropdown blank.
+    pub fn dropdown_index(self) -> usize {
+        self.dropdown_index_for(is_cosmic_desktop())
+    }
+
+    /// The effect a dropdown selection means, or `None` if the index is not one
+    /// this desktop offers.
+    pub fn from_dropdown_index(index: usize) -> Option<Self> {
+        Self::from_dropdown_index_for(index, is_cosmic_desktop())
+    }
+
+    /// [`Self::dropdown_index`] as a pure function of the environment.
+    fn dropdown_index_for(self, is_cosmic: bool) -> usize {
+        let effective = self.effective_for(is_cosmic);
+        Self::available_for(is_cosmic)
+            .iter()
+            .position(|e| *e == effective)
+            .unwrap_or(0)
+    }
+
+    /// [`Self::from_dropdown_index`] as a pure function of the environment.
+    fn from_dropdown_index_for(index: usize, is_cosmic: bool) -> Option<Self> {
+        Self::available_for(is_cosmic).get(index).copied()
+    }
+}
+
 /// Whether we're running on the COSMIC desktop (cached for process lifetime).
 pub fn is_cosmic_desktop() -> bool {
     static IS_COSMIC: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
@@ -292,6 +419,9 @@ pub type VideoSettings = FormatSettings;
 pub struct Config {
     /// Application theme preference (System, Dark, Light)
     pub app_theme: AppTheme,
+    /// How overlay chrome is painted over the preview (frosted / translucent /
+    /// opaque), or System to follow COSMIC's frosting setting
+    pub overlay_effect: OverlayEffect,
     /// Default camera mode on launch
     pub default_mode: crate::app::CameraMode,
     /// Folder name for saving captures (photos go to XDG Pictures, videos go to XDG Videos)
@@ -360,7 +490,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            app_theme: AppTheme::default(), // Default to System theme
+            app_theme: AppTheme::default(),           // Default to System theme
+            overlay_effect: OverlayEffect::default(), // System on COSMIC, Frosted elsewhere
             default_mode: crate::app::CameraMode::default(), // Default to Photo
             save_folder_name: crate::constants::DEFAULT_SAVE_FOLDER.to_string(),
             last_camera_path: None,
@@ -387,6 +518,194 @@ impl Default for Config {
             photo_aspect_ratio: crate::app::PhotoAspectRatio::default(),
             preview_fit_to_view: false,
             key_bindings: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Off-COSMIC there is no frosting flag to follow, so `System` would mean
+    /// exactly `Frosted`. It must not be offered.
+    #[test]
+    fn system_is_offered_only_on_cosmic() {
+        assert!(OverlayEffect::available_for(true).contains(&OverlayEffect::System));
+        assert!(!OverlayEffect::available_for(false).contains(&OverlayEffect::System));
+
+        assert_eq!(OverlayEffect::available_for(true).len(), 4);
+        assert_eq!(OverlayEffect::available_for(false).len(), 3);
+
+        // The three real surfaces are always reachable.
+        for effect in [
+            OverlayEffect::Frosted,
+            OverlayEffect::Translucent,
+            OverlayEffect::Off,
+        ] {
+            for is_cosmic in [true, false] {
+                assert!(
+                    OverlayEffect::available_for(is_cosmic).contains(&effect),
+                    "{effect:?} unreachable on is_cosmic={is_cosmic}"
+                );
+            }
+        }
+    }
+
+    /// value -> index -> value must be identity in BOTH environments.
+    ///
+    /// The dropdown's index space is `available()`, which is one shorter
+    /// off-COSMIC. Hardcoding `0 => System, 1 => Frosted, ...` passes on COSMIC
+    /// and silently shifts every choice by one off it — index 0 would decode to
+    /// `System`, which is not even in the list. This is the test that catches it.
+    #[test]
+    fn dropdown_index_round_trips_in_both_environments() {
+        for is_cosmic in [true, false] {
+            let available = OverlayEffect::available_for(is_cosmic);
+
+            // Every offered variant survives value -> index -> value.
+            for &effect in available {
+                let index = effect.dropdown_index_for(is_cosmic);
+                assert_eq!(
+                    OverlayEffect::from_dropdown_index_for(index, is_cosmic),
+                    Some(effect),
+                    "{effect:?} did not round-trip at index {index} \
+                     (is_cosmic={is_cosmic})"
+                );
+            }
+
+            // ...and every offered index survives index -> value -> index.
+            for index in 0..available.len() {
+                let effect = OverlayEffect::from_dropdown_index_for(index, is_cosmic)
+                    .expect("in-range index must decode");
+                assert_eq!(
+                    effect.dropdown_index_for(is_cosmic),
+                    index,
+                    "index {index} decoded to {effect:?}, which re-encodes elsewhere \
+                     (is_cosmic={is_cosmic})"
+                );
+            }
+
+            // Out of range must be rejected, not wrapped or defaulted.
+            assert_eq!(
+                OverlayEffect::from_dropdown_index_for(available.len(), is_cosmic),
+                None
+            );
+        }
+    }
+
+    /// The mapping must agree with the labels the dropdown was actually built
+    /// from: `mod.rs` maps `available()` to strings positionally, so index N
+    /// must mean `available()[N]` on both desktops.
+    #[test]
+    fn dropdown_index_matches_the_options_it_labels() {
+        // On COSMIC the list is the full ALL order...
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(0, true),
+            Some(OverlayEffect::System)
+        );
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(3, true),
+            Some(OverlayEffect::Off)
+        );
+
+        // ...and off-COSMIC every index means one entry EARLIER in ALL. A
+        // handler that hardcoded the ALL order would decode each of these wrong.
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(0, false),
+            Some(OverlayEffect::Frosted)
+        );
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(1, false),
+            Some(OverlayEffect::Translucent)
+        );
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(2, false),
+            Some(OverlayEffect::Off)
+        );
+        assert_eq!(OverlayEffect::from_dropdown_index_for(3, false), None);
+    }
+
+    /// A stored `System` read off-COSMIC must select the entry it fell back to,
+    /// not index 0 by accident and not a blank dropdown.
+    #[test]
+    fn stored_system_selects_its_fallback_entry_off_cosmic() {
+        let index = OverlayEffect::System.dropdown_index_for(false);
+        assert_eq!(
+            OverlayEffect::from_dropdown_index_for(index, false),
+            Some(OverlayEffect::Frosted),
+            "System off-COSMIC must display as Frosted"
+        );
+        assert!(index < OverlayEffect::available_for(false).len());
+    }
+
+    /// Pins the actual off-COSMIC index layout, so a hardcoded ALL-based
+    /// mapping is caught rather than merely being self-consistent.
+    #[test]
+    fn off_cosmic_indices_are_shifted_relative_to_all() {
+        let available = OverlayEffect::available_for(false);
+        assert_eq!(available[0], OverlayEffect::Frosted);
+        assert_eq!(available[1], OverlayEffect::Translucent);
+        assert_eq!(available[2], OverlayEffect::Off);
+        // ...whereas ALL[0] is System. The two index spaces genuinely differ.
+        assert_eq!(OverlayEffect::ALL[0], OverlayEffect::System);
+        assert_ne!(available[0], OverlayEffect::ALL[0]);
+    }
+
+    /// A `System` written on COSMIC and read elsewhere falls back to the
+    /// off-COSMIC default rather than blanking the dropdown.
+    #[test]
+    fn stored_system_falls_back_off_cosmic() {
+        assert_eq!(
+            OverlayEffect::System.effective_for(false),
+            OverlayEffect::Frosted
+        );
+        // ...and is preserved on COSMIC, which is why we resolve at read time
+        // instead of normalising on load.
+        assert_eq!(
+            OverlayEffect::System.effective_for(true),
+            OverlayEffect::System
+        );
+
+        // The fallback must be something the desktop actually offers.
+        for is_cosmic in [true, false] {
+            for effect in OverlayEffect::ALL {
+                assert!(
+                    OverlayEffect::available_for(is_cosmic)
+                        .contains(&effect.effective_for(is_cosmic)),
+                    "{effect:?}.effective_for({is_cosmic}) is not in the dropdown"
+                );
+            }
+        }
+    }
+
+    /// The default is environment-dependent: it must reproduce the behaviour the
+    /// app had before the setting existed, on either desktop.
+    #[test]
+    fn default_effect_matches_the_pre_setting_behaviour() {
+        // The pure form, so both branches are covered wherever this runs.
+        let default_for = |is_cosmic| {
+            if is_cosmic {
+                OverlayEffect::System
+            } else {
+                OverlayEffect::Frosted
+            }
+        };
+        assert_eq!(default_for(true), OverlayEffect::System);
+        assert_eq!(default_for(false), OverlayEffect::Frosted);
+
+        // The real `Default` agrees with the pure form for this environment...
+        assert_eq!(
+            OverlayEffect::default(),
+            default_for(is_cosmic_desktop()),
+            "Default disagrees with the pre-setting behaviour"
+        );
+
+        // ...and the default is always offered by the dropdown it defaults in.
+        for is_cosmic in [true, false] {
+            assert!(
+                OverlayEffect::available_for(is_cosmic).contains(&default_for(is_cosmic)),
+                "default is not offered on is_cosmic={is_cosmic}"
+            );
         }
     }
 }

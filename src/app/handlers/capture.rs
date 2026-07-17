@@ -247,7 +247,7 @@ impl AppModel {
                 // the user sees inside the crop bars even when the UI
                 // bars are asymmetric (top 47 vs bottom ~174) — a
                 // sensor-centered crop would drift off-axis here.
-                crate::app::view::cover_capture_crop(
+                crate::app::preview_geometry::cover_capture_crop(
                     fw,
                     fh,
                     self.screen_width,
@@ -370,7 +370,7 @@ impl AppModel {
                     let (x, y, w, h) = if preview_fit_to_view {
                         photo_aspect_ratio.crop_rect(rw, rh, portrait)
                     } else {
-                        crate::app::view::cover_capture_crop(
+                        crate::app::preview_geometry::cover_capture_crop(
                             rw,
                             rh,
                             cover_screen_w,
@@ -568,6 +568,7 @@ impl AppModel {
         // capture in `handle_burst_mode_complete`.
         self.blur_frame_rotation = self.current_frame_rotation;
         self.blur_frame_mirror = self.should_mirror_preview();
+        self.blur_frame_zoom = self.current_zoom_level();
 
         // Turn off flash now that capture is complete (before processing)
         self.turn_off_flash_hardware();
@@ -618,7 +619,7 @@ impl AppModel {
             let (x, y, w, h) = if self.preview_fit_to_view {
                 self.photo_aspect_ratio.crop_rect(rw, rh, portrait)
             } else {
-                crate::app::view::cover_capture_crop(
+                crate::app::preview_geometry::cover_capture_crop(
                     rw,
                     rh,
                     self.screen_width,
@@ -1827,6 +1828,7 @@ impl AppModel {
         // Don't disable UI since capture is complete
         self.blur_frame_rotation = self.current_frame_rotation;
         self.blur_frame_mirror = self.should_mirror_preview();
+        self.blur_frame_zoom = self.current_zoom_level();
         let _ = self.transition_state.start_with_duration(200, false);
 
         // Restart the camera stream after HDR+ processing

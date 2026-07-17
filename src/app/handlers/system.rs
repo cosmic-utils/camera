@@ -97,6 +97,8 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         info!("UpdateConfig received");
         self.config = config;
+        // Keep the draw-time global in step with an externally-changed config.
+        crate::app::overlay_style::init_overlay_effect(self.config.overlay_effect);
         Task::none()
     }
 
@@ -120,6 +122,35 @@ impl AppModel {
         }
 
         cosmic::command::set_theme(app_theme.theme())
+    }
+
+    pub(crate) fn handle_set_overlay_effect(
+        &mut self,
+        index: usize,
+    ) -> Task<cosmic::Action<Message>> {
+        use crate::config::OverlayEffect;
+
+        // Indexes `available()` — the same slice the dropdown was built from,
+        // which drops `System` off-COSMIC. Indexing `ALL` here would silently
+        // shift every choice by one on those desktops.
+        let effect = match OverlayEffect::from_dropdown_index(index) {
+            Some(e) => e,
+            None => return Task::none(),
+        };
+
+        info!(?effect, "Setting overlay effect");
+        self.config.overlay_effect = effect;
+
+        // The draw-time colour roots read the global, not `self.config`.
+        crate::app::overlay_style::init_overlay_effect(effect);
+
+        if let Some(handler) = self.config_handler.as_ref()
+            && let Err(err) = self.config.write_entry(handler)
+        {
+            error!(?err, "Failed to save overlay effect setting");
+        }
+
+        Task::none()
     }
 
     pub(crate) fn handle_select_default_mode(

@@ -45,3 +45,17 @@ pub async fn warmup_gpu_pipelines() -> Result<(), String> {
 /// Contains: luminance(), hash(), apply_filter()
 /// Used by: preview shaders, photo capture, virtual camera
 pub const FILTER_FUNCTIONS: &str = include_str!("filters.wgsl");
+
+/// Shared texture-sampling filter functions (WGSL)
+/// Contains: `apply_texture_filter()` — the filters that must re-sample the
+/// source texture (Chromatic Aberration, Pencil), which is why they are not in
+/// [`FILTER_FUNCTIONS`]: that prelude also feeds compute modules, and
+/// `textureSample` is fragment-only.
+/// Requires [`FILTER_FUNCTIONS`] ahead of it.
+/// Used by: the sharp preview shader, pass 0 of the frosted blur chain
+pub const TEXTURE_FILTER_FUNCTIONS: &str = include_str!("texture_filters.wgsl");
+
+/// Shared UI-geometry functions (WGSL)
+/// Contains: rounded_box_sdf()
+/// Used by: the video shader, the frosted composite, the gallery thumbnail shader
+pub const GEOMETRY_FUNCTIONS: &str = include_str!("geometry.wgsl");

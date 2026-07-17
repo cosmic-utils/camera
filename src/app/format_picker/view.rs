@@ -2,40 +2,14 @@
 
 //! Format picker UI view
 
+use crate::app::overlay_style::{OVERLAY_CONTAINER, PICKER_PANEL};
+use crate::app::preview_geometry::TOP_BAR_HEIGHT;
 use crate::app::state::{AppModel, Message};
-use crate::app::view::overlay_container_style;
-use crate::constants::ui::OVERLAY_BACKGROUND_ALPHA;
 use crate::constants::{formats, ui};
 use crate::fl;
 use cosmic::Element;
-use cosmic::iced::{Alignment, Background, Color, Length};
+use cosmic::iced::{Alignment, Length};
 use cosmic::widget;
-
-/// Create a container style for the picker panel background
-///
-/// Uses `radius_s` (slightly rounded) as the maximum roundness.
-/// This ensures the picker panel is either square or slightly rounded,
-/// even when the theme is set to "round".
-/// Does not set text_color to allow buttons to use their native COSMIC theme colors.
-fn picker_panel_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let bg = cosmic.bg_color();
-    widget::container::Style {
-        background: Some(Background::Color(Color::from_rgba(
-            bg.red,
-            bg.green,
-            bg.blue,
-            OVERLAY_BACKGROUND_ALPHA,
-        ))),
-        border: cosmic::iced::Border {
-            // Use radius_s to cap at "slightly rounded" for panel backgrounds
-            radius: cosmic.corner_radii.radius_s.into(),
-            ..Default::default()
-        },
-        // Don't set text_color - let buttons use their native COSMIC theme colors
-        ..Default::default()
-    }
-}
 
 impl AppModel {
     /// Build the iOS-style format picker overlay
@@ -85,7 +59,7 @@ impl AppModel {
 
             // Wrap in styled container with overlay background
             let styled_button = widget::container(button)
-                .style(overlay_container_style)
+                .style(OVERLAY_CONTAINER.style())
                 .width(Length::Fixed(BUTTON_WIDTH));
 
             res_row = res_row.push(styled_button);
@@ -149,7 +123,7 @@ impl AppModel {
 
                 // Wrap in styled container with overlay background
                 let styled_button = widget::container(button)
-                    .style(overlay_container_style)
+                    .style(OVERLAY_CONTAINER.style())
                     .width(Length::Fixed(BUTTON_WIDTH));
 
                 fps_row = fps_row.push(styled_button);
@@ -157,15 +131,16 @@ impl AppModel {
         }
 
         // Build picker panel with semi-transparent themed background
-        // Uses picker_panel_style which caps roundness at "slightly rounded"
-        let picker_panel = widget::container(
+        // Uses PICKER_PANEL which caps roundness at "slightly rounded"
+        let picker_panel = self.frosted_panel(
             widget::Column::new()
                 .push(res_row)
                 .push(widget::space::vertical().height(spacing.space_s))
                 .push(fps_row)
-                .padding(spacing.space_xs),
-        )
-        .style(picker_panel_style);
+                .padding(spacing.space_xs)
+                .into(),
+            PICKER_PANEL,
+        );
 
         // Position picker and add click-outside-to-close
         let picker_positioned = widget::Row::new()
@@ -176,7 +151,7 @@ impl AppModel {
                     .height(Length::Shrink),
             )
             .padding([
-                crate::app::view::TOP_BAR_HEIGHT as u16 + spacing.space_xs,
+                TOP_BAR_HEIGHT as u16 + spacing.space_xs,
                 spacing.space_xs,
                 0,
                 spacing.space_xs,

@@ -34,7 +34,7 @@ struct PinchState {
 }
 
 /// Content fit mode for video scaling
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoContentFit {
     /// Scale to fit within bounds, maintaining aspect ratio (letterboxing)
     Contain,
@@ -53,7 +53,7 @@ impl VideoContentFit {
 }
 
 /// Configuration for creating a video widget
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VideoWidgetConfig {
     /// Unique identifier for this video stream
     pub video_id: u64,
