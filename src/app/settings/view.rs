@@ -153,11 +153,8 @@ impl AppModel {
             widget::settings::view_column(vec![categories.into(), tools.into(), about.into()])
                 .into();
 
-        context_drawer::context_drawer(
-            content,
-            Message::ToggleContextPage(ContextPage::Settings),
-        )
-        .title(fl!("settings-title"))
+        context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Settings))
+            .title(fl!("settings-title"))
     }
 
     /// Wrap a sub-page's sections in a context drawer titled `title`, with a
@@ -168,23 +165,17 @@ impl AppModel {
         sections: Vec<Element<'a, Message>>,
     ) -> context_drawer::ContextDrawer<'a, Message> {
         let content: Element<'a, Message> = widget::settings::view_column(sections).into();
-        context_drawer::context_drawer(
-            content,
-            Message::ToggleContextPage(ContextPage::Settings),
-        )
-        .title(title)
-        .actions(self.settings_back_button())
+        context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Settings))
+            .title(title)
+            .actions(self.settings_back_button())
     }
 
     /// About sub-page: the standard COSMIC about panel with a back button.
     fn settings_about_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
         let about = widget::about(&self.about, |url| Message::LaunchUrl(url.to_string()));
-        context_drawer::context_drawer(
-            about,
-            Message::ToggleContextPage(ContextPage::Settings),
-        )
-        .title(fl!("about"))
-        .actions(self.settings_back_button())
+        context_drawer::context_drawer(about, Message::ToggleContextPage(ContextPage::Settings))
+            .title(fl!("about"))
+            .actions(self.settings_back_button())
     }
 
     /// A full-width menu row: leading icon, label, and (for drill-down rows) a
