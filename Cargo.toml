@@ -101,4 +101,4 @@ debug = 0
 opt-level = 1
 
 [dev-dependencies]
-naga = { version = "29.0.3", features = ["wgsl-in"] }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
