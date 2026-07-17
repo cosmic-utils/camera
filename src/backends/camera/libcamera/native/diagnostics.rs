@@ -2,50 +2,18 @@
 
 //! Pipeline diagnostics statics and accessors for the insights handler.
 
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
-use std::time::{Duration, Instant};
 
 /// Whether a capture thread currently holds a CameraManager.
 /// libcamera only allows one CameraManager at a time, so enumeration/format
 /// queries must not create a new one while this is true.
 pub(crate) static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Whether a capture thread has ever run and released its CameraManager.
-/// Used to skip the 500ms hardware-release delay on first startup where
-/// no previous CameraManager existed.
-pub(crate) static CAPTURE_EVER_RAN: AtomicBool = AtomicBool::new(false);
-
 /// Condvar notified when CAPTURE_ACTIVE transitions to false.
 /// Allows new capture threads to wake immediately instead of polling.
 pub(crate) static CAPTURE_RELEASED: (std::sync::Mutex<()>, std::sync::Condvar) =
     (std::sync::Mutex::new(()), std::sync::Condvar::new());
-
-/// When the last CameraManager was actually dropped.
-///
-/// The hardware-release delay exists to give the "simple" pipeline handler time
-/// to release V4L2 resources *after* the old CameraManager is gone. Sleeping a
-/// flat 500 ms in the new capture thread double-counts any time that already
-/// passed since the release (thread spawn, config writes, subscription
-/// restart). Recording the release instant lets the next thread wait only the
-/// remainder, preserving the same "≥ delay since release" guarantee without
-/// burning wall-clock the user can feel.
-static CAPTURE_RELEASED_AT: Mutex<Option<Instant>> = Mutex::new(None);
-
-/// Record that the CameraManager has just been dropped. Call *after* the drop.
-pub(crate) fn mark_capture_released() {
-    if let Ok(mut slot) = CAPTURE_RELEASED_AT.lock() {
-        *slot = Some(Instant::now());
-    }
-}
-
-/// How long since the last CameraManager was dropped, if one ever was.
-pub(crate) fn since_capture_released() -> Option<Duration> {
-    CAPTURE_RELEASED_AT
-        .lock()
-        .ok()
-        .and_then(|slot| slot.map(|at| at.elapsed()))
-}
 
 /// Pipeline diagnostics accessible by the insights handler.
 ///
