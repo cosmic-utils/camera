@@ -155,6 +155,7 @@ tools-aspect = Aspect
 tools-exposure = Exposure
 tools-color = Color
 tools-filter = Filter
+tools-motor = Motor
 
 # PTZ controls
 ptz-title = Camera Controls
