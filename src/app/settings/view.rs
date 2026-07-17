@@ -446,13 +446,6 @@ impl AppModel {
             .title(fl!("settings-bug-reports"))
             .add(widget::settings::item_row(vec![bug_report_control]));
 
-        // Reset section
-        let reset_section = widget::settings::section().add(widget::settings::item_row(vec![
-            widget::button::standard(fl!("settings-reset-all"))
-                .on_press(Message::ResetAllSettings)
-                .into(),
-        ]));
-
         // Insights section
         let insights_section = widget::settings::section()
             .title(fl!("settings-stats-for-nerds"))
@@ -460,6 +453,22 @@ impl AppModel {
                 widget::button::standard(fl!("insights-title"))
                     .on_press(Message::ToggleContextPage(
                         crate::app::state::ContextPage::Insights,
+                    ))
+                    .into(),
+            ]));
+
+        // Other section — reset all settings and the About page.
+        let other_section = widget::settings::section()
+            .title(fl!("settings-other"))
+            .add(widget::settings::item_row(vec![
+                widget::button::standard(fl!("settings-reset-all"))
+                    .on_press(Message::ResetAllSettings)
+                    .into(),
+            ]))
+            .add(widget::settings::item_row(vec![
+                widget::button::standard(fl!("about"))
+                    .on_press(Message::ToggleContextPage(
+                        crate::app::state::ContextPage::About,
                     ))
                     .into(),
             ]));
@@ -492,8 +501,8 @@ impl AppModel {
             virtual_camera_section.into(),
             shortcuts_section.into(),
             bug_reports_section.into(),
-            reset_section.into(),
             insights_section.into(),
+            other_section.into(),
         ]);
 
         let settings_content: Element<'_, Message> = widget::settings::view_column(sections).into();

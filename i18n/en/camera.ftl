@@ -64,6 +64,7 @@ settings-haptic-feedback-description = Vibrate on capture, mode switch, and came
 settings-reset-all = Reset all settings
 settings-bug-reports = Bug reports
 settings-stats-for-nerds = Stats for nerds
+settings-other = Other
 settings-report-bug = Report bug
 settings-show-report = Show Report
 settings-resolution = Resolution
