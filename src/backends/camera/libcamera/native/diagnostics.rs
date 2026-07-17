@@ -10,11 +10,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// queries must not create a new one while this is true.
 pub(crate) static CAPTURE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Whether a capture thread has ever run and released its CameraManager.
-/// Used to skip the 500ms hardware-release delay on first startup where
-/// no previous CameraManager existed.
-pub(crate) static CAPTURE_EVER_RAN: AtomicBool = AtomicBool::new(false);
-
 /// Condvar notified when CAPTURE_ACTIVE transitions to false.
 /// Allows new capture threads to wake immediately instead of polling.
 pub(crate) static CAPTURE_RELEASED: (std::sync::Mutex<()>, std::sync::Condvar) =

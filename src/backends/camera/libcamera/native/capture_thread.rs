@@ -7,8 +7,8 @@
 //! pointers.
 
 use super::diagnostics::{
-    CAPTURE_ACTIVE, CAPTURE_EVER_RAN, CAPTURE_RELEASED, DIAGNOSTICS, DiagnosticParams,
-    MJPEG_DECODE_TIME_US, PREVIEW_FRAME_COUNT, STILL_FRAME_COUNT, StreamDiag, publish_diagnostics,
+    CAPTURE_ACTIVE, CAPTURE_RELEASED, DIAGNOSTICS, DiagnosticParams, MJPEG_DECODE_TIME_US,
+    PREVIEW_FRAME_COUNT, STILL_FRAME_COUNT, StreamDiag, publish_diagnostics,
 };
 use super::pixel_formats::{map_pixel_format, pixel_format_name};
 use crate::backends::camera::types::*;
@@ -331,7 +331,6 @@ pub(crate) fn capture_thread_main(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
                 CAPTURE_ACTIVE.store(false, Ordering::Release);
-                CAPTURE_EVER_RAN.store(true, Ordering::Release);
                 CAPTURE_RELEASED.1.notify_all();
             }
             // If init_tx hasn't been used yet, report the error
@@ -419,34 +418,14 @@ fn capture_thread_setup_and_run(
         // can slip in between this store and CameraManager::new().
         CAPTURE_ACTIVE.store(true, Ordering::Release);
 
-        // Release the lock during the hardware release delay so UI threads
-        // calling enumerate_cameras()/get_formats() are not blocked.
-        // CAPTURE_ACTIVE=true already prevents other capture threads from racing past.
-        drop(mgr_lock);
-
-        // Delay for hardware release — the "simple" pipeline handler needs time
-        // to fully release V4L2 resources before a new CameraManager can start.
-        // Skip on first startup: no previous CameraManager existed to release.
-        if CAPTURE_EVER_RAN.load(Ordering::Acquire) {
-            info!("Waiting 500ms for hardware release");
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        } else {
-            info!("First capture — skipping hardware release delay");
-        }
-
-        // Check cancel after the sleep
-        if params.cancel_flag.load(Ordering::Acquire) {
-            info!("Cancel flag set after wait — aborting capture thread startup");
-            CAPTURE_ACTIVE.store(false, Ordering::Release);
-            CAPTURE_RELEASED.1.notify_all();
-            return Ok(());
-        }
-
-        // Re-acquire the lock for CameraManager creation
-        let _mgr_lock = super::super::CAMERA_MANAGER_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-
+        // No hardware-release delay: the condvar wait above already guarantees
+        // the previous CameraManager has been dropped, which is the only
+        // ordering libcamera actually documents. The old flat 500 ms sleep on
+        // top of that was a guess, and it dominated every camera switch.
+        //
+        // If a device turns out to need settling time after the drop, the fix
+        // belongs here — but as a retry around the acquire/start below, keyed on
+        // the real failure, not an unconditional wait every device pays.
         CameraManager::new()
             .map_err(|e| BackendError::InitializationFailed(format!("CameraManager::new: {}", e)))?
     };
@@ -584,7 +563,6 @@ fn capture_thread_setup_and_run(
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         CAPTURE_ACTIVE.store(false, Ordering::Release);
-        CAPTURE_EVER_RAN.store(true, Ordering::Release);
         CAPTURE_RELEASED.1.notify_all();
     }
     info!("CameraManager released");

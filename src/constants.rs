@@ -262,6 +262,11 @@ pub mod latency {
 
     /// Pipeline cleanup delay in milliseconds before creating new pipeline
     pub const PIPELINE_CLEANUP_DELAY_MS: u64 = 20;
+
+    /// How long the frozen blur stays up after the new camera's first frame
+    /// lands, covering sensor auto-exposure settling. The UI is disabled for
+    /// this window, so it is paid in full on every camera switch.
+    pub const CAMERA_SWITCH_BLUR_HOLD_MS: u64 = 200;
 }
 
 /// Resolution labels for format picker

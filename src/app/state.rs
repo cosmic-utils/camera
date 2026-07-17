@@ -955,7 +955,7 @@ impl Default for TransitionState {
             transition_start_time: None,
             first_frame_time: None,
             ui_disabled: false,
-            blur_duration_ms: 1000, // Default 1 second for camera switches
+            blur_duration_ms: crate::constants::latency::CAMERA_SWITCH_BLUR_HOLD_MS,
         }
     }
 }
@@ -1799,10 +1799,14 @@ pub enum Message {
 }
 
 impl TransitionState {
-    /// Start a transition - enable blur, disable UI, and wait for first frame
-    /// Uses default blur duration (1 second)
+    /// Start a transition - enable blur, disable UI, and wait for first frame.
+    ///
+    /// The hold runs *after* the new camera's first frame arrives, and the UI
+    /// stays disabled for all of it, so it is added to every camera switch in
+    /// full. It only needs to cover auto-exposure settling, not the pipeline
+    /// restart (the blur is already up for that).
     pub fn start(&mut self) -> cosmic::Task<Message> {
-        self.start_with_duration(1000, true)
+        self.start_with_duration(crate::constants::latency::CAMERA_SWITCH_BLUR_HOLD_MS, true)
     }
 
     /// Start a transition with custom blur duration
