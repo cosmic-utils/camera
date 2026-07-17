@@ -830,7 +830,7 @@ impl AppModel {
                 .height(Length::Shrink),
         );
 
-        // Top-bar toggle buttons (flash, HDR, file, motor, tools) are always
+        // Top-bar toggle buttons (flash, HDR, file, tools) are always
         // shown. Picker overlays appear on top of them but never replace them.
         // Flash toggle button (Photo mode, or Video/Timelapse mode with hardware flash for torch)
         if self.mode == CameraMode::Photo
@@ -937,36 +937,7 @@ impl AppModel {
             );
         }
 
-        // Motor/PTZ control button (shows when camera has motor controls)
-        if self.has_motor_controls() {
-            let motor_icon = widget::icon::from_svg_bytes(CAMERA_TILT_ICON).symbolic(true);
-
-            if is_disabled {
-                row = row.push(
-                    widget::container(widget::icon(motor_icon.clone()).size(20))
-                        .style(|_theme| widget::container::Style {
-                            text_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.3)),
-                            ..Default::default()
-                        })
-                        .padding([4, 8]),
-                );
-            } else {
-                row = row.push(overlay_icon_button(
-                    motor_icon,
-                    Some(Message::ToggleMotorPicker),
-                    self.motor_picker_visible,
-                ));
-            }
-
-            // 5px spacing
-            row = row.push(
-                widget::Space::new()
-                    .width(Length::Fixed(5.0))
-                    .height(Length::Shrink),
-            );
-        }
-
-        // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter)
+        // Tools menu button (opens overlay with timer, aspect ratio, exposure, filter, motor)
         // Highlight when tools menu is open or any tool setting is non-default
         let tools_active = self.tools_menu_visible || self.has_non_default_tool_settings();
         let tools_icon = widget::icon::from_svg_bytes(TOOLS_GRID_ICON).symbolic(true);
@@ -1299,6 +1270,16 @@ impl AppModel {
                 fl!("tools-filter"),
                 Message::ToggleContextPage(crate::app::state::ContextPage::Filters),
                 filter_active,
+            ));
+        }
+
+        // Motor/PTZ button (shows when camera has motor controls)
+        if self.has_motor_controls() {
+            buttons.push(self.build_tools_grid_button(
+                widget::icon::from_svg_bytes(CAMERA_TILT_ICON).symbolic(true),
+                fl!("tools-motor"),
+                Message::ToggleMotorPicker,
+                self.motor_picker_visible,
             ));
         }
 
