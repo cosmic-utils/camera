@@ -109,6 +109,7 @@ impl AppModel {
 
         context_drawer::context_drawer(content, Message::ToggleContextPage(ContextPage::Insights))
             .title(fl!("insights-title"))
+            .actions(self.settings_back_button())
     }
 
     /// Build the Pipeline section

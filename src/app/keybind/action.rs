@@ -155,7 +155,7 @@ impl Action {
     /// for `Action::Capture` to dispatch context-aware messages — every other
     /// action uses this mapping directly.
     pub fn message(self) -> crate::app::state::Message {
-        use crate::app::state::{ContextPage, Message};
+        use crate::app::state::{ContextPage, Message, SettingsPage};
         match self {
             Action::Capture => Message::Capture,
             // PhotoSnapshot is suppressed in the subscription unless video is
@@ -182,7 +182,7 @@ impl Action {
             Action::CyclePhotoAspectRatio => Message::CyclePhotoAspectRatio,
 
             Action::OpenGallery => Message::OpenGallery,
-            Action::ToggleAbout => Message::ToggleContextPage(ContextPage::About),
+            Action::ToggleAbout => Message::OpenSettingsPage(SettingsPage::About),
             Action::ResetAllSettings => Message::ResetAllSettings,
             Action::ShowShortcuts => Message::ToggleContextPage(ContextPage::KeyBindings),
             Action::QuitApp => Message::WindowClose,

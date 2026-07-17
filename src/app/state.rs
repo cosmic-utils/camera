@@ -606,6 +606,8 @@ pub struct AppModel {
     pub core: cosmic::Core,
     /// Display a context drawer with the designated page if defined.
     pub context_page: ContextPage,
+    /// Which settings sub-page is shown while the Settings drawer is open.
+    pub settings_page: SettingsPage,
     /// Active key bindings (defaults merged with user overrides).
     pub bindings: crate::app::keybind::Bindings,
     /// Set while the user is recording a new keybind via the Settings page.
@@ -1350,12 +1352,30 @@ impl FilterType {
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum ContextPage {
     #[default]
-    About,
     Settings,
     Filters,
     Insights,
     /// Keyboard shortcuts rebinding page (opened from the Settings drawer).
     KeyBindings,
+}
+
+/// Which sub-page is shown inside the Settings context drawer.
+///
+/// The drawer is a drill-down: `Root` shows a short category menu, and each
+/// other variant is a focused sub-page reached from it with a back button.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum SettingsPage {
+    /// Top-level category menu.
+    #[default]
+    Root,
+    Camera,
+    Photo,
+    Video,
+    Timelapse,
+    Appearance,
+    VirtualCamera,
+    BugReports,
+    About,
 }
 
 /// Transient state while the user is recording a new keybind for an Action.
@@ -1382,8 +1402,10 @@ pub enum Message {
     // ===== UI Navigation =====
     /// Open external URL (repository, etc.)
     LaunchUrl(String),
-    /// Toggle context drawer page (About, Settings)
+    /// Toggle context drawer page (Settings, Insights, ...)
     ToggleContextPage(ContextPage),
+    /// Navigate to a settings sub-page within the Settings drawer.
+    OpenSettingsPage(SettingsPage),
     /// Toggle format picker visibility
     ToggleFormatPicker,
     /// Close format picker
