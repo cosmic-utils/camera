@@ -6,7 +6,6 @@ use crate::app::format_picker::preferences as format_selection;
 use crate::app::state::{AppModel, CameraMode};
 use crate::backends::camera::types::{CameraFormat, Framerate};
 use crate::config::BurstModeSetting;
-use cosmic::cosmic_config::CosmicConfigEntry;
 use tracing::{error, info};
 
 /// Helper to compare Framerate with config's u32 framerate
@@ -115,29 +114,45 @@ impl AppModel {
         // Store in per-camera settings based on current mode.
         // Virtual / Timelapse / View share Photo's per-camera format slot
         // (View is a passive viewer with no format choice of its own).
-        let mode_name = match self.mode {
+        let (mode_name, settings_key) = match self.mode {
             CameraMode::Photo | CameraMode::Virtual | CameraMode::Timelapse | CameraMode::View => {
                 self.config
                     .photo_settings
                     .insert(camera.path.clone(), format_settings);
-                match self.mode {
+                let name = match self.mode {
                     CameraMode::Photo => "Photo",
                     CameraMode::Virtual => "Virtual",
                     CameraMode::Timelapse => "Timelapse",
                     CameraMode::View => "View",
                     _ => unreachable!(),
-                }
+                };
+                (name, "photo_settings")
             }
             CameraMode::Video => {
                 self.config
                     .video_settings
                     .insert(camera.path.clone(), format_settings);
-                "Video"
+                ("Video", "video_settings")
             }
         };
 
-        // Save to disk
-        if let Err(err) = self.config.write_entry(handler) {
+        // Save to disk. Only the one settings map that changed is written —
+        // `write_entry` would rewrite all 27 Config fields (~230 ms) on the
+        // camera-switch critical path.
+        let write_result = match settings_key {
+            "video_settings" => cosmic::cosmic_config::ConfigSet::set(
+                handler,
+                settings_key,
+                &self.config.video_settings,
+            ),
+            _ => cosmic::cosmic_config::ConfigSet::set(
+                handler,
+                settings_key,
+                &self.config.photo_settings,
+            ),
+        };
+
+        if let Err(err) = write_result {
             error!(?err, "Failed to save {} settings", mode_name);
         } else {
             info!(
@@ -287,10 +302,21 @@ impl AppModel {
 
         // Persist the intent to disk so a crash before first-frame leaves a
         // tombstone that the next launch will use to skip this camera.
+        //
+        // Write only the one key that changed. `write_entry` serialises and
+        // rewrites all 27 Config fields (one file each), which measured
+        // ~230 ms on the switch critical path; a single-key set is one file.
+        // The write stays synchronous on purpose — the tombstone must reach
+        // disk *before* the pipeline starts, or a crash during pipeline
+        // creation leaves nothing for the next launch to skip (issue #410).
         if self.config.pending_camera_path.as_ref() != Some(&camera_path) {
             self.config.pending_camera_path = Some(camera_path);
             if let Some(handler) = self.config_handler.as_ref()
-                && let Err(err) = self.config.write_entry(handler)
+                && let Err(err) = cosmic::cosmic_config::ConfigSet::set(
+                    handler,
+                    "pending_camera_path",
+                    &self.config.pending_camera_path,
+                )
             {
                 error!(?err, "Failed to persist pending_camera_path");
             }

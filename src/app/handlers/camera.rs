@@ -30,8 +30,6 @@ impl AppModel {
         &mut self,
         frame: &crate::backends::camera::types::CameraFrame,
     ) {
-        use cosmic::cosmic_config::CosmicConfigEntry;
-
         let ready = self
             .pending_persist_camera
             .as_ref()
@@ -48,8 +46,33 @@ impl AppModel {
         let had_failed = !self.config.failed_camera_paths.is_empty();
         self.config.failed_camera_paths.clear();
 
+        // Write only the three keys that changed rather than all 27 Config
+        // fields. This runs on the first frame of every switch, i.e. while the
+        // user is waiting for the preview to come back.
         if let Some(handler) = self.config_handler.as_ref() {
-            if let Err(err) = self.config.write_entry(handler) {
+            use cosmic::cosmic_config::ConfigSet;
+            let result = ConfigSet::set(handler, "last_camera_path", &self.config.last_camera_path)
+                .and_then(|()| {
+                    ConfigSet::set(
+                        handler,
+                        "pending_camera_path",
+                        &self.config.pending_camera_path,
+                    )
+                })
+                .and_then(|()| {
+                    // Only rewrite the failed list when it actually had entries.
+                    if had_failed {
+                        ConfigSet::set(
+                            handler,
+                            "failed_camera_paths",
+                            &self.config.failed_camera_paths,
+                        )
+                    } else {
+                        Ok(())
+                    }
+                });
+
+            if let Err(err) = result {
                 error!(?err, "Failed to persist camera selection after first frame");
             } else if had_failed {
                 info!("Cleared crash-recovery state after first successful frame");
@@ -129,7 +152,17 @@ impl AppModel {
         self.blur_frame_mirror = self.should_mirror_preview();
         self.blur_frame_zoom = self.current_zoom_level();
 
-        self.current_frame = None;
+        // Deliberately KEEP `current_frame`: it is the old camera's last frame,
+        // and it is what the transition blur paints until the new camera's
+        // first frame replaces it. The snapshot above pins the old camera's
+        // rotation/mirror/zoom, so it renders correctly even though
+        // `current_camera_index` changes on the next line.
+        //
+        // Clearing it here used to appear harmless only because the old
+        // pipeline kept streaming for the ~450 ms of config writes that used to
+        // sit on this path, so a stale frame refilled it before the next
+        // repaint. With those writes gone the preview went blank for the whole
+        // switch instead of blurring.
         self.current_camera_index = new_index;
         self.zoom_level = 1.0;
         self.photo_aspect_ratio = self.config.photo_aspect_ratio;

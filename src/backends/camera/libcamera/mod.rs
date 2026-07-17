@@ -54,6 +54,23 @@ use tracing::{debug, info, warn};
 /// don't overlap and trigger the "Multiple CameraManager objects" abort.
 static CAMERA_MANAGER_LOCK: Mutex<()> = Mutex::new(());
 
+/// Detect the libcamera pipeline handler from a camera ID.
+///
+/// The "simple" pipeline handler (Software ISP, used by phone platforms) uses
+/// device-tree paths that start with "/base/" (older libcamera) or "platform/"
+/// (libcamera 0.7+). Anything else — notably USB webcams on `uvcvideo` — is
+/// left unidentified.
+///
+/// This is the single source of truth for the check: both enumeration and the
+/// capture thread's hardware-release delay depend on it.
+pub(crate) fn detect_pipeline_handler(camera_id: &str) -> Option<&'static str> {
+    if camera_id.starts_with("/base/") || camera_id.starts_with("platform/") {
+        Some("simple")
+    } else {
+        None
+    }
+}
+
 /// Cached enumeration result, returned when capture is active and
 /// a new CameraManager cannot be created.
 static CACHED_DEVICES: std::sync::RwLock<Vec<CameraDevice>> = std::sync::RwLock::new(Vec::new());
@@ -403,15 +420,7 @@ impl CameraBackend for LibcameraBackend {
                 generate_pretty_name(sensor_model.as_deref(), camera_location.as_deref())
                     .unwrap_or_else(|| sensor_model.as_deref().unwrap_or(&camera_id).to_string());
 
-            // Detect pipeline handler from camera path.
-            // The "simple" pipeline handler uses device-tree paths that start
-            // with "/base/" (older libcamera) or "platform/" (libcamera 0.7+).
-            let pipeline_handler =
-                if camera_id.starts_with("/base/") || camera_id.starts_with("platform/") {
-                    Some("simple".to_string())
-                } else {
-                    None
-                };
+            let pipeline_handler = detect_pipeline_handler(&camera_id).map(str::to_string);
 
             let supports_multistream =
                 v4l2_utils::supports_multistream(pipeline_handler.as_deref());
@@ -805,4 +814,36 @@ pub fn create_pipeline(
         },
         receiver,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::detect_pipeline_handler;
+
+    /// The hardware-release delay before a new CameraManager is created is
+    /// gated on this returning Some("simple"). A false negative would skip a
+    /// delay that real hardware needs, so pin both phone path formats.
+    #[test]
+    fn simple_handler_detected_for_device_tree_paths() {
+        // libcamera 0.7+ (postmarketOS / qcom platforms)
+        assert_eq!(
+            detect_pipeline_handler("platform/soc@0/ac5a000.camss"),
+            Some("simple")
+        );
+        // Older libcamera
+        assert_eq!(
+            detect_pipeline_handler("/base/soc/ac5a000.camss"),
+            Some("simple")
+        );
+    }
+
+    #[test]
+    fn usb_webcams_have_no_known_handler() {
+        // uvcvideo IDs are ACPI/USB topology paths, never device-tree paths.
+        assert_eq!(
+            detect_pipeline_handler("\\_SB_.PCI0.GPP7.UP00.DP60.XH00.RHUB.POT9-4:1.0-046d:0825"),
+            None
+        );
+        assert_eq!(detect_pipeline_handler(""), None);
+    }
 }

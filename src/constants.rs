@@ -262,6 +262,18 @@ pub mod latency {
 
     /// Pipeline cleanup delay in milliseconds before creating new pipeline
     pub const PIPELINE_CLEANUP_DELAY_MS: u64 = 20;
+
+    /// Minimum time that must elapse between dropping a CameraManager and
+    /// creating the next one, so libcamera's "simple" pipeline handler can
+    /// release V4L2 resources. Enforced as a deadline measured from the actual
+    /// release instant, not as an unconditional sleep — see
+    /// `capture_thread::capture_thread_setup_and_run`.
+    pub const HARDWARE_RELEASE_DELAY_MS: u64 = 500;
+
+    /// How long the frozen blur stays up after the new camera's first frame
+    /// lands, covering sensor auto-exposure settling. The UI is disabled for
+    /// this window, so it is paid in full on every camera switch.
+    pub const CAMERA_SWITCH_BLUR_HOLD_MS: u64 = 200;
 }
 
 /// Resolution labels for format picker
