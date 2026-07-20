@@ -108,6 +108,10 @@ jobs:
           sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" Cargo.toml
           echo "✅ Updated Cargo.toml to version $VERSION"
 
+      # Adds a <release> entry to the metainfo file. scripts/gen-metadata.py also
+      # writes this file, but only the translated values: it leaves <releases>
+      # alone precisely so this step owns it. Keep that split intact when
+      # changing either one.
       - name: Update metainfo.xml
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -199,15 +203,17 @@ jobs:
           cargo update --workspace
           echo "✅ Updated Cargo.lock"
 
+      - name: Install just
+        uses: extractions/setup-just@v4
+
       - name: Install Python dependencies
         run: pip install aiohttp toml tomlkit
 
+      # Must happen here rather than in regenerate.yml: the tag is created a few
+      # steps below, so cargo-sources.json has to match the Cargo.lock written
+      # above before the tagged commit exists.
       - name: Generate cargo-sources.json for Flathub
-        run: |
-          curl -sLo flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
-          python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
-          rm flatpak-cargo-generator.py
-          echo "📦 Generated cargo-sources.json for Flathub"
+        run: just flatpak-cargo-sources
 
       - name: Commit release changes
         id: commit

@@ -259,8 +259,13 @@ flatpak-build: flatpak-cargo-sources
     rm -f .flatpak-version
     echo "Flatpak built and installed!"
 
+# Deliberately does not regenerate cargo-sources.json first. Flathub builds from
+# the committed file, so building from it here too means CI fails loudly when it
+# has drifted from Cargo.lock, instead of masking the drift by overwriting it.
+# Run `just flatpak-cargo-sources` yourself after changing dependencies.
+
 # Build Flatpak bundle for distribution (optionally specify arch)
-flatpak-bundle arch="": flatpak-cargo-sources
+flatpak-bundle arch="":
     #!/usr/bin/env bash
     set -euo pipefail
     arch="{{arch}}"

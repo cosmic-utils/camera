@@ -349,9 +349,6 @@ jobs:
       - name: Install Flatpak dependencies
         run: just flatpak-deps x86_64
 
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
-
       - name: Build Flatpak bundle
         run: just flatpak-bundle x86_64
 
@@ -405,9 +402,6 @@ jobs:
       - name: Install Flatpak dependencies
         run: just flatpak-deps aarch64
 
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
-
       - name: Build Flatpak bundle
         run: just flatpak-bundle aarch64
 
@@ -460,9 +454,6 @@ jobs:
 
       - name: Install Flatpak dependencies
         run: just flatpak-deps arm
-
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
 
       - name: Build Flatpak bundle
         run: just flatpak-bundle arm
