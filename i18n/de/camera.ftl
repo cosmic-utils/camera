@@ -4,8 +4,7 @@ repository = Repository
 view = Ansicht
 welcome = Willkommen bei COSMIC! ✨
 page-id = Seite { $num }
-git-description = Git-Commit {$hash} am {$date}
-
+git-description = Git-Commit { $hash } am { $date }
 # Mode switcher
 mode-video = Video
 mode-photo = Foto
@@ -13,7 +12,6 @@ mode-timelapse = Zeitraffer
 timelapse-saving = Video wird gespeichert...
 mode-virtual = Virtuell
 mode-view = View
-
 # Virtual camera
 virtual-camera-title = Virtuelle Kamera (experimentell)
 virtual-camera-description = Übertrage dein Kamerabild an andere Anwendungen über ein virtuelles Kameragerät. Erfordert PipeWire.
@@ -21,10 +19,8 @@ virtual-camera-enable = Virtuelle Kamera aktivieren
 streaming-live = LIVE
 virtual-camera-open-file = Datei öffnen
 virtual-camera-file-filter-name = Bilder und Videos
-
 # Filters
 filters-title = Filter
-
 # Settings
 settings-title = Einstellungen
 settings-appearance = Erscheinungsbild
@@ -59,7 +55,6 @@ settings-show-report = Bericht anzeigen
 settings-resolution = Auflösung
 settings-version = Version { $version }
 settings-version-flatpak = Version { $version } (Flatpak)
-
 # Device info
 device-info-card = Karte
 device-info-driver = Treiber
@@ -74,19 +69,15 @@ device-info-multistream-yes = Unterstützt
 device-info-multistream-no = Nicht unterstützt
 device-info-rotation = Rotation
 device-info-none = Keine Geräteinformationen verfügbar
-
 # Bitrate presets
 preset-low = Niedrig
 preset-medium = Mittel
 preset-high = Hoch
-
 # Camera preview
 initializing-camera = Kamera wird initialisiert...
-
 # Format picker
 format-resolution = Auflösung:
 format-framerate = Bildrate:
-
 # Status indicators
 indicator-res = RES
 indicator-fps = FPS
@@ -94,10 +85,9 @@ indicator-hd = HD
 indicator-sd = SD
 indicator-4k = 4K
 indicator-720p = 720p
-
 # QR code actions
 qr-open-link = Link öffnen
-qr-connect-wifi = Mit WLAN verbinden
+qr-connect-wifi = Mit WiFi verbinden
 qr-copy-text = Text kopieren
 qr-call = Anrufen
 qr-send-email = E-Mail senden
@@ -105,7 +95,6 @@ qr-send-sms = SMS senden
 qr-open-map = Karte öffnen
 qr-add-contact = Kontakt hinzufügen
 qr-add-event = Termin hinzufügen
-
 # Exposure controls
 exposure-mode = Modus
 exposure-ev = EV
@@ -121,11 +110,9 @@ exposure-backlight = Gegenlicht
 exposure-manual-mode = Manuell
 exposure-auto-mode = Automatik
 exposure-not-supported = nicht unterstützt
-
 # Focus controls
 focus-auto = Fokus
 focus-position = Fokus
-
 # Color controls
 color-title = Farbe
 color-contrast = Kontrast
@@ -136,28 +123,23 @@ color-white-balance = Weißabgleich
 color-temperature = Temperatur
 color-auto = Automatik
 color-manual = Manuell
-
 # Tools menu
 tools-timer = Timer
 tools-aspect = Seitenverhältnis
 tools-exposure = Belichtung
 tools-color = Farbe
 tools-filter = Filter
-
 # PTZ controls
 ptz-title = Kamerasteuerung
-
 # Privacy cover warning
 privacy-cover-closed = Sichtschutzabdeckung ist geschlossen
 privacy-cover-hint = Öffne die Sichtschutzabdeckung, um die Kamera zu verwenden
-
 # Burst mode / HDR+
 burst-mode-hold-steady = Ruhig halten...
 burst-mode-frames = { $captured }/{ $total } Bilder
 burst-mode-processing = Verarbeitung...
 burst-mode-quality = Qualität (FFT)
 burst-mode-fast = Schnell (Räumlich)
-
 # HDR+ dropdown options
 hdr-plus-off = Aus
 hdr-plus-auto = Automatik
@@ -165,7 +147,6 @@ hdr-plus-frames-4 = 4 Bilder
 hdr-plus-frames-6 = 6 Bilder
 hdr-plus-frames-8 = 8 Bilder
 hdr-plus-frames-50 = 50 Bilder
-
 # Photo settings
 settings-photo = Foto
 settings-photo-format = Ausgabeformat
@@ -176,7 +157,6 @@ settings-burst-mode-quality = HDR+-Algorithmus
 settings-burst-mode-quality-description = Qualität verwendet FFT-Frequenzbereichszusammenführung für beste Ergebnisse. Schnell verwendet räumliche Zusammenführung für schnellere Verarbeitung.
 settings-save-burst-raw = Burst-Rohbilder speichern
 settings-save-burst-raw-description = Einzelne Burst-Bilder als DNG-Dateien neben HDR+-Fotos speichern. Nützlich zur Fehlersuche oder Nachbearbeitung.
-
 # Composition guide
 settings-composition-guide = Kompositionshilfe
 settings-composition-guide-description = Hilfslinien über die Kameravorschau zur Bildgestaltung einblenden
@@ -189,19 +169,15 @@ guide-spiral-bottom-left = Goldener Schnitt ↙
 guide-spiral-bottom-right = Goldener Schnitt ↘
 guide-diagonal = Diagonalen
 guide-crosshair = Fadenkreuz
-
 # About page
 about-support = Hilfe & Feedback
-
 # Insights
 insights-title = Einblicke
 insights-pipeline = Pipeline
 insights-pipeline-full = GStreamer-Pipeline
 insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Decoder-Fallback-Kette
-
 insights-stream-combined = Vorschau- + Aufnahmestrom
-
 insights-frame-latency = Bildlatenz
 insights-dropped-frames = Verworfene Bilder
 insights-frame-size-decoded = Bildgröße
@@ -209,7 +185,6 @@ insights-decode-time-gst = Pufferverarbeitung
 insights-copy-time = Bild-Wrap-Zeit
 insights-gpu-upload-time = GPU-Upload-Zeit
 insights-gpu-upload-bandwidth = GPU-Upload-Bandbreite
-
 insights-format-source = Quelle
 insights-format-resolution = Auflösung
 insights-format-framerate = Bildrate
@@ -218,11 +193,9 @@ insights-format-gstreamer = GStreamer-Ausgabe
 insights-cpu-processing = CPU-Verarbeitung
 insights-cpu-decode-time = CPU-Dekodierzeit
 insights-format-wgpu = GPU-Verarbeitung
-
 insights-selected = Ausgewählt
 insights-available = Verfügbar
 insights-unavailable = Nicht verfügbar
-
 # Insights - Backend
 insights-backend = Backend
 insights-backend-type = Typ
@@ -230,7 +203,6 @@ insights-pipeline-handler = Pipeline-Handler
 insights-libcamera-version = libcamera-Version
 insights-sensor-model = Sensor
 insights-mjpeg-decoder = MJPEG-Decoder
-
 # Insights - Multi-stream
 insights-multistream-single = Einzelstrom
 insights-multistream-dual = Doppelstrom
@@ -242,7 +214,6 @@ insights-stream-role = Rolle
 insights-stream-resolution = Auflösung
 insights-stream-pixel-format = Pixelformat
 insights-stream-frame-count = Bilder
-
 # Insights - Recording
 insights-recording = Aufnahme-Pipeline
 insights-recording-mode = Modus
@@ -257,7 +228,6 @@ insights-recording-delay = Verarbeitungsverzögerung
 insights-recording-convert = NV12-Konvertierung
 insights-recording-pts = Aktueller PTS
 insights-recording-pipeline = Pipeline
-
 # Insights - Audio
 insights-audio = Audio
 insights-audio-recording = Aufnahme
@@ -274,7 +244,6 @@ insights-audio-format = Format
 insights-audio-inputs = Eingangskanäle
 insights-audio-output-level = Ausgabepegel
 insights-audio-not-recording = Keine Aufnahme
-
 # Insights - Per-frame metadata
 insights-metadata = Bild-Metadaten
 insights-meta-exposure = Belichtung
@@ -288,56 +257,69 @@ insights-meta-lens-position = Linsenposition
 insights-meta-lux = Beleuchtungsstärke
 insights-meta-focus-fom = Fokus-FoM
 insights-meta-na = k. A.
-
 # Timelapse
 settings-timelapse = Zeitraffer
 settings-timelapse-interval = Intervall
 settings-timelapse-interval-description = Zeit zwischen aufeinanderfolgenden Fotoaufnahmen
-
 # Insights - Capture
 insights-capture = Aufnahme
 insights-capture-burst = Serienaufnahme
-
 # Keyboard shortcuts — categories (placeholder, needs translation)
-shortcut-category-capture = Capture
+shortcut-category-capture = Aufnahme
 shortcut-category-camera = Camera
-shortcut-category-pickers = Pickers
-shortcut-category-display = Display
-shortcut-category-zoom = Zoom & framing
+shortcut-category-pickers = Auswahlmenüs
+shortcut-category-display = Anzeige
+shortcut-category-zoom = Zoom & Bildausschnitt
 shortcut-category-app = App
-
-action-capture = Capture / Record / Play-Pause
-action-photo-snapshot = Photo during recording
-action-switch-camera = Switch camera
-action-toggle-focus-auto = Toggle auto focus
-action-toggle-flash = Toggle flash
-action-toggle-exposure-picker = Toggle exposure picker
-action-toggle-color-picker = Toggle color picker
-action-toggle-motor-picker = Toggle motor controls
-action-toggle-format-picker = Toggle format picker
-action-toggle-settings = Open settings
+action-capture = Aufnahme / Aufzeichnen / Wiedergabe-Pause
+action-photo-snapshot = Foto während der Aufzeichnung
+action-switch-camera = Kamera wechseln
+action-toggle-focus-auto = Autofokus umschalten
+action-toggle-flash = Blitz umschalten
+action-toggle-exposure-picker = Belichtungsauswahl umschalten
+action-toggle-color-picker = Farbauswahl umschalten
+action-toggle-motor-picker = Motorsteuerung umschalten
+action-toggle-format-picker = Formatauswahl umschalten
+action-toggle-settings = Einstellungen öffnen
 action-next-mode = Next mode
-action-prev-mode = Previous mode
+action-prev-mode = Vorheriger Modus
 action-zoom-in = Zoom in
-action-zoom-out = Zoom out
+action-zoom-out = Verkleinern
 action-reset-zoom = Reset zoom
-action-cycle-photo-aspect-ratio = Cycle photo aspect ratio
-action-open-gallery = Open gallery
-action-toggle-about = About
-action-reset-all-settings = Reset all settings
-action-show-shortcuts = Show shortcuts
-action-quit-app = Quit
-
-shortcuts-help-title = Keyboard Shortcuts
-shortcuts-help-customize = Customize in Settings → Keyboard Shortcuts
+action-cycle-photo-aspect-ratio = Foto-Seitenverhältnis durchschalten
+action-open-gallery = Galerie öffnen
+action-toggle-about = Über
+action-reset-all-settings = Alle Einstellungen zurücksetzen
+action-show-shortcuts = Tastenkürzel anzeigen
+action-quit-app = Beenden
+shortcuts-help-title = Tastenkürzel
+shortcuts-help-customize = Anpassen unter Einstellungen → Tastenkürzel
 shortcuts-help-unbound = —
-keybindings-page-title = Keyboard Shortcuts
-keybindings-page-back = Back
-keybindings-page-reset-all = Reset all to defaults
-keybindings-page-reset-section = Reset section to defaults
-keybindings-record-title = Press a key combination
-keybindings-record-hint = Press the key combination you want, or Esc to cancel
-keybindings-record-conflict = This combination is already used by "{$other}". Replace?
-keybindings-record-replace = Replace
-keybindings-record-cancel = Cancel
-keybindings-record-save = Save
+keybindings-page-title = Tastenkürzel
+keybindings-page-back = Zurück
+keybindings-page-reset-all = Alle auf Standard zurücksetzen
+keybindings-page-reset-section = Abschnitt auf Standard zurücksetzen
+keybindings-record-title = Tastenkombination drücken
+keybindings-record-hint = Drücke die gewünschte Tastenkombination oder Esc zum Abbrechen
+keybindings-record-conflict = Diese Kombination wird bereits von „{ $other }“ verwendet. Ersetzen?
+keybindings-record-replace = Ersetzen
+keybindings-record-cancel = Abbrechen
+keybindings-record-save = Speichern
+settings-overlay-effect = Overlay Effekt
+settings-overlay-effect-description = Wie Bedienelemente über der Vorschau dargestellt werden. Milchglas macht die Vorschau dahinter unscharf, was mehr GPU-Leistung benötigt.
+overlay-effect-system = System
+overlay-effect-frosted = Milchglass
+overlay-effect-translucent = Transparent
+overlay-effect-off = Aus
+settings-default-mode = Standardmodus
+settings-default-mode-description = Kameramodus, der beim Start der App verwendet wird
+settings-mic-level = Mikrofonpegel
+settings-mic-level-initializing = Wird initialisiert…
+preview-fit = Einpassen
+preview-cover = Ausfüllen
+tools-motor = Motor
+insights-v4l2-formats = V4L2-Geräteformate
+insights-v4l2-no-device = Kein V4L2-Gerät
+insights-v4l2-in-libcamera = In libcamera verfügbar
+insights-v4l2-active-in-libcamera = In libcamera aktiv
+insights-v4l2-not-in-libcamera = In libcamera nicht verfügbar
