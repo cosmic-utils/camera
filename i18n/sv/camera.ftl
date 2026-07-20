@@ -1,22 +1,18 @@
 app-title = Kamera
 about = Om
 repository = Källkod
-
 # Lägesväxlare
 mode-video = VIDEO
 mode-photo = FOTO
 mode-virtual = VIRTUELL
 mode-view = View
-
 # Virtual camera
 virtual-camera-title = Virtuell kamera (experimentellt)
 virtual-camera-description = Strömma din kameraström till andra program via en virtuell kameraenhet. Kräver PipeWire.
 streaming-live = LIVE
 virtual-camera-file-filter-name = Bilder och videor
-
 # Filter
 filters-title = Filter
-
 # Inställningar
 settings-title = Inställningar
 settings-appearance = Utseende
@@ -40,7 +36,6 @@ settings-reset-all = Återställ alla inställningar
 settings-bug-reports = Buggrapporter
 settings-report-bug = Rapportera bugg
 settings-show-report = Visa rapport
-
 # Enhetsinformation
 device-info-card = Kort
 device-info-driver = Drivrutin
@@ -55,14 +50,11 @@ device-info-multistream-yes = Stöds
 device-info-multistream-no = Stöds inte
 device-info-rotation = Rotation
 device-info-none = Ingen enhetsinformation tillgänglig
-
 # Kamera förhandsgranskning
 initializing-camera = Initierar kamera...
-
 # Formatväljare
 format-resolution = Upplösning:
 format-framerate = Bildfrekvens:
-
 # Status Statusindikatorer
 indicator-res = UPL
 indicator-fps = FPS
@@ -70,9 +62,8 @@ indicator-hd = HD
 indicator-sd = SD
 indicator-4k = 4K
 indicator-720p = 720p
-
 # QR-kodåtgärder
-qr-open-link = Öppna länk 
+qr-open-link = Öppna länk
 qr-connect-wifi = Anslut till WiFi
 qr-copy-text = Kopiera text
 qr-call = Ring
@@ -81,7 +72,6 @@ qr-send-sms = Skicka SMS
 qr-open-map = Öppna karta
 qr-add-contact = Lägg till kontakt
 qr-add-event = Lägg till händelse
-
 # Exponeringskontroller
 exposure-ev = EV
 exposure-time = Tid
@@ -93,11 +83,9 @@ exposure-backlight = Bakgrundsbelysning
 exposure-manual-mode = Manuell
 exposure-auto-mode = Automatisk
 exposure-not-supported = stöds inte
-
 # Fokuskontroller
 focus-auto = Fokus
 focus-position = Fokus
-
 # Färgkontroller
 color-title = Färg
 color-contrast = Kontrast
@@ -108,28 +96,23 @@ color-white-balance = Vitbalans
 color-temperature = Temperatur
 color-auto = Automatisk
 color-manual = Manuell
-
 # Verktygsmeny
 tools-timer = Timer
 tools-aspect = Aspekt
 tools-exposure = Exponering
 tools-color = Färg
 tools-filter = Filter
-
 # PTZ-kontroller
 ptz-title = Kamerakontroller
-
 # Sekretessskydd varning
 privacy-cover-closed = Sekretessskyddet är stängt
 privacy-cover-hint = Öppna sekretessskyddet för att använda kameran
-
 # Serieläge / HDR+
 burst-mode-hold-steady = Håll stadigt...
 burst-mode-frames = { $captured }/{ $total } bildrutor
 burst-mode-processing = Bearbetar...
 burst-mode-quality = Kvalitet (FFT)
 burst-mode-fast = Snabb (rumslig)
-
 # HDR+ rullgardinsmenyalternativ
 hdr-plus-off = Av
 hdr-plus-auto = Automatisk
@@ -137,7 +120,6 @@ hdr-plus-frames-4 = 4 bildrutor
 hdr-plus-frames-6 = 6 bildrutor
 hdr-plus-frames-8 = 8 bildrutor
 hdr-plus-frames-50 = 50 bildrutor
-
 # Fotoinställningar
 settings-photo = Foto
 settings-photo-format = Utdataformat
@@ -146,7 +128,6 @@ settings-hdr-plus = HDR+ (experimentellt)
 settings-hdr-plus-description = Flerbildstagning för förbättrade bilder i svagt ljus och dynamiskt omfång. Väljer automatiskt bildantal baserat på motivets ljusstyrka.
 settings-save-burst-raw = Spara råa burst-bildrutor
 settings-save-burst-raw-description = Spara enskilda bildserier som DNG-filer tillsammans med HDR+-foton. Användbart för felsökning eller ombearbetning.
-
 # Kompositionsguide
 settings-composition-guide = Kompositionsguide
 settings-composition-guide-description = Lägg över guidelinjer på kamerans förhandsgranskning för komposition
@@ -159,10 +140,8 @@ guide-spiral-bottom-left = Gyllene snittet ↙
 guide-spiral-bottom-right = Gyllene snittet ↘
 guide-diagonal = Diagonaler
 guide-crosshair = Korshår
-
 # Om sida
 about-support = Support & feedback
-
 # Insikter
 insights-title = Insikter
 insights-pipeline = Pipeline
@@ -185,7 +164,6 @@ insights-format-wgpu = GPU bearbetning
 insights-selected = Vald
 insights-available = Tillgänglig
 insights-unavailable = Inte tillgänglig
-
 # Insikter - Backend
 insights-backend = Backend
 insights-backend-type = Typ
@@ -193,7 +171,6 @@ insights-pipeline-handler = Pipeline hanterare
 insights-libcamera-version = libcamera version
 insights-sensor-model = Sensor
 insights-mjpeg-decoder = MJPEG avkodare
-
 # Insikter - Multiström
 insights-multistream-single = Enkelström
 insights-multistream-dual = Dubbelström
@@ -205,7 +182,6 @@ insights-stream-role = Roll
 insights-stream-resolution = Upplösning
 insights-stream-pixel-format = Pixelformat
 insights-stream-frame-count = Bildrutor
-
 # Insikter - Inspelning
 insights-recording = Inspelnings pipeline
 insights-recording-mode = Läge
@@ -219,7 +195,6 @@ insights-recording-delay = Bearbetningsfördröjning
 insights-recording-convert = NV12 konvertera
 insights-recording-pts = Nuvarande PTS
 insights-recording-pipeline = Pipeline
-
 # Insikter - Ljud
 insights-audio = Ljud
 insights-audio-recording = Inspelning
@@ -235,7 +210,6 @@ insights-audio-pipeline = Pipeline
 insights-audio-format = Format
 insights-audio-inputs = Ingångskanaler
 insights-audio-output-level = Utgångsnivå
-
 # Insikter - Metadata per bildruta
 insights-metadata = Bildruta metadata
 insights-meta-exposure = Exponering
@@ -249,17 +223,14 @@ insights-meta-lens-position = Linsposition
 insights-meta-lux = Belysningsstyrka
 insights-meta-focus-fom = Fokus FoM
 insights-meta-na = Inte tillgängligt
-
 # Tidsförlopp
 settings-timelapse = Tidsförlopp
 settings-timelapse-interval = Intervall
 settings-timelapse-interval-description = Tid mellan på varandra följande fototagningar
-
 # Insikter - V4L2-format
 insights-v4l2-in-libcamera = Tillgänglig i libcamera
 insights-v4l2-active-in-libcamera = Aktiv i libcamera
 insights-v4l2-not-in-libcamera = Inte tillgänglig i libcamera
-
 # Insikter - Fånga
 insights-capture = Fånga
 insights-capture-burst = Ta seriebilder
