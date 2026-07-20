@@ -4,8 +4,7 @@ repository = Dépôt
 view = Vue
 welcome = Bienvenue sur COSMIC ! ✨
 page-id = Page { $num }
-git-description = Commit Git {$hash} le {$date}
-
+git-description = Commit Git { $hash } le { $date }
 # Sélecteur de mode
 mode-video = Vidéo
 mode-photo = Photo
@@ -13,7 +12,6 @@ mode-timelapse = Accéléré
 timelapse-saving = Enregistrement de la vidéo...
 mode-virtual = Virtuel
 mode-view = Afficher
-
 # Caméra virtuelle
 virtual-camera-title = Caméra virtuelle (expérimentale)
 virtual-camera-description = Diffusez le flux de votre caméra vers d'autres applications via un périphérique de caméra virtuelle. Nécessite PipeWire.
@@ -21,10 +19,8 @@ virtual-camera-enable = Activer la caméra virtuelle
 streaming-live = EN DIRECT
 virtual-camera-open-file = Ouvrir un fichier
 virtual-camera-file-filter-name = Images et vidéos
-
 # Filtres
 filters-title = Filtres
-
 # Paramètres
 settings-title = Paramètres
 settings-appearance = Apparence
@@ -59,7 +55,6 @@ settings-show-report = Afficher le rapport
 settings-resolution = Résolution
 settings-version = Version { $version }
 settings-version-flatpak = Version { $version } (Flatpak)
-
 # Informations sur le périphérique
 device-info-card = Carte
 device-info-driver = Pilote
@@ -74,21 +69,17 @@ device-info-multistream-yes = Pris en charge
 device-info-multistream-no = Non pris en charge
 device-info-rotation = Rotation
 device-info-none = Aucune information disponible sur le périphérique
-
 # Préréglages de débit binaire
 preset-low = Faible
 preset-medium = Moyen
 preset-high = Élevé
-
 # Aperçu de la caméra
 initializing-camera = Initialisation de la caméra...
 preview-fit = Ajuster
 preview-cover = Remplir
-
 # Sélecteur de format
 format-resolution = Résolution :
 format-framerate = Fréquence d'images :
-
 # Indicateurs d'état
 indicator-res = RES
 indicator-fps = FPS
@@ -96,7 +87,6 @@ indicator-hd = HD
 indicator-sd = SD
 indicator-4k = 4K
 indicator-720p = 720p
-
 # Actions du code QR
 qr-open-link = Ouvrir le lien
 qr-connect-wifi = Se connecter au Wi-Fi
@@ -107,7 +97,6 @@ qr-send-sms = Envoyer un SMS
 qr-open-map = Ouvrir la carte
 qr-add-contact = Ajouter un contact
 qr-add-event = Ajouter un événement
-
 # Réglages d'exposition
 exposure-mode = Mode
 exposure-ev = EV
@@ -123,11 +112,9 @@ exposure-backlight = Rétroéclairage
 exposure-manual-mode = Manuel
 exposure-auto-mode = Auto
 exposure-not-supported = Non pris en charge
-
 # Réglages de mise au point
 focus-auto = Mise au point
 focus-position = Mise au point
-
 # Réglages des couleurs
 color-title = Couleur
 color-contrast = Contraste
@@ -138,28 +125,23 @@ color-white-balance = Balance des blancs
 color-temperature = Température
 color-auto = Auto
 color-manual = Manuel
-
 # Menu Outils
 tools-timer = Minuteur
-tools-aspect = Format
+tools-aspect = Aspect
 tools-exposure = Exposition
 tools-color = Couleur
 tools-filter = Filtre
-
 # Commandes PTZ
 ptz-title = Commandes de la caméra
-
 # Avertissement concernant le cache de confidentialité
 privacy-cover-closed = Le cache de confidentialité est fermé
 privacy-cover-hint = Ouvrez le cache de confidentialité pour utiliser la caméra
-
 # Mode rafale / HDR+
 burst-mode-hold-steady = Maintien de la stabilité...
 burst-mode-frames = { $captured }/{ $total } images
 burst-mode-processing = Traitement en cours...
 burst-mode-quality = Qualité (FFT)
 burst-mode-fast = Rapide (Spatial)
-
 # Options du menu déroulant HDR+
 hdr-plus-off = Désactivé
 hdr-plus-auto = Auto
@@ -167,7 +149,6 @@ hdr-plus-frames-4 = 4 images
 hdr-plus-frames-6 = 6 images
 hdr-plus-frames-8 = 8 images
 hdr-plus-frames-50 = 50 images
-
 # Paramètres photo
 settings-photo = Photo
 settings-photo-format = Format de sortie
@@ -178,7 +159,6 @@ settings-burst-mode-quality = Algorithme HDR+
 settings-burst-mode-quality-description = Qualité utilise la fusion FFT dans le domaine fréquentiel pour des résultats optimaux. Rapide utilise la fusion spatiale pour un traitement plus rapide.
 settings-save-burst-raw = Enregistrer les images brutes de la rafale
 settings-save-burst-raw-description = Enregistrer les images individuelles de la rafale au format DNG, en plus des photos HDR+. Utile pour le débogage ou le retraitement.
-
 # Guide de composition
 settings-composition-guide = Guide de composition
 settings-composition-guide-description = Superposer des lignes de repère sur l'aperçu de la caméra pour le cadrage
@@ -191,19 +171,15 @@ guide-spiral-bottom-left = Nombre d'or ↙
 guide-spiral-bottom-right = Nombre d'or ↘
 guide-diagonal = Diagonales
 guide-crosshair = Réticule
-
 # À propos
 about-support = Assistance et commentaires
-
 # Informations
 insights-title = Informations
 insights-pipeline = Pipeline
 insights-pipeline-full = Pipeline GStreamer
 insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Chaîne de repli du décodeur
-
 insights-stream-combined = Flux de prévisualisation et de capture
-
 insights-frame-latency = Latence d'image
 insights-dropped-frames = Images perdues
 insights-frame-size-decoded = Taille de l'image
@@ -211,7 +187,6 @@ insights-decode-time-gst = Traitement du tampon
 insights-copy-time = Temps d'encapsulation d'image
 insights-gpu-upload-time = Temps de chargement GPU
 insights-gpu-upload-bandwidth = Bande passante de chargement GPU
-
 insights-format-source = Source
 insights-format-resolution = Résolution
 insights-format-framerate = Fréquence d'images
@@ -220,11 +195,9 @@ insights-format-gstreamer = Sortie GStreamer
 insights-cpu-processing = Traitement CPU
 insights-cpu-decode-time = Temps de décodage CPU
 insights-format-wgpu = Traitement GPU
-
 insights-selected = Sélectionné
 insights-available = Disponible
 insights-unavailable = Indisponible
-
 # Statistiques - Serveur
 insights-backend = Serveur
 insights-backend-type = Type
@@ -232,7 +205,6 @@ insights-pipeline-handler = Gestionnaire de pipeline
 insights-libcamera-version = Version de libcamera
 insights-sensor-model = Capteur
 insights-mjpeg-decoder = Décodeur MJPEG
-
 # Statistiques - Multiflux
 insights-multistream-single = Flux unique
 insights-multistream-dual = Double flux
@@ -244,7 +216,6 @@ insights-stream-role = Rôle
 insights-stream-resolution = Résolution
 insights-stream-pixel-format = Format de pixel
 insights-stream-frame-count = Images
-
 # Statistiques - Enregistrement
 insights-recording = Pipeline d'enregistrement
 insights-recording-mode = Mode
@@ -259,7 +230,6 @@ insights-recording-delay = Délai de traitement
 insights-recording-convert = Conversion NV12
 insights-recording-pts = PTS actuel
 insights-recording-pipeline = Pipeline
-
 # Statistiques - Audio
 insights-audio = Audio
 insights-audio-recording = Enregistrement
@@ -276,7 +246,6 @@ insights-audio-format = Format
 insights-audio-inputs = Canaux d'entrée
 insights-audio-output-level = Niveau de sortie
 insights-audio-not-recording = Enregistrement désactivé
-
 # Informations - Métadonnées par image
 insights-metadata = Métadonnées d'image
 insights-meta-exposure = Exposition
@@ -290,19 +259,67 @@ insights-meta-lens-position = Position de l'objectif
 insights-meta-lux = Éclairement
 insights-meta-focus-fom = Champ de mesure de la mise au point
 insights-meta-na = N/A
-
 # Accéléré
 settings-timelapse = Accéléré
 settings-timelapse-interval = Intervalle
 settings-timelapse-interval-description = Temps entre deux prises de vue consécutives
-
 # Informations - Formats V4L2
 insights-v4l2-formats = Formats de périphériques V4L2
 insights-v4l2-no-device = Aucun périphérique V4L2
 insights-v4l2-in-libcamera = Disponible dans libcamera
 insights-v4l2-active-in-libcamera = Actif dans libcamera
 insights-v4l2-not-in-libcamera = Non disponible dans libcamera
-
 # Informations - Capture
 insights-capture = Capture
 insights-capture-burst = Rafale
+settings-mic-level = Niveau du microphone
+settings-mic-level-initializing = Initialisation…
+settings-mirror-captures = Captures miroir
+settings-mirror-captures-description = Appliquer la même symétrie horizontale aux photos, vidéos et séquences enregistrées en accéléré
+settings-overlay-effect = Effet de superposition
+settings-overlay-effect-description = Mode d'affichage des commandes sur la prévisualisation. L'effet « verre dépoli » floute la prévisualisation située derrière, ce qui sollicite davantage le GPU.
+overlay-effect-system = Système
+keybindings-page-back = Retour
+keybindings-page-reset-all = Tout rétablir les paramètres par défaut
+keybindings-page-reset-section = Réinitialiser la section aux paramètres par défaut
+keybindings-record-title = Appuyer sur une combinaison de touches
+keybindings-record-hint = Appuyer sur la combinaison de touches souhaitée ou sur Échap pour annuler
+keybindings-page-title = Raccourcis clavier
+keybindings-record-cancel = Annuler
+keybindings-record-replace = Remplacer
+keybindings-record-save = Enregistrer
+keybindings-record-conflict = Cette combinaison est déjà utilisée par « { $other } ». Remplacer ?
+overlay-effect-frosted = Verre dépoli
+overlay-effect-translucent = Translucide
+overlay-effect-off = Éteint
+shortcut-category-app = App
+action-capture = Capture / Enregistrement / Lecture/Pause
+action-cycle-photo-aspect-ratio = Changer le format d'image
+action-next-mode = Mode suivant
+action-prev-mode = Mode précédent
+action-zoom-in = Zoom avant
+action-zoom-out = Zoom arrière
+action-open-gallery = Ouvrir la galerie
+action-toggle-about = À propos
+action-reset-all-settings = Réinitialiser tous les paramètres
+action-photo-snapshot = Photo pendant l'enregistrement
+action-switch-camera = Changer de caméra
+action-quit-app = Quitter
+action-reset-zoom = Réinitialiser le zoom
+action-show-shortcuts = Afficher les raccourcis
+action-toggle-color-picker = Activer/désactiver le sélecteur de couleurs
+action-toggle-motor-picker = Activer/désactiver les commandes du moteur
+action-toggle-exposure-picker = Activer/désactiver le sélecteur d'exposition
+action-toggle-flash = Activer/désactiver le flash
+action-toggle-focus-auto = Activer/désactiver la mise au point automatique
+action-toggle-format-picker = Activer/désactiver le sélecteur de format
+action-toggle-settings = Ouvrir les paramètres
+shortcut-category-camera = Caméra
+shortcut-category-pickers = Sélecteurs
+shortcut-category-display = Affichage
+shortcut-category-capture = Capture
+shortcut-category-zoom = Zoom et cadrage
+shortcuts-help-title = Raccourcis clavier
+shortcuts-help-customize = Personnaliser dans Paramètres → Raccourcis clavier
+shortcuts-help-unbound = —
+tools-motor = Moteur
