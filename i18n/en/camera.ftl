@@ -102,15 +102,15 @@ exposure-time = Time
 exposure-gain = Gain
 exposure-iso = ISO
 exposure-metering = Metering
-exposure-auto-priority = Frame Rate
+exposure-auto-priority = Variable Frame Rate
 exposure-backlight = Backlight
 exposure-manual-mode = Manual
 exposure-auto-mode = Auto
 exposure-not-supported = unsupported
 
 # Focus controls
-focus-auto = Focus
-focus-position = Focus
+focus-auto = Autofocus
+focus-position = Focus Position
 
 # Color controls
 color-title = Color
