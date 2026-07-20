@@ -1,10 +1,6 @@
 app-title = Камера
 about = Про «Камеру»
 repository = Сховище
-view = Перегляд
-welcome = Ласкаво просимо до COSMIC! ✨
-page-id = Сторінка { $num }
-git-description = Git {$hash} від {$date}
 
 # Mode switcher
 mode-video = Відео
@@ -17,9 +13,7 @@ mode-view = Перегляд
 # Virtual camera
 virtual-camera-title = Віртуальна камера (експериментально)
 virtual-camera-description = Транслюйте відеопотік камери до інших застосунків через віртуальний пристрій камери. Потрібен PipeWire.
-virtual-camera-enable = Увімкнути віртуальну камеру
 streaming-live = НАЖИВО
-virtual-camera-open-file = Відкрити файл
 virtual-camera-file-filter-name = Зображення та відео
 
 # Filters
@@ -37,8 +31,6 @@ settings-default-mode-description = Типовий режим під час за
 settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
-settings-backend = Рушій
-settings-format = Формат
 settings-microphone = Мікрофон
 settings-record-audio = Запис звуку
 settings-audio-encoder = Аудіокодувальник
@@ -46,9 +38,6 @@ settings-mic-level = Рівень мікрофона
 settings-mic-level-initializing = Підготовка…
 settings-encoder = Кодувальник
 settings-quality = Якість
-settings-video-encoder = Відеокодувальник
-settings-video-quality = Якість відео
-settings-manual-override = Перевизначити вручну
 settings-mirror-preview = Дзеркалити
 settings-mirror-preview-description = Горизонтальне відображення попереднього перегляду
 settings-mirror-captures = Зберігати дзеркально
@@ -57,12 +46,8 @@ settings-haptic-feedback = Тактильний відгук
 settings-haptic-feedback-description = Вібрація під час зйомки, перемикання режиму та камери
 settings-reset-all = Скинути параметри
 settings-bug-reports = Зворотний зв'язок
-settings-stats-for-nerds = Для допитливих
 settings-report-bug = Повідомити про ваду
 settings-show-report = Показати звіт
-settings-resolution = Роздільна здатність
-settings-version = Версія { $version }
-settings-version-flatpak = Версія { $version } (Flatpak)
 
 # Device info
 device-info-card = Картка
@@ -79,15 +64,8 @@ device-info-multistream-no = Не підтримується
 device-info-rotation = Обертання
 device-info-none = Інформація про пристрій відсутня
 
-# Bitrate presets
-preset-low = Низький
-preset-medium = Середній
-preset-high = Високий
-
 # Camera preview
 initializing-camera = Підготовка камери...
-preview-fit = Вписати
-preview-cover = Заповнити
 
 # Format picker
 format-resolution = Роздільність:
@@ -113,16 +91,12 @@ qr-add-contact = Додати контакт
 qr-add-event = Додати подію
 
 # Exposure controls
-exposure-mode = Режим
 exposure-ev = EV
 exposure-time = Витримка
 exposure-gain = Підсилення
 exposure-iso = ISO
 exposure-metering = Режим вимірювання
 exposure-auto-priority = Частота кадрів
-exposure-no-controls = Налаштування експозиції недоступні
-exposure-title = Експозиція
-exposure-reset = Скинути
 exposure-backlight = Заднє світло
 exposure-manual-mode = Ручний
 exposure-auto-mode = Авто
@@ -178,8 +152,6 @@ settings-photo-format = Формат знімків
 settings-photo-format-description = Формати для збережених знімків. JPEG (стиснений), PNG (без втрат якості), а DNG зберігає найбільше даних для подальшої обробки.
 settings-hdr-plus = HDR+ (експериментально)
 settings-hdr-plus-description = Багатокадрова зйомка для кращих знімків при слабкому освітленні та ширшого динамічного діапазону. Авто підбирає кількість кадрів залежно від яскравості сцени.
-settings-burst-mode-quality = Алгоритм HDR+
-settings-burst-mode-quality-description = «Якість» дає кращий результат злиттям у частотній області (FFT). «Швидкість» пришвидшує обробку просторовим злиттям.
 settings-save-burst-raw = Зберігати сирці серії
 settings-save-burst-raw-description = Зберігати окремі кадри серії у форматі DNG разом із HDR+ знімками. Корисно для налагодження або повторної обробки.
 
@@ -202,7 +174,6 @@ about-support = Підтримка та відгуки
 # Insights
 insights-title = Діагностика
 insights-pipeline = Ланцюг обробки
-insights-pipeline-full = Ланцюг GStreamer
 insights-pipeline-full-libcamera = Структура ланцюга
 insights-decoder-chain = Резервний ланцюг декодувальників
 
@@ -211,7 +182,6 @@ insights-stream-combined = Перегляд + Зйомка
 insights-frame-latency = Затримка кадру
 insights-dropped-frames = Втрачено кадрів
 insights-frame-size-decoded = Розмір кадру
-insights-decode-time-gst = Обробка буфера
 insights-copy-time = Час копіювання кадру
 insights-gpu-upload-time = Час передачі на ГП
 insights-gpu-upload-bandwidth = Швидкість передачі на ГП
@@ -220,7 +190,6 @@ insights-format-source = Джерело
 insights-format-resolution = Роздільна здатність
 insights-format-framerate = Частота кадрів
 insights-format-native = Початковий формат
-insights-format-gstreamer = Вивід GStreamer
 insights-cpu-processing = Обробка на ЦП
 insights-cpu-decode-time = Час декодування ЦП
 insights-format-wgpu = Обробка на ГП
@@ -254,7 +223,6 @@ insights-recording = Ланцюг запису
 insights-recording-mode = Режим
 insights-recording-encoder = Кодувальник
 insights-recording-resolution = Роздільна здатність
-insights-recording-framerate = Частота кадрів
 insights-recording-capture = Потік захоплення
 insights-recording-channel = Канал
 insights-recording-pusher = Передача appsrc
@@ -279,7 +247,6 @@ insights-audio-pipeline = Ланцюг аудіо
 insights-audio-format = Формат
 insights-audio-inputs = Вхідні канали
 insights-audio-output-level = Рівень виходу
-insights-audio-not-recording = Запис не ведеться
 
 # Insights - Per-frame metadata
 insights-metadata = Метадані кадру
@@ -301,8 +268,6 @@ settings-timelapse-interval = Інтервал
 settings-timelapse-interval-description = Час між послідовними знімками
 
 # Insights - V4L2 Formats
-insights-v4l2-formats = Формати пристрою V4L2
-insights-v4l2-no-device = Немає пристрою V4L2
 insights-v4l2-in-libcamera = Доступно в libcamera
 insights-v4l2-active-in-libcamera = Активно в libcamera
 insights-v4l2-not-in-libcamera = Недоступно в libcamera
@@ -337,19 +302,13 @@ action-zoom-out = Зменшити
 action-reset-zoom = Скинути масштаб
 action-cycle-photo-aspect-ratio = Перемкнути пропорції фото
 action-open-gallery = Відкрити галерею
-action-toggle-about = Про застосунок
-action-reset-all-settings = Скинути всі налаштування
 action-show-shortcuts = Сполучення
 action-quit-app = Вийти
 
 # Shortcuts help / settings page
-shortcuts-help-title = Сполучення клавіш
-shortcuts-help-customize = Налаштувати в Налаштування → Сполучення клавіш
 shortcuts-help-unbound = —
 keybindings-page-title = Сполучення клавіш
-keybindings-page-back = Назад
 keybindings-page-reset-all = Скинути все до типових
-keybindings-page-reset-section = Скинути розділ до типових
 keybindings-record-title = Натисніть сполучення клавіш
 keybindings-record-hint = Натисніть потрібне сполучення або Esc для скасування
 keybindings-record-conflict = Сполучення вже використовується для "{$other}". Замінити?

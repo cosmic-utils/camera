@@ -11,47 +11,14 @@
   <summary xml:lang="uk">Знімайте фото та відео</summary>
   <summary xml:lang="zh-CN">拍摄照片和视频</summary>
   <description>
-    <p>
-      Camera is a third-party camera application for the COSMIC™ desktop environment.
-      Whether you need to snap a quick photo, record a video, or scan a QR code, Camera
-      provides a clean and intuitive interface that stays out of your way.
-    </p>
-    <p xml:lang="cs">
-      Aplikace kamery od třetí strany pro prostředí COSMIC™.
-      Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód,
-      aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
-    </p>
-    <p xml:lang="uk">
-      Камера — це сторонній застосунок камери для середовища COSMIC™.
-      Потрібно швидко зробити знімок, записати відео чи відсканувати QR-код?
-      Камера пропонує чистий, інтуїтивний інтерфейс, який не плутатиме вас.
-    </p>
-    <p xml:lang="zh-CN">
-      相机是 COSMIC™ 桌面环境的第三方相机应用程序。
-      无论您需要快速拍照、录制视频还是扫描二维码，
-      相机都提供简洁直观的界面，不会妨碍您的操作。
-    </p>
-    <p>
-      Just open the app and start capturing moments.
-      Add fun filters to your photos, scan QR codes to open links or connect to WiFi,
-      or use virtual camera mode to look great in video calls with your favorite filter applied.
-    </p>
-    <p xml:lang="cs">
-      Otevřete aplikaci a začněte zachycovat okamžiky.
-      Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů
-      nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech
-      vypadali skvěle s aplikovaným oblíbeným filtrem.
-    </p>
-    <p xml:lang="uk">
-      Просто відкрийте застосунок і починайте творити.
-      Застосовуйте креативні фільтри до знімків, миттєво скануйте QR-коди для переходу за посиланнями чи підключення до Wi-Fi,
-      або скористайтеся режимом віртуальної камери, щоб виглядати бездоганно у відеодзвінках з улюбленим фільтром.
-    </p>
-    <p xml:lang="zh-CN">
-      只需打开应用程序即可开始捕捉精彩瞬间。
-      为照片添加有趣的滤镜，扫描二维码打开链接或连接 WiFi，
-      或使用虚拟相机模式在视频通话中应用您喜爱的滤镜，展现最佳状态。
-    </p>
+    <p>Camera is a third-party camera application for the COSMIC™ desktop environment. Whether you need to snap a quick photo, record a video, or scan a QR code, Camera provides a clean and intuitive interface that stays out of your way.</p>
+    <p xml:lang="cs">Aplikace kamery od třetí strany pro prostředí COSMIC™. Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód, aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.</p>
+    <p xml:lang="uk">Камера — це сторонній застосунок камери для середовища COSMIC™. Потрібно швидко зробити знімок, записати відео чи відсканувати QR-код? Камера пропонує чистий, інтуїтивний інтерфейс, який не плутатиме вас.</p>
+    <p xml:lang="zh-CN">相机是 COSMIC™ 桌面环境的第三方相机应用程序。 无论您需要快速拍照、录制视频还是扫描二维码， 相机都提供简洁直观的界面，不会妨碍您的操作。</p>
+    <p>Just open the app and start capturing moments. Add fun filters to your photos, scan QR codes to open links or connect to WiFi, or use virtual camera mode to look great in video calls with your favorite filter applied.</p>
+    <p xml:lang="cs">Otevřete aplikaci a začněte zachycovat okamžiky. Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech vypadali skvěle s aplikovaným oblíbeným filtrem.</p>
+    <p xml:lang="uk">Просто відкрийте застосунок і починайте творити. Застосовуйте креативні фільтри до знімків, миттєво скануйте QR-коди для переходу за посиланнями чи підключення до Wi-Fi, або скористайтеся режимом віртуальної камери, щоб виглядати бездоганно у відеодзвінках з улюбленим фільтром.</p>
+    <p xml:lang="zh-CN">只需打开应用程序即可开始捕捉精彩瞬间。 为照片添加有趣的滤镜，扫描二维码打开链接或连接 WiFi， 或使用虚拟相机模式在视频通话中应用您喜爱的滤镜，展现最佳状态。</p>
     <p>Key features:</p>
     <p xml:lang="cs">Klíčové funkce:</p>
     <p xml:lang="uk">Основні можливості:</p>

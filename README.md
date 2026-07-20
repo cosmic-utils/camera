@@ -4,6 +4,7 @@
 [![Flathub](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fflathub.org%2Fapi%2Fv2%2Fappstream%2Fio.github.cosmic_utils.camera&query=%24.releases%5B0%5D.version&prefix=v&label=flathub&logo=flathub&logoColor=white&color=blue)](https://flathub.org/apps/io.github.cosmic_utils.camera)
 [![CI](https://github.com/cosmic-utils/camera/actions/workflows/ci.yml/badge.svg)](https://github.com/cosmic-utils/camera/actions/workflows/ci.yml)
 [![Release](https://github.com/cosmic-utils/camera/actions/workflows/release.yml/badge.svg)](https://github.com/cosmic-utils/camera/actions/workflows/release.yml)
+[![Translation status](https://hosted.weblate.org/widget/cosmic-utils/camera/svg-badge.svg)](https://hosted.weblate.org/engage/cosmic-utils/)
 
 A camera application for the [COSMIC](https://github.com/pop-os/cosmic-epoch) desktop environment.
 
