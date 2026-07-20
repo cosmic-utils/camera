@@ -97,6 +97,18 @@ run-debug *args:
 # Resource generation
 # ============================================================================
 
+# Regenerate every derived file that is committed to the repository
+generate: generate-metadata flatpak-cargo-sources
+
+# Write translations from i18n/*/metadata.ftl into the desktop and metainfo files
+generate-metadata:
+    python3 scripts/gen-metadata.py
+
+# Check the desktop and metainfo files against their specifications
+validate-metadata:
+    desktop-file-validate {{desktop-src}}
+    appstreamcli validate {{metainfo-src}}
+
 # Generate PNG icons from the scalable SVG and update desktop file
 generate-icons:
     #!/usr/bin/env bash
