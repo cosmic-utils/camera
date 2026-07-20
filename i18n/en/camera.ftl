@@ -309,8 +309,6 @@ action-zoom-out = Zoom out
 action-reset-zoom = Reset zoom
 action-cycle-photo-aspect-ratio = Cycle photo aspect ratio
 action-open-gallery = Open gallery
-action-toggle-about = About
-action-reset-all-settings = Reset all settings
 action-show-shortcuts = Show shortcuts
 action-quit-app = Quit
 

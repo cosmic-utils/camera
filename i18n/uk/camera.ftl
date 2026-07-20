@@ -302,8 +302,6 @@ action-zoom-out = Зменшити
 action-reset-zoom = Скинути масштаб
 action-cycle-photo-aspect-ratio = Перемкнути пропорції фото
 action-open-gallery = Відкрити галерею
-action-toggle-about = Про застосунок
-action-reset-all-settings = Скинути всі налаштування
 action-show-shortcuts = Сполучення
 action-quit-app = Вийти
 

@@ -209,8 +209,8 @@ impl Action {
             Action::ResetZoom => fl!("action-reset-zoom"),
             Action::CyclePhotoAspectRatio => fl!("action-cycle-photo-aspect-ratio"),
             Action::OpenGallery => fl!("action-open-gallery"),
-            Action::ToggleAbout => fl!("action-toggle-about"),
-            Action::ResetAllSettings => fl!("action-reset-all-settings"),
+            Action::ToggleAbout => fl!("about"),
+            Action::ResetAllSettings => fl!("settings-reset-all"),
             Action::ShowShortcuts => fl!("action-show-shortcuts"),
             Action::QuitApp => fl!("action-quit-app"),
         }
