@@ -1,23 +1,19 @@
 app-title = 相机
 about = 关于
 repository = 代码仓库
-
 # Mode switcher
 mode-video = 视频
 mode-photo = 照片
 mode-timelapse = 延时摄影
 mode-virtual = 虚拟
 mode-view = View
-
 # Virtual camera
 virtual-camera-title = 虚拟相机（实验性）
 virtual-camera-description = 通过虚拟相机设备将摄像头画面流式传输到其他应用程序。需要 PipeWire。
 streaming-live = 直播中
 virtual-camera-file-filter-name = 图片和视频
-
 # Filters
 filters-title = 滤镜
-
 # Settings
 settings-title = 设置
 settings-appearance = 外观
@@ -39,7 +35,6 @@ settings-reset-all = 重置所有设置
 settings-bug-reports = 错误报告
 settings-report-bug = 报告错误
 settings-show-report = 显示报告
-
 # Device info
 device-info-card = 卡
 device-info-driver = 驱动
@@ -54,14 +49,11 @@ device-info-multistream-yes = 支持
 device-info-multistream-no = 不支持
 device-info-rotation = 旋转
 device-info-none = 没有可用的设备信息
-
 # Camera preview
 initializing-camera = 正在初始化相机...
-
 # Format picker
 format-resolution = 分辨率：
 format-framerate = 帧率：
-
 # Status indicators
 indicator-res = 分辨率
 indicator-fps = 帧率
@@ -69,7 +61,6 @@ indicator-hd = 高清
 indicator-sd = 标清
 indicator-4k = 4K
 indicator-720p = 720p
-
 # QR code actions
 qr-open-link = 打开链接
 qr-connect-wifi = 连接 WiFi
@@ -80,7 +71,6 @@ qr-send-sms = 发送短信
 qr-open-map = 打开地图
 qr-add-contact = 添加联系人
 qr-add-event = 添加事件
-
 # Exposure controls
 exposure-ev = 曝光值
 exposure-time = 时间
@@ -92,11 +82,9 @@ exposure-backlight = 背光
 exposure-manual-mode = 手动
 exposure-auto-mode = 自动
 exposure-not-supported = 不支持
-
 # Focus controls
 focus-auto = 对焦
 focus-position = 对焦
-
 # Color controls
 color-title = 颜色
 color-contrast = 对比度
@@ -107,28 +95,23 @@ color-white-balance = 白平衡
 color-temperature = 色温
 color-auto = 自动
 color-manual = 手动
-
 # Tools menu
 tools-timer = 定时器
 tools-aspect = 宽高比
 tools-exposure = 曝光
 tools-color = 颜色
 tools-filter = 滤镜
-
 # PTZ controls
 ptz-title = 相机控制
-
 # Privacy cover warning
 privacy-cover-closed = 隐私盖已关闭
 privacy-cover-hint = 请打开隐私盖以使用相机
-
 # Burst mode / HDR+
 burst-mode-hold-steady = 请保持稳定...
 burst-mode-frames = { $captured }/{ $total } 帧
 burst-mode-processing = 正在处理...
 burst-mode-quality = 质量（FFT）
 burst-mode-fast = 快速（空间）
-
 # HDR+ dropdown options
 hdr-plus-off = 关闭
 hdr-plus-auto = 自动
@@ -136,7 +119,6 @@ hdr-plus-frames-4 = 4 帧
 hdr-plus-frames-6 = 6 帧
 hdr-plus-frames-8 = 8 帧
 hdr-plus-frames-50 = 50 帧
-
 # Photo settings
 settings-photo = 照片
 settings-photo-format = 输出格式
@@ -145,7 +127,6 @@ settings-hdr-plus = HDR+（实验性）
 settings-hdr-plus-description = 多帧捕捉以改善低光照片和动态范围。自动根据场景亮度选择帧数。
 settings-save-burst-raw = 保存原始连拍帧
 settings-save-burst-raw-description = 将单独的连拍帧与 HDR+ 照片一起保存为 DNG 文件。用于调试或重新处理。
-
 # Composition guide
 settings-composition-guide = 构图辅助线
 settings-composition-guide-description = 在相机预览上叠加辅助线以帮助构图
@@ -158,25 +139,20 @@ guide-spiral-bottom-left = 螺旋线 ↙
 guide-spiral-bottom-right = 螺旋线 ↘
 guide-diagonal = 对角线
 guide-crosshair = 十字准线
-
 # About page
 about-support = 支持与反馈
-
 # Insights
 insights-title = 详细信息
 insights-pipeline = 管道
 insights-pipeline-full-libcamera = 管道
 insights-decoder-chain = 解码器回退链
-
 insights-stream-combined = 预览 + 捕捉流
-
 insights-frame-latency = 帧延迟
 insights-dropped-frames = 丢帧
 insights-frame-size-decoded = 帧大小
 insights-copy-time = 帧封装时间
 insights-gpu-upload-time = GPU 上传时间
 insights-gpu-upload-bandwidth = GPU 上传带宽
-
 insights-format-source = 源
 insights-format-resolution = 分辨率
 insights-format-framerate = 帧率
@@ -184,11 +160,9 @@ insights-format-native = 原生格式
 insights-cpu-processing = CPU 处理
 insights-cpu-decode-time = CPU 解码时间
 insights-format-wgpu = GPU 处理
-
 insights-selected = 已选择
 insights-available = 可用
 insights-unavailable = 不可用
-
 # Insights - Backend
 insights-backend = 后端
 insights-backend-type = 类型
@@ -196,7 +170,6 @@ insights-pipeline-handler = 管道处理器
 insights-libcamera-version = libcamera 版本
 insights-sensor-model = 传感器
 insights-mjpeg-decoder = MJPEG 解码器
-
 # Insights - Multi-stream
 insights-multistream-single = 单流
 insights-multistream-dual = 双流
@@ -208,7 +181,6 @@ insights-stream-role = 角色
 insights-stream-resolution = 分辨率
 insights-stream-pixel-format = 像素格式
 insights-stream-frame-count = 帧数
-
 # Insights - Recording
 insights-recording = 录制管道
 insights-recording-mode = 模式
@@ -222,7 +194,6 @@ insights-recording-delay = 处理延迟
 insights-recording-convert = NV12 转换
 insights-recording-pts = 当前 PTS
 insights-recording-pipeline = 管道
-
 # Insights - Audio
 insights-audio = 音频
 insights-audio-recording = 录制
@@ -232,13 +203,12 @@ insights-audio-codec = 编解码器
 insights-audio-channels = 声道
 insights-audio-enabled = 已启用
 insights-audio-disabled = 已禁用
-insights-audio-default =（默认）
+insights-audio-default = （默认）
 insights-audio-mono = 单声道
 insights-audio-pipeline = 管道
 insights-audio-format = 格式
 insights-audio-inputs = 输入声道
 insights-audio-output-level = 输出电平
-
 # Insights - Per-frame metadata
 insights-metadata = 帧元数据
 insights-meta-exposure = 曝光
@@ -252,12 +222,10 @@ insights-meta-lens-position = 镜头位置
 insights-meta-lux = 照度
 insights-meta-focus-fom = 对焦置信度
 insights-meta-na = 不适用
-
 # Timelapse
 settings-timelapse = 延时摄影
 settings-timelapse-interval = 间隔
 settings-timelapse-interval-description = 连续照片拍摄之间的时间间隔
-
 # Insights - Capture
 insights-capture = 捕捉
 insights-capture-burst = 连拍捕捉
