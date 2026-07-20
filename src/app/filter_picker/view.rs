@@ -203,44 +203,23 @@ impl AppModel {
     }
 
     /// Get display name for a filter type (used in filter picker grid)
-    fn filter_display_name(filter_type: FilterType) -> &'static str {
+    fn filter_display_name(filter_type: FilterType) -> String {
         match filter_type {
-            FilterType::Standard => "Original",
-            FilterType::Mono => "Mono",
-            FilterType::Sepia => "Sepia",
-            FilterType::Noir => "Noir",
-            FilterType::Vivid => "Vivid",
-            FilterType::Cool => "Cool",
-            FilterType::Warm => "Warm",
-            FilterType::Fade => "Fade",
-            FilterType::Duotone => "Duotone",
-            FilterType::Vignette => "Vignette",
-            FilterType::Negative => "Negative",
-            FilterType::Posterize => "Posterize",
-            FilterType::Solarize => "Solarize",
-            FilterType::ChromaticAberration => "Chroma",
-            FilterType::Pencil => "Pencil",
-        }
-    }
-
-    /// Get the display name of the currently selected filter
-    pub fn selected_filter_name(&self) -> &'static str {
-        match self.selected_filter {
-            FilterType::Standard => "ORIGINAL",
-            FilterType::Mono => "MONO",
-            FilterType::Sepia => "SEPIA",
-            FilterType::Noir => "NOIR",
-            FilterType::Vivid => "VIVID",
-            FilterType::Cool => "COOL",
-            FilterType::Warm => "WARM",
-            FilterType::Fade => "FADE",
-            FilterType::Duotone => "DUOTONE",
-            FilterType::Vignette => "VIGNETTE",
-            FilterType::Negative => "NEGATIVE",
-            FilterType::Posterize => "POSTER",
-            FilterType::Solarize => "SOLAR",
-            FilterType::ChromaticAberration => "CHROMA",
-            FilterType::Pencil => "PENCIL",
+            FilterType::Standard => fl!("filter-standard"),
+            FilterType::Mono => fl!("filter-mono"),
+            FilterType::Sepia => fl!("filter-sepia"),
+            FilterType::Noir => fl!("filter-noir"),
+            FilterType::Vivid => fl!("filter-vivid"),
+            FilterType::Cool => fl!("filter-cool"),
+            FilterType::Warm => fl!("filter-warm"),
+            FilterType::Fade => fl!("filter-fade"),
+            FilterType::Duotone => fl!("filter-duotone"),
+            FilterType::Vignette => fl!("filter-vignette"),
+            FilterType::Negative => fl!("filter-negative"),
+            FilterType::Posterize => fl!("filter-posterize"),
+            FilterType::Solarize => fl!("filter-solarize"),
+            FilterType::ChromaticAberration => fl!("filter-chroma"),
+            FilterType::Pencil => fl!("filter-pencil"),
         }
     }
 }

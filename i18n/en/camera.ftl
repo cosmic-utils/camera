@@ -49,9 +49,41 @@ virtual-camera-file-filter-name = Images and Videos
 
 ## Filters, GPU effects applied to the preview.
 
-# Title of the filter picker panel. The filter names themselves are not yet
-# translatable.
+# Title of the filter picker panel.
 filters-title = Filters
+# Filter names, shown under thumbnails in a grid several columns wide. Each is
+# one short word, so prefer a short term over an exact one.
+# No filter, the unaltered image.
+filter-standard = Original
+# Black and white.
+filter-mono = Mono
+# Warm brown tint, like an aged photograph.
+filter-sepia = Sepia
+# High contrast black and white, in the film noir style.
+filter-noir = Noir
+# Boosted colour and contrast.
+filter-vivid = Vivid
+# Shifted towards blue.
+filter-cool = Cool
+# Shifted towards orange.
+filter-warm = Warm
+# Washed out, reduced contrast.
+filter-fade = Fade
+# Maps the image onto two colours.
+filter-duotone = Duotone
+# Darkens the corners of the image.
+filter-vignette = Vignette
+# Inverts the colours, like a photographic negative.
+filter-negative = Negative
+# Reduces the image to a few flat colour bands.
+filter-posterize = Posterize
+# Partially inverts the brightest areas.
+filter-solarize = Solarize
+# Splits the colour channels apart at the edges, imitating a lens fault. Short
+# for chromatic aberration.
+filter-chroma = Chroma
+# Imitates a pencil sketch.
+filter-pencil = Pencil
 
 ## Settings.
 
@@ -287,9 +319,14 @@ tools-motor = Motor
 
 ## Pan and tilt controls for motorised cameras.
 
-# Title of the pan and tilt panel. The Pan and Tilt slider labels inside it are
-# not yet translatable.
+# Title of the pan and tilt panel.
 ptz-title = Camera Controls
+# Slider label for horizontal camera rotation, shown in degrees. Sits in a
+# fixed 60px column, so keep it short.
+ptz-pan = Pan
+# Slider label for vertical camera rotation, shown in degrees. Same 60px
+# column.
+ptz-tilt = Tilt
 
 ## Privacy cover warning, a modal shown when the lens is physically covered.
 
