@@ -1,0 +1,66 @@
+name: Regenerate Derived Files
+
+# Keeps the committed generated files in sync with the sources they derive from.
+#
+# Both sources are changed by bots that cannot regenerate the derived files
+# themselves: Dependabot updates Cargo.lock, and Weblate updates the Fluent
+# translations. Failing CI on drift would therefore red-flag exactly the pull
+# requests that are unable to fix it, so this regenerates after the fact
+# instead.
+#
+# There is no risk of the workflow retriggering itself: its own commit only
+# touches generated files, and none of those appear in the paths filter below.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.lock'
+      - 'i18n/**'
+      - 'scripts/gen-metadata.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    name: Regenerate and commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+          pip install aiohttp toml tomlkit
+
+      - name: Regenerate derived files
+        run: just generate
+
+      - name: Validate generated metadata
+        run: just validate-metadata
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add cargo-sources.json resources/
+
+          if git diff --staged --quiet; then
+            echo "Nothing to regenerate"
+          else
+            git commit -m "chore: regenerate derived files"
+            git push origin ${{ github.ref_name }}
+            echo "Pushed regenerated files"
+          fi

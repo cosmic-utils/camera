@@ -26,6 +26,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Validates the desktop entry and AppStream metadata against their
+  # specifications. This deliberately does not fail on the generated files being
+  # out of date: Weblate cannot regenerate them, so the regenerate workflow
+  # brings them back into sync after merge instead.
+  metadata:
+    name: Validate Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Validate desktop and metainfo files
+        run: just validate-metadata
+
   check:
     name: Check & Test
     runs-on: ubuntu-latest
@@ -327,9 +349,6 @@ jobs:
       - name: Install Flatpak dependencies
         run: just flatpak-deps x86_64
 
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
-
       - name: Build Flatpak bundle
         run: just flatpak-bundle x86_64
 
@@ -383,9 +402,6 @@ jobs:
       - name: Install Flatpak dependencies
         run: just flatpak-deps aarch64
 
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
-
       - name: Build Flatpak bundle
         run: just flatpak-bundle aarch64
 
@@ -438,9 +454,6 @@ jobs:
 
       - name: Install Flatpak dependencies
         run: just flatpak-deps arm
-
-      - name: Install Python dependencies
-        run: pip install aiohttp toml tomlkit
 
       - name: Build Flatpak bundle
         run: just flatpak-bundle arm
