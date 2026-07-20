@@ -1,7 +1,6 @@
 app-title = Kamera
 about = O aplikaci
 repository = Repozitář
-
 # Mode switcher
 mode-video = Video
 mode-photo = Foto
@@ -9,16 +8,13 @@ mode-timelapse = Časosběr
 timelapse-saving = Ukládání videa...
 mode-virtual = Virtuální
 mode-view = Náhled
-
 # Virtual camera
 virtual-camera-title = Virtuální kamera (experimentální)
 virtual-camera-description = Přenáší obraz vaší kamery do jiných aplikací prostřednictvím virtuální kamery. Vyžaduje PipeWire.
 streaming-live = ŽIVĚ
 virtual-camera-file-filter-name = Obrázky a videa
-
 # Filters
 filters-title = Filtry
-
 # Settings
 settings-title = Nastavení
 settings-appearance = Vzhled
@@ -44,7 +40,6 @@ settings-reset-all = Obnovit všechna nastavení
 settings-bug-reports = Hlášení chyb
 settings-report-bug = Nahlásit chybu
 settings-show-report = Zobrazit hlášení
-
 # Device info
 device-info-card = Karta
 device-info-driver = Ovladač
@@ -59,14 +54,11 @@ device-info-multistream-yes = Podporováno
 device-info-multistream-no = Nepodporováno
 device-info-rotation = Rotace
 device-info-none = Nejsou dostupné žádné informace o zařízení
-
 # Camera preview
 initializing-camera = Inicializace kamery...
-
 # Format picker
 format-resolution = Rozlišení:
 format-framerate = Snímková frekvence:
-
 # Status indicators
 indicator-res = RES
 indicator-fps = FPS
@@ -74,7 +66,6 @@ indicator-hd = HD
 indicator-sd = SD
 indicator-4k = 4K
 indicator-720p = 720p
-
 # QR code actions
 qr-open-link = Otevřít odkaz
 qr-connect-wifi = Připojit se k WiFi
@@ -85,7 +76,6 @@ qr-send-sms = Poslat SMS
 qr-open-map = Otevřít mapu
 qr-add-contact = Přidat kontakt
 qr-add-event = Přidat událost
-
 # Exposure controls
 exposure-ev = EV
 exposure-time = Čas
@@ -97,11 +87,9 @@ exposure-backlight = Protisvětlo
 exposure-manual-mode = Manuální
 exposure-auto-mode = Automatická
 exposure-not-supported = nepodporováno
-
 # Focus controls
 focus-auto = Ostření
 focus-position = Ostření
-
 # Color controls
 color-title = Barvy
 color-contrast = Kontrast
@@ -112,28 +100,23 @@ color-white-balance = Vyvážení bílé
 color-temperature = Teplota
 color-auto = Automaticky
 color-manual = Manuálně
-
 # Tools menu
 tools-timer = Časovač
 tools-aspect = Poměr stran
 tools-exposure = Expozice
 tools-color = Barvy
 tools-filter = Filtr
-
 # PTZ controls
 ptz-title = Ovládání kamery
-
 # Privacy cover warning
 privacy-cover-closed = Krytka kamery je zavřená
 privacy-cover-hint = Pro použití kamery otevřete krytku
-
 # Burst mode / HDR+
 burst-mode-hold-steady = Držte stabilně...
 burst-mode-frames = { $captured }/{ $total } snímků
 burst-mode-processing = Zpracovávání…
 burst-mode-quality = Kvalita (FFT)
 burst-mode-fast = Rychlé (prostorové)
-
 # HDR+ dropdown options
 hdr-plus-off = Vypnuto
 hdr-plus-auto = Automaticky
@@ -141,7 +124,6 @@ hdr-plus-frames-4 = 4 snímky
 hdr-plus-frames-6 = 6 snímků
 hdr-plus-frames-8 = 8 snímků
 hdr-plus-frames-50 = 50 snímků
-
 # Photo settings
 settings-photo = Fotografie
 settings-photo-format = Výstupní formát
@@ -150,7 +132,6 @@ settings-hdr-plus = HDR+ (experimentální)
 settings-hdr-plus-description = Vícesnímkové snímání pro lepší fotografie při slabém osvětlení a vyšší dynamický rozsah. Automatický režim volí počet snímků podle jasu scény.
 settings-save-burst-raw = Uložit raw snímky sekvence
 settings-save-burst-raw-description = Uloží jednotlivé snímky sekvence jako soubory DNG vedle fotografií HDR+. Vhodné pro ladění nebo opětovné zpracování.
-
 # Composition guide
 settings-composition-guide = Kompoziční mřížka
 settings-composition-guide-description = Zobrazí překrytí pomocných čar v náhledu kamery pro lepší kompozici
@@ -163,25 +144,20 @@ guide-spiral-bottom-left = Zlatý řez ↙
 guide-spiral-bottom-right = Zlatý řez ↘
 guide-diagonal = Diagonály
 guide-crosshair = Zaměřovač
-
 # About page
 about-support = Podpora a zpětná vazba
-
 # Insights
 insights-title = Statistiky
 insights-pipeline = Pipeline
 insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Řetězec záložních dekodérů
-
 insights-stream-combined = Náhled + snímání
-
 insights-frame-latency = Latence snímku
 insights-dropped-frames = Zahozené snímky
 insights-frame-size-decoded = Velikost snímku
 insights-copy-time = Čas zabalení snímku
 insights-gpu-upload-time = Čas nahrání do GPU
 insights-gpu-upload-bandwidth = Propustnost nahrávání do GPU
-
 insights-format-source = Zdroj
 insights-format-resolution = Rozlišení
 insights-format-framerate = Snímková frekvence
@@ -189,11 +165,9 @@ insights-format-native = Nativní formát
 insights-cpu-processing = Zpracování CPU
 insights-cpu-decode-time = Čas dekódování (CPU)
 insights-format-wgpu = Zpracování GPU
-
 insights-selected = Vybráno
 insights-available = Dostupné
 insights-unavailable = Nedostupné
-
 # Insights - Backend
 insights-backend = Backend
 insights-backend-type = Typ
@@ -201,7 +175,6 @@ insights-pipeline-handler = Obsluha pipeline
 insights-libcamera-version = Verze libcamera
 insights-sensor-model = Senzor
 insights-mjpeg-decoder = MJPEG dekodér
-
 # Insights - Multi-stream
 insights-multistream-single = Jeden stream
 insights-multistream-dual = Dva streamy
@@ -213,7 +186,6 @@ insights-stream-role = Role
 insights-stream-resolution = Rozlišení
 insights-stream-pixel-format = Formát pixelů
 insights-stream-frame-count = Snímky
-
 # Insights - Recording
 insights-recording = Pipeline nahrávání
 insights-recording-mode = Režim
@@ -227,7 +199,6 @@ insights-recording-delay = Zpoždění zpracování
 insights-recording-convert = Převod NV12
 insights-recording-pts = Aktuální PTS
 insights-recording-pipeline = Pipeline
-
 # Insights - Audio
 insights-audio = Zvuk
 insights-audio-recording = Nahrávání
@@ -243,7 +214,6 @@ insights-audio-pipeline = Pipeline
 insights-audio-format = Formát
 insights-audio-inputs = Vstupní kanály
 insights-audio-output-level = Úroveň výstupu
-
 # Insights - Per-frame metadata
 insights-metadata = Metadata snímku
 insights-meta-exposure = Expozice
@@ -257,17 +227,65 @@ insights-meta-lens-position = Poloha objektivu
 insights-meta-lux = Osvětlení
 insights-meta-focus-fom = Kvalita ostření (FoM)
 insights-meta-na = N/A
-
 # Timelapse
 settings-timelapse = Časosběr
 settings-timelapse-interval = Interval
 settings-timelapse-interval-description = Čas mezi jednotlivými snímky
-
 # Insights - V4L2 Formats
 insights-v4l2-in-libcamera = Dostupné v libcamera
 insights-v4l2-active-in-libcamera = Aktivní v libcamera
 insights-v4l2-not-in-libcamera = Nedostupné v libcamera
-
 # Insights - Capture
 insights-capture = Snímání
 insights-capture-burst = Sekvenční snímání
+action-capture = Pořídit snímek / Nahrávat / Přehrát–Pozastavit
+action-photo-snapshot = Fotografie během nahrávání
+action-switch-camera = Změnit kameru
+action-toggle-focus-auto = Přepnout automatické ostření
+action-toggle-flash = Přepnout blesk
+action-toggle-exposure-picker = Přepnout výběr expozice
+action-toggle-color-picker = Přepnout výběr barev
+action-toggle-motor-picker = Přepnout motorizované ovládání
+action-toggle-format-picker = Přepnout výběr formátu
+action-toggle-settings = Otevřít nastavení
+action-next-mode = Další režim
+action-prev-mode = Předchozí režim
+action-zoom-in = Přiblížit
+action-zoom-out = Oddálit
+action-reset-zoom = Obnovit přiblížení
+shortcut-category-zoom = Přiblížení a kompozice
+shortcut-category-app = Aplikace
+action-cycle-photo-aspect-ratio = Přepínat poměr stran fotografie
+action-open-gallery = Otevřít galerii
+action-toggle-about = O aplikaci
+action-reset-all-settings = Obnovit všechna nastavení
+action-show-shortcuts = Zobrazit zkratky
+action-quit-app = Ukončit
+shortcuts-help-title = Klávesové zkratky
+settings-mirror-captures = Zrcadlit snímky
+shortcut-category-capture = Snímání
+settings-mirror-captures-description = Použít stejné vodorovné převrácení u uložených fotografií, videí a výstupů časosběru
+keybindings-page-back = Zpět
+keybindings-page-reset-all = Obnovit všechna výchozí nastavení
+keybindings-page-reset-section = Obnovit výchozí nastavení této sekce
+keybindings-record-title = Stiskněte kombinaci kláves
+keybindings-record-hint = Stiskněte požadovanou kombinaci kláves, nebo klávesu Escape pro zrušení
+keybindings-record-conflict = Tato kombinace kláves je již přiřazena k „{ $other }“. Chcete ji nahradit?
+keybindings-record-replace = Nahradit
+keybindings-record-cancel = Zrušit
+keybindings-record-save = Uložit
+keybindings-page-title = Klávesové zkratky
+shortcuts-help-unbound = —
+shortcut-category-display = Zobrazení
+shortcut-category-pickers = Nástroje výběru
+shortcut-category-camera = Kamera
+settings-mic-level-initializing = Inicializace…
+settings-mic-level = Úroveň mikrofonu
+settings-overlay-effect = Efekt překrytí
+settings-overlay-effect-description = Jak se ovládací prvky vykreslují přes náhled. Ledové sklo rozostřuje náhled pod nimi, což více zatěžuje GPU.
+overlay-effect-system = Podle systému
+overlay-effect-frosted = Ledové sklo
+overlay-effect-translucent = Průsvitný
+overlay-effect-off = Vypnuto
+shortcuts-help-customize = Upravte v Nastavení → Klávesové zkratky
+tools-motor = Motorizované ovládání
