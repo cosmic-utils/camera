@@ -50,7 +50,7 @@ impl AppModel {
             let range = &self.available_exposure_controls.pan_absolute;
             let current = self.get_v4l2_pan_value().unwrap_or(range.default);
             let pan_row = widget::Row::new()
-                .push(widget::text::body("Pan").width(Length::Fixed(60.0)))
+                .push(widget::text::body(fl!("ptz-pan")).width(Length::Fixed(60.0)))
                 .push(
                     widget::slider(range.min..=range.max, current, Message::SetPanAbsolute)
                         .width(Length::Fixed(140.0)),
@@ -66,7 +66,7 @@ impl AppModel {
             let range = &self.available_exposure_controls.tilt_absolute;
             let current = self.get_v4l2_tilt_value().unwrap_or(range.default);
             let tilt_row = widget::Row::new()
-                .push(widget::text::body("Tilt").width(Length::Fixed(60.0)))
+                .push(widget::text::body(fl!("ptz-tilt")).width(Length::Fixed(60.0)))
                 .push(
                     widget::slider(range.min..=range.max, current, Message::SetTiltAbsolute)
                         .width(Length::Fixed(140.0)),

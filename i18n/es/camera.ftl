@@ -1,10 +1,6 @@
 app-title = Cámara
 about = Acerca de
 repository = Repositorio
-view = Vista
-welcome = Bienvenido a COSMIC! ✨
-page-id = Página { $num }
-git-description = Commit de Git {$hash} en {$date}
 
 # Mode switcher
 mode-video = VIDEO
@@ -15,9 +11,7 @@ mode-view = View
 # Virtual camera
 virtual-camera-title = Cámara virtual (experimental)
 virtual-camera-description = Transmite la señal de tu cámara a otras aplicaciones mediante un dispositivo de cámara virtual. Requiere PipeWire.
-virtual-camera-enable = Habilitar cámara virtual
 streaming-live = EN VIVO
-virtual-camera-open-file = Abrir archivo
 virtual-camera-file-filter-name = Imágenes y videos
 
 # Filters
@@ -33,26 +27,14 @@ light = Claro
 settings-camera = Cámara
 settings-video = Video
 settings-device = Dispositivo
-settings-format = Formato
 settings-microphone = Micrófono
 settings-encoder = Codificador
 settings-quality = Calidad
-settings-video-encoder = Codificador de vídeo
-settings-video-quality = Calidad de vídeo
-settings-manual-override = Anulación del modo manual
 settings-mirror-preview = Vista previa en espejo
 settings-mirror-preview-description = Girar la vista previa de la cámara horizontalmente
 settings-bug-reports = Informes de errores
 settings-report-bug = Informar de un error
 settings-show-report = Mostrar informe
-settings-resolution = Resolución
-settings-version = Versión { $version }
-settings-version-flatpak = Versión { $version } (Flatpak)
-
-# Bitrate presets
-preset-low = Bajo
-preset-medium = Medio
-preset-high = Alto
 
 # Camera preview
 initializing-camera = Inicializando cámara...

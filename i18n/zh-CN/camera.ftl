@@ -1,10 +1,6 @@
 app-title = 相机
 about = 关于
 repository = 代码仓库
-view = 查看
-welcome = 欢迎使用 COSMIC！✨
-page-id = 第 { $num } 页
-git-description = Git 提交 {$hash} 于 {$date}
 
 # Mode switcher
 mode-video = 视频
@@ -16,9 +12,7 @@ mode-view = View
 # Virtual camera
 virtual-camera-title = 虚拟相机（实验性）
 virtual-camera-description = 通过虚拟相机设备将摄像头画面流式传输到其他应用程序。需要 PipeWire。
-virtual-camera-enable = 启用虚拟相机
 streaming-live = 直播中
-virtual-camera-open-file = 打开文件
 virtual-camera-file-filter-name = 图片和视频
 
 # Filters
@@ -34,26 +28,17 @@ light = 浅色
 settings-camera = 相机
 settings-video = 视频
 settings-device = 设备
-settings-backend = 后端
-settings-format = 格式
 settings-microphone = 麦克风
 settings-record-audio = 录制音频
 settings-audio-encoder = 音频编码器
 settings-encoder = 编码器
 settings-quality = 质量
-settings-video-encoder = 视频编码器
-settings-video-quality = 视频质量
-settings-manual-override = 手动模式覆盖
 settings-mirror-preview = 镜像预览
 settings-mirror-preview-description = 水平翻转相机预览画面
 settings-reset-all = 重置所有设置
 settings-bug-reports = 错误报告
-settings-stats-for-nerds = 极客统计
 settings-report-bug = 报告错误
 settings-show-report = 显示报告
-settings-resolution = 分辨率
-settings-version = 版本 { $version }
-settings-version-flatpak = 版本 { $version } (Flatpak)
 
 # Device info
 device-info-card = 卡
@@ -69,11 +54,6 @@ device-info-multistream-yes = 支持
 device-info-multistream-no = 不支持
 device-info-rotation = 旋转
 device-info-none = 没有可用的设备信息
-
-# Bitrate presets
-preset-low = 低
-preset-medium = 中
-preset-high = 高
 
 # Camera preview
 initializing-camera = 正在初始化相机...
@@ -102,16 +82,12 @@ qr-add-contact = 添加联系人
 qr-add-event = 添加事件
 
 # Exposure controls
-exposure-mode = 模式
 exposure-ev = 曝光值
 exposure-time = 时间
 exposure-gain = 增益
 exposure-iso = ISO
 exposure-metering = 测光
 exposure-auto-priority = 帧率
-exposure-no-controls = 没有可用的曝光控制
-exposure-title = 曝光
-exposure-reset = 重置
 exposure-backlight = 背光
 exposure-manual-mode = 手动
 exposure-auto-mode = 自动
@@ -167,8 +143,6 @@ settings-photo-format = 输出格式
 settings-photo-format-description = 保存照片的文件格式。JPEG 为压缩格式，PNG 为无损格式，DNG 保留原始数据用于编辑。
 settings-hdr-plus = HDR+（实验性）
 settings-hdr-plus-description = 多帧捕捉以改善低光照片和动态范围。自动根据场景亮度选择帧数。
-settings-burst-mode-quality = HDR+ 算法
-settings-burst-mode-quality-description = 质量模式使用 FFT 频域合并以获得最佳效果。快速模式使用空间合并以加快处理速度。
 settings-save-burst-raw = 保存原始连拍帧
 settings-save-burst-raw-description = 将单独的连拍帧与 HDR+ 照片一起保存为 DNG 文件。用于调试或重新处理。
 
@@ -191,7 +165,6 @@ about-support = 支持与反馈
 # Insights
 insights-title = 详细信息
 insights-pipeline = 管道
-insights-pipeline-full = GStreamer 管道
 insights-pipeline-full-libcamera = 管道
 insights-decoder-chain = 解码器回退链
 
@@ -200,7 +173,6 @@ insights-stream-combined = 预览 + 捕捉流
 insights-frame-latency = 帧延迟
 insights-dropped-frames = 丢帧
 insights-frame-size-decoded = 帧大小
-insights-decode-time-gst = 缓冲处理
 insights-copy-time = 帧封装时间
 insights-gpu-upload-time = GPU 上传时间
 insights-gpu-upload-bandwidth = GPU 上传带宽
@@ -209,7 +181,6 @@ insights-format-source = 源
 insights-format-resolution = 分辨率
 insights-format-framerate = 帧率
 insights-format-native = 原生格式
-insights-format-gstreamer = GStreamer 输出
 insights-cpu-processing = CPU 处理
 insights-cpu-decode-time = CPU 解码时间
 insights-format-wgpu = GPU 处理
@@ -243,7 +214,6 @@ insights-recording = 录制管道
 insights-recording-mode = 模式
 insights-recording-encoder = 编码器
 insights-recording-resolution = 分辨率
-insights-recording-framerate = 帧率
 insights-recording-capture = 捕捉线程
 insights-recording-channel = 通道
 insights-recording-pusher = Appsrc 推送器
@@ -268,7 +238,6 @@ insights-audio-pipeline = 管道
 insights-audio-format = 格式
 insights-audio-inputs = 输入声道
 insights-audio-output-level = 输出电平
-insights-audio-not-recording = 未录制
 
 # Insights - Per-frame metadata
 insights-metadata = 帧元数据
