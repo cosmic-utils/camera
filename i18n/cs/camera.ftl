@@ -1,10 +1,6 @@
 app-title = Kamera
 about = O aplikaci
 repository = Repozitář
-view = Zobrazení
-welcome = Vítejte v COSMIC! ✨
-page-id = Stránka { $num }
-git-description = Git commit {$hash} dne {$date}
 
 # Mode switcher
 mode-video = Video
@@ -17,9 +13,7 @@ mode-view = Náhled
 # Virtual camera
 virtual-camera-title = Virtuální kamera (experimentální)
 virtual-camera-description = Přenáší obraz vaší kamery do jiných aplikací prostřednictvím virtuální kamery. Vyžaduje PipeWire.
-virtual-camera-enable = Povolit virtuální kameru
 streaming-live = ŽIVĚ
-virtual-camera-open-file = Otevřít soubor
 virtual-camera-file-filter-name = Obrázky a videa
 
 # Filters
@@ -37,28 +31,19 @@ settings-default-mode-description = Režim kamery při spuštění aplikace
 settings-camera = Kamera
 settings-video = Video
 settings-device = Zařízení
-settings-backend = Backend
-settings-format = Formát
 settings-microphone = Mikrofon
 settings-record-audio = Nahrávat zvuk
 settings-audio-encoder = Enkodér zvuku
 settings-encoder = Enkodér
 settings-quality = Kvalita
-settings-video-encoder = Enkodér videa
-settings-video-quality = Kvalita videa
-settings-manual-override = Manuální přepsání režimu
 settings-mirror-preview = Zrcadlit náhled
 settings-mirror-preview-description = Převrátí náhled kamery vodorovně
 settings-haptic-feedback = Haptická odezva
 settings-haptic-feedback-description = Vibrace při pořízení snímku, změně režimu a změně kamery
 settings-reset-all = Obnovit všechna nastavení
 settings-bug-reports = Hlášení chyb
-settings-stats-for-nerds = Statistiky pro experty
 settings-report-bug = Nahlásit chybu
 settings-show-report = Zobrazit hlášení
-settings-resolution = Rozlišení
-settings-version = Verze { $version }
-settings-version-flatpak = Verze { $version } (Flatpak)
 
 # Device info
 device-info-card = Karta
@@ -75,15 +60,8 @@ device-info-multistream-no = Nepodporováno
 device-info-rotation = Rotace
 device-info-none = Nejsou dostupné žádné informace o zařízení
 
-# Bitrate presets
-preset-low = Nízký
-preset-medium = Střední
-preset-high = Vysoký
-
 # Camera preview
 initializing-camera = Inicializace kamery...
-preview-fit = Přizpůsobit
-preview-cover = Vyplnit
 
 # Format picker
 format-resolution = Rozlišení:
@@ -109,16 +87,12 @@ qr-add-contact = Přidat kontakt
 qr-add-event = Přidat událost
 
 # Exposure controls
-exposure-mode = Režim
 exposure-ev = EV
 exposure-time = Čas
 exposure-gain = Zesílení
 exposure-iso = ISO
 exposure-metering = Měření
 exposure-auto-priority = Snímková frekvence
-exposure-no-controls = Nejsou k dispozici žádné ovládací prvky expozice
-exposure-title = Expozice
-exposure-reset = Obnovit
 exposure-backlight = Protisvětlo
 exposure-manual-mode = Manuální
 exposure-auto-mode = Automatická
@@ -174,8 +148,6 @@ settings-photo-format = Výstupní formát
 settings-photo-format-description = Formát souboru pro uložené fotografie. JPEG je komprimovaný, PNG je bezztrátový, DNG zachovává raw data pro úpravy.
 settings-hdr-plus = HDR+ (experimentální)
 settings-hdr-plus-description = Vícesnímkové snímání pro lepší fotografie při slabém osvětlení a vyšší dynamický rozsah. Automatický režim volí počet snímků podle jasu scény.
-settings-burst-mode-quality = Algoritmus HDR+
-settings-burst-mode-quality-description = Kvalita používá slučování ve frekvenční doméně (FFT) pro nejlepší výsledky. Rychlé používá prostorové slučování pro rychlejší zpracování.
 settings-save-burst-raw = Uložit raw snímky sekvence
 settings-save-burst-raw-description = Uloží jednotlivé snímky sekvence jako soubory DNG vedle fotografií HDR+. Vhodné pro ladění nebo opětovné zpracování.
 
@@ -198,7 +170,6 @@ about-support = Podpora a zpětná vazba
 # Insights
 insights-title = Statistiky
 insights-pipeline = Pipeline
-insights-pipeline-full = GStreamer pipeline
 insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Řetězec záložních dekodérů
 
@@ -207,7 +178,6 @@ insights-stream-combined = Náhled + snímání
 insights-frame-latency = Latence snímku
 insights-dropped-frames = Zahozené snímky
 insights-frame-size-decoded = Velikost snímku
-insights-decode-time-gst = Zpracování bufferu
 insights-copy-time = Čas zabalení snímku
 insights-gpu-upload-time = Čas nahrání do GPU
 insights-gpu-upload-bandwidth = Propustnost nahrávání do GPU
@@ -216,7 +186,6 @@ insights-format-source = Zdroj
 insights-format-resolution = Rozlišení
 insights-format-framerate = Snímková frekvence
 insights-format-native = Nativní formát
-insights-format-gstreamer = Výstup GStreamer
 insights-cpu-processing = Zpracování CPU
 insights-cpu-decode-time = Čas dekódování (CPU)
 insights-format-wgpu = Zpracování GPU
@@ -250,7 +219,6 @@ insights-recording = Pipeline nahrávání
 insights-recording-mode = Režim
 insights-recording-encoder = Enkodér
 insights-recording-resolution = Rozlišení
-insights-recording-framerate = Snímková frekvence
 insights-recording-capture = Vlákno snímání
 insights-recording-channel = Kanál
 insights-recording-pusher = Appsrc vysílač
@@ -275,7 +243,6 @@ insights-audio-pipeline = Pipeline
 insights-audio-format = Formát
 insights-audio-inputs = Vstupní kanály
 insights-audio-output-level = Úroveň výstupu
-insights-audio-not-recording = Nenahrává se
 
 # Insights - Per-frame metadata
 insights-metadata = Metadata snímku
@@ -297,8 +264,6 @@ settings-timelapse-interval = Interval
 settings-timelapse-interval-description = Čas mezi jednotlivými snímky
 
 # Insights - V4L2 Formats
-insights-v4l2-formats = Formáty zařízení V4L2
-insights-v4l2-no-device = Žádné zařízení V4L2
 insights-v4l2-in-libcamera = Dostupné v libcamera
 insights-v4l2-active-in-libcamera = Aktivní v libcamera
 insights-v4l2-not-in-libcamera = Nedostupné v libcamera

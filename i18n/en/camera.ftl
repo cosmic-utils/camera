@@ -1,10 +1,6 @@
 app-title = Camera
 about = About
 repository = Repository
-view = View
-welcome = Welcome to COSMIC! ✨
-page-id = Page { $num }
-git-description = Git commit {$hash} on {$date}
 
 # Mode switcher
 mode-video = Video
@@ -17,9 +13,7 @@ mode-view = View
 # Virtual camera
 virtual-camera-title = Virtual camera (experimental)
 virtual-camera-description = Stream your camera feed to other applications via a virtual camera device. Requires PipeWire.
-virtual-camera-enable = Enable virtual camera
 streaming-live = LIVE
-virtual-camera-open-file = Open file
 virtual-camera-file-filter-name = Images and Videos
 
 # Filters
@@ -43,8 +37,6 @@ settings-default-mode-description = Camera mode to use when the app launches
 settings-camera = Camera
 settings-video = Video
 settings-device = Device
-settings-backend = Backend
-settings-format = Format
 settings-microphone = Microphone
 settings-record-audio = Record audio
 settings-audio-encoder = Audio encoder
@@ -52,9 +44,6 @@ settings-mic-level = Microphone level
 settings-mic-level-initializing = Initializing…
 settings-encoder = Encoder
 settings-quality = Quality
-settings-video-encoder = Video encoder
-settings-video-quality = Video quality
-settings-manual-override = Manual mode override
 settings-mirror-preview = Mirror preview
 settings-mirror-preview-description = Flip the camera preview horizontally
 settings-mirror-captures = Mirror captures
@@ -63,12 +52,8 @@ settings-haptic-feedback = Haptic feedback
 settings-haptic-feedback-description = Vibrate on capture, mode switch, and camera switch
 settings-reset-all = Reset all settings
 settings-bug-reports = Bug reports
-settings-stats-for-nerds = Stats for nerds
 settings-report-bug = Report bug
 settings-show-report = Show Report
-settings-resolution = Resolution
-settings-version = Version { $version }
-settings-version-flatpak = Version { $version } (Flatpak)
 
 # Device info
 device-info-card = Card
@@ -85,15 +70,8 @@ device-info-multistream-no = Not supported
 device-info-rotation = Rotation
 device-info-none = No device information available
 
-# Bitrate presets
-preset-low = Low
-preset-medium = Medium
-preset-high = High
-
 # Camera preview
 initializing-camera = Initializing camera...
-preview-fit = Fit
-preview-cover = Fill
 
 # Format picker
 format-resolution = Resolution:
@@ -119,16 +97,12 @@ qr-add-contact = Add Contact
 qr-add-event = Add Event
 
 # Exposure controls
-exposure-mode = Mode
 exposure-ev = EV
 exposure-time = Time
 exposure-gain = Gain
 exposure-iso = ISO
 exposure-metering = Metering
 exposure-auto-priority = Frame Rate
-exposure-no-controls = No exposure controls available
-exposure-title = Exposure
-exposure-reset = Reset
 exposure-backlight = Backlight
 exposure-manual-mode = Manual
 exposure-auto-mode = Auto
@@ -185,8 +159,6 @@ settings-photo-format = Output format
 settings-photo-format-description = File format for saved photos. JPEG is compressed, PNG is lossless, DNG preserves raw data for editing.
 settings-hdr-plus = HDR+ (experimental)
 settings-hdr-plus-description = Multi-frame capture for improved low-light photos and dynamic range. Auto selects frame count based on scene brightness.
-settings-burst-mode-quality = HDR+ algorithm
-settings-burst-mode-quality-description = Quality uses FFT frequency domain merge for best results. Fast uses spatial merge for quicker processing.
 settings-save-burst-raw = Save raw burst frames
 settings-save-burst-raw-description = Save individual burst frames as DNG files alongside HDR+ photos. Useful for debugging or reprocessing.
 
@@ -209,7 +181,6 @@ about-support = Support & Feedback
 # Insights
 insights-title = Insights
 insights-pipeline = Pipeline
-insights-pipeline-full = GStreamer Pipeline
 insights-pipeline-full-libcamera = Pipeline
 insights-decoder-chain = Decoder Fallback Chain
 
@@ -218,7 +189,6 @@ insights-stream-combined = Preview + Capture Stream
 insights-frame-latency = Frame Latency
 insights-dropped-frames = Dropped Frames
 insights-frame-size-decoded = Frame Size
-insights-decode-time-gst = Buffer Processing
 insights-copy-time = Frame Wrap Time
 insights-gpu-upload-time = GPU Upload Time
 insights-gpu-upload-bandwidth = GPU Upload Bandwidth
@@ -227,7 +197,6 @@ insights-format-source = Source
 insights-format-resolution = Resolution
 insights-format-framerate = Framerate
 insights-format-native = Native Format
-insights-format-gstreamer = GStreamer Output
 insights-cpu-processing = CPU Processing
 insights-cpu-decode-time = CPU Decode Time
 insights-format-wgpu = GPU Processing
@@ -261,7 +230,6 @@ insights-recording = Recording Pipeline
 insights-recording-mode = Mode
 insights-recording-encoder = Encoder
 insights-recording-resolution = Resolution
-insights-recording-framerate = Framerate
 insights-recording-capture = Capture Thread
 insights-recording-channel = Channel
 insights-recording-pusher = Appsrc Pusher
@@ -286,7 +254,6 @@ insights-audio-pipeline = Pipeline
 insights-audio-format = Format
 insights-audio-inputs = Input Channels
 insights-audio-output-level = Output Level
-insights-audio-not-recording = Not Recording
 
 # Insights - Per-frame metadata
 insights-metadata = Frame Metadata
@@ -308,8 +275,6 @@ settings-timelapse-interval = Interval
 settings-timelapse-interval-description = Time between consecutive photo captures
 
 # Insights - V4L2 Formats
-insights-v4l2-formats = V4L2 Device Formats
-insights-v4l2-no-device = No V4L2 device
 insights-v4l2-in-libcamera = Available in libcamera
 insights-v4l2-active-in-libcamera = Active in libcamera
 insights-v4l2-not-in-libcamera = Not available in libcamera
@@ -350,13 +315,9 @@ action-show-shortcuts = Show shortcuts
 action-quit-app = Quit
 
 # Shortcuts help / settings page
-shortcuts-help-title = Keyboard Shortcuts
-shortcuts-help-customize = Customize in Settings → Keyboard Shortcuts
 shortcuts-help-unbound = —
 keybindings-page-title = Keyboard Shortcuts
-keybindings-page-back = Back
 keybindings-page-reset-all = Reset all to defaults
-keybindings-page-reset-section = Reset section to defaults
 keybindings-record-title = Press a key combination
 keybindings-record-hint = Press the key combination you want, or Esc to cancel
 keybindings-record-conflict = This combination is already used by "{$other}". Replace?
