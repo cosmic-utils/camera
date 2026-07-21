@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Camera
+Name[ar]=كاميرا
 Name[bg]=Камера
 Name[cs]=Kamera
 Name[de]=Kamera
@@ -10,6 +11,7 @@ Name[sv]=Kamera
 Name[uk]=Камера
 Name[zh_CN]=相机
 GenericName=Camera
+GenericName[ar]=كاميرا
 GenericName[bg]=Камера
 GenericName[cs]=Kamera
 GenericName[de]=Kamera
