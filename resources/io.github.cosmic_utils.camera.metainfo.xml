@@ -20,33 +20,43 @@
   <summary xml:lang="zh-CN">拍摄照片和视频</summary>
   <description>
     <p>Camera is a modern camera application for Linux, built for desktops and phones alike. Whether you need to snap a quick photo, record a video, or scan a QR code, Camera provides a clean and intuitive interface that stays out of your way.</p>
+    <p xml:lang="de">Kamera ist eine moderne Kamera-App für Linux, für den Desktop genauso wie fürs Smartphone. Ob du schnell ein Foto machst, ein Video aufnimmst oder einen QR-Code scannst, Kamera bleibt schlicht und übersichtlich und kommt dir dabei nicht in die Quere.</p>
     <p>Just open the app and start capturing moments. Add fun filters to your photos, scan QR codes to open links or connect to WiFi, or use virtual camera mode to look great in video calls with your favorite filter applied.</p>
     <p xml:lang="cs">Otevřete aplikaci a začněte zachycovat okamžiky. Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech vypadali skvěle s aplikovaným oblíbeným filtrem.</p>
+    <p xml:lang="de">Einfach die App öffnen und den Moment festhalten. Leg witzige Filter über deine Fotos, scanne QR-Codes, um Links zu öffnen oder dich mit WiFi zu verbinden, oder nutze die virtuelle Kamera, um in Videoanrufen mit deinem Lieblingsfilter gut auszusehen.</p>
     <p xml:lang="uk">Просто відкрийте застосунок і починайте творити. Застосовуйте креативні фільтри до знімків, миттєво скануйте QR-коди для переходу за посиланнями чи підключення до Wi-Fi, або скористайтеся режимом віртуальної камери, щоб виглядати бездоганно у відеодзвінках з улюбленим фільтром.</p>
     <p xml:lang="zh-CN">只需打开应用程序即可开始捕捉精彩瞬间。 为照片添加有趣的滤镜，扫描二维码打开链接或连接 WiFi， 或使用虚拟相机模式在视频通话中应用您喜爱的滤镜，展现最佳状态。</p>
     <p>Key features:</p>
     <p xml:lang="cs">Klíčové funkce:</p>
+    <p xml:lang="de">Wichtigste Funktionen:</p>
     <p xml:lang="uk">Основні можливості:</p>
     <p xml:lang="zh-CN">主要功能：</p>
     <ul>
       <li>Photo and video capture: high quality and hardware accelerated</li>
       <li xml:lang="cs">Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace</li>
+      <li xml:lang="de">Foto- und Videoaufnahme: hohe Qualität und hardwarebeschleunigt</li>
       <li xml:lang="uk">Знімки та відеозйомка: висока якість і апаратне прискорення</li>
       <li xml:lang="zh-CN">照片和视频捕捉：高质量且支持硬件加速</li>
       <li>Photo, video and timelapse modes, with a self timer and composition guides</li>
+      <li xml:lang="de">Foto, Video und Zeitraffer, mit Selbstauslöser und Kompositionshilfen</li>
       <li>Manual controls: exposure, ISO, shutter, focus and white balance</li>
+      <li xml:lang="de">Manuelle Steuerung: Belichtung, ISO, Verschlusszeit, Fokus und Weißabgleich</li>
       <li>QR code scanner: open links, connect to WiFi, and more</li>
       <li xml:lang="cs">Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další</li>
+      <li xml:lang="de">QR-Code-Scanner: Links öffnen, mit WiFi verbinden und mehr</li>
       <li xml:lang="uk">Сканер QR-кодів: відкривайте посилання, підключайтеся до Wi-Fi та багато іншого</li>
       <li xml:lang="zh-CN">二维码扫描器：打开链接、连接 WiFi 等</li>
       <li>14 creative filters: Mono, Sepia, Vivid, Noir, Pencil, and more</li>
       <li xml:lang="cs">14 kreativních filtrů: Černobílý, Sépie, Živý, Noir, Skica a další</li>
+      <li xml:lang="de">14 kreative Filter: Mono, Sepia, Vivid, Noir, Skizze und mehr</li>
       <li>Virtual camera: use your filtered camera feed in video calls and other apps</li>
       <li xml:lang="cs">Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
+      <li xml:lang="de">Virtuelle Kamera: dein gefiltertes Kamerabild in Videoanrufen und anderen Apps nutzen</li>
       <li xml:lang="uk">Віртуальна камера: використовуйте відфільтроване зображення у відеодзвінках та інших застосунках</li>
       <li xml:lang="zh-CN">虚拟相机：在视频通话和其他应用中使用带滤镜的摄像头画面</li>
       <li>Multi-camera support: easily switch between cameras and microphones</li>
       <li xml:lang="cs">Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
+      <li xml:lang="de">Mehrkamera-Unterstützung: einfach zwischen Kameras und Mikrofonen wechseln</li>
       <li xml:lang="uk">Підтримка кількох камер: легко перемикайтеся між камерами та мікрофонами</li>
       <li xml:lang="zh-CN">多摄像头支持：轻松切换摄像头和麦克风</li>
     </ul>
@@ -71,16 +81,19 @@
     <screenshot type="default">
       <caption>Photo mode with tools menu</caption>
       <caption xml:lang="cs">Režim fotografie s nabídkou nástrojů</caption>
+      <caption xml:lang="de">Fotomodus mit Werkzeugmenü</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
     </screenshot>
     <screenshot>
       <caption>Photo mode on a Linux phone</caption>
       <caption xml:lang="cs">Režim fotografie na telefonu s Linuxem</caption>
+      <caption xml:lang="de">Fotomodus auf einem Linux-Smartphone</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
     </screenshot>
     <screenshot>
       <caption>Filter picker</caption>
       <caption xml:lang="cs">Výběr filtrů</caption>
+      <caption xml:lang="de">Filterauswahl</caption>
       <caption xml:lang="uk">Вибір фільтрів</caption>
       <caption xml:lang="zh-CN">滤镜选择器</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-003.png</image>
@@ -88,6 +101,7 @@
     <screenshot>
       <caption>Video recording in progress</caption>
       <caption xml:lang="cs">Probíhající natáčení videa</caption>
+      <caption xml:lang="de">Laufende Videoaufnahme</caption>
       <caption xml:lang="uk">Запис відео триває</caption>
       <caption xml:lang="zh-CN">视频录制中</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-004.png</image>
@@ -95,6 +109,7 @@
     <screenshot>
       <caption>QR code detection</caption>
       <caption xml:lang="cs">Detekce QR kódu</caption>
+      <caption xml:lang="de">QR-Code-Erkennung</caption>
       <caption xml:lang="uk">Виявлення QR-коду</caption>
       <caption xml:lang="zh-CN">二维码检测</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
@@ -102,6 +117,7 @@
     <screenshot>
       <caption>Advanced settings</caption>
       <caption xml:lang="cs">Pokročilá nastavení</caption>
+      <caption xml:lang="de">Erweiterte Einstellungen</caption>
       <caption xml:lang="uk">Розширені налаштування</caption>
       <caption xml:lang="zh-CN">高级设置</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
