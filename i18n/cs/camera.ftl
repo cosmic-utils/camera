@@ -306,7 +306,6 @@ filter-chroma = Sytý
 filter-pencil = Skica
 ptz-pan = Otočení
 ptz-tilt = Náklon
-
 desktop-name = Kamera
 desktop-generic-name = Kamera
 desktop-comment = Aplikace kamery pro prostředí COSMIC™
@@ -318,7 +317,7 @@ metainfo-description-usage = Otevřete aplikaci a začněte zachycovat okamžiky
 metainfo-description-features-title = Klíčové funkce:
 metainfo-feature-capture = Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace
 metainfo-feature-qr = Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další
-metainfo-feature-filters = 15 kreativních filtrů: Mono, Sepia, Vivid, Noir, Pencil Sketch a další
+metainfo-feature-filters = 15 kreativních filtrů: Černobílý, Sépie, Živý, Noir, Skica a další
 metainfo-feature-virtual-camera = Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích
 metainfo-feature-multi-camera = Podpora více kamer: snadné přepínání mezi kamerami a mikrofony
 metainfo-caption-photo-tools = Režim fotografie s nabídkou nástrojů
