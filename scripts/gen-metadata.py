@@ -34,10 +34,6 @@ SOURCE_LANG = "en"
 # the ones generated from here. These prefixes mark the latter.
 KEY_PREFIXES = ("desktop-", "metainfo-")
 
-# In-app keys the metadata reuses instead of duplicating, either as a value of
-# their own or through a { key } reference inside another string.
-SHARED_KEYS = ("camera",)
-
 # Desktop entry key -> Fluent key.
 DESKTOP_KEYS = {
     "Name": "camera",
@@ -82,14 +78,18 @@ METAINFO_SCREENSHOTS = {
 
 
 def read_translations() -> dict[str, dict[str, str]]:
-    """Return {fluent_key: {lang: value}} for the metadata keys of every language."""
+    """Return {fluent_key: {lang: value}} for every string of every language.
+
+    In-app keys are read too, not just the metadata ones: the metadata maps
+    some of them directly (`camera` becomes the launcher name) and references
+    others inside its own strings, so they all have to be resolvable.
+    """
     out: dict[str, dict[str, str]] = {}
     for path in sorted(I18N.glob("*/camera.ftl")):
         lang = path.parent.name
         for line in path.read_text(encoding="utf-8").splitlines():
             match = re.match(r"^([a-z0-9-]+) = (.*)$", line)
-            if match and (match.group(1).startswith(KEY_PREFIXES)
-                          or match.group(1) in SHARED_KEYS):
+            if match:
                 out.setdefault(match.group(1), {})[lang] = match.group(2).strip()
     return out
 
@@ -230,10 +230,13 @@ def main() -> int:
     if not translations:
         sys.exit(f"error: no metadata strings found in {I18N.relative_to(ROOT)}/*/camera.ftl")
 
-    source_keys = {k for k, v in translations.items() if SOURCE_LANG in v}
     expected = set(DESKTOP_KEYS.values())
     for mapping in (METAINFO_HEAD, METAINFO_DESCRIPTION, METAINFO_SCREENSHOTS):
         expected.update(k for keys in mapping.values() for k in keys)
+    # Only the prefixed keys and the mapped ones are this script's business;
+    # the rest of the file is the application's own strings.
+    source_keys = {k for k, v in translations.items() if SOURCE_LANG in v
+                   and (k.startswith(KEY_PREFIXES) or k in expected)}
     if missing := expected - source_keys:
         sys.exit(f"error: missing from i18n/{SOURCE_LANG}/camera.ftl: {', '.join(sorted(missing))}")
     if extra := source_keys - expected:
@@ -241,7 +244,9 @@ def main() -> int:
 
     resolve_references(translations)
 
-    langs = sorted({lang for v in translations.values() for lang in v if lang != SOURCE_LANG})
+    langs = sorted({lang for v in translations.values() for lang in v
+                    if lang != SOURCE_LANG and any(
+                        lang in translations[k] for k in expected)})
     print(f"Generating metadata for: {', '.join(langs)}")
 
     write_if_changed(DESKTOP, render_desktop(translations, DESKTOP.read_text(encoding="utf-8")))
