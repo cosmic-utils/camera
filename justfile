@@ -100,7 +100,7 @@ run-debug *args:
 # Regenerate every derived file that is committed to the repository
 generate: generate-metadata flatpak-cargo-sources
 
-# Write translations from i18n/*/metadata.ftl into the desktop and metainfo files
+# Write translations from i18n/*/camera.ftl into the desktop and metainfo files
 generate-metadata:
     python3 scripts/gen-metadata.py
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Inject translations from i18n/*/metadata.ftl into the desktop and metainfo files.
+"""Inject translations from i18n/*/camera.ftl into the desktop and metainfo files.
 
 Weblate has no native format for freedesktop desktop entries or AppStream
 metainfo XML, so the strings are hosted as Fluent (the same format the
-application itself uses) and written into the two resource files here.
+application itself uses) and written into the two resource files here. They
+share the application's own Fluent file because a Weblate file mask takes a
+single language placeholder, so a second file would mean a second component
+that translators have to find on their own.
 
 Both resource files are edited in place and stay committed, because the release
 workflow also mutates the metainfo file to add release entries. Only the
@@ -26,6 +29,10 @@ DESKTOP = ROOT / "resources" / "io.github.cosmic_utils.camera.desktop"
 METAINFO = ROOT / "resources" / "io.github.cosmic_utils.camera.metainfo.xml"
 
 SOURCE_LANG = "en"
+
+# The application's Fluent file holds both the strings shown inside the app and
+# the ones generated from here. These prefixes mark the latter.
+KEY_PREFIXES = ("desktop-", "metainfo-")
 
 # Desktop entry key -> Fluent key.
 DESKTOP_KEYS = {
@@ -68,13 +75,13 @@ METAINFO_SCREENSHOTS = {
 
 
 def read_translations() -> dict[str, dict[str, str]]:
-    """Return {fluent_key: {lang: value}} from every i18n/*/metadata.ftl."""
+    """Return {fluent_key: {lang: value}} for the metadata keys of every language."""
     out: dict[str, dict[str, str]] = {}
-    for path in sorted(I18N.glob("*/metadata.ftl")):
+    for path in sorted(I18N.glob("*/camera.ftl")):
         lang = path.parent.name
         for line in path.read_text(encoding="utf-8").splitlines():
             match = re.match(r"^([a-z0-9-]+) = (.*)$", line)
-            if match:
+            if match and match.group(1).startswith(KEY_PREFIXES):
                 out.setdefault(match.group(1), {})[lang] = match.group(2).strip()
     return out
 
@@ -183,16 +190,16 @@ def write_if_changed(path: Path, content: str) -> bool:
 def main() -> int:
     translations = read_translations()
     if not translations:
-        sys.exit(f"error: no translations found in {I18N.relative_to(ROOT)}/*/metadata.ftl")
+        sys.exit(f"error: no metadata strings found in {I18N.relative_to(ROOT)}/*/camera.ftl")
 
     source_keys = {k for k, v in translations.items() if SOURCE_LANG in v}
     expected = set(DESKTOP_KEYS.values())
     for mapping in (METAINFO_HEAD, METAINFO_DESCRIPTION, METAINFO_SCREENSHOTS):
         expected.update(k for keys in mapping.values() for k in keys)
     if missing := expected - source_keys:
-        sys.exit(f"error: missing from i18n/{SOURCE_LANG}/metadata.ftl: {', '.join(sorted(missing))}")
+        sys.exit(f"error: missing from i18n/{SOURCE_LANG}/camera.ftl: {', '.join(sorted(missing))}")
     if extra := source_keys - expected:
-        sys.exit(f"error: unmapped keys in i18n/{SOURCE_LANG}/metadata.ftl: {', '.join(sorted(extra))}")
+        sys.exit(f"error: unmapped keys in i18n/{SOURCE_LANG}/camera.ftl: {', '.join(sorted(extra))}")
 
     langs = sorted({lang for v in translations.values() for lang in v if lang != SOURCE_LANG})
     print(f"Generating metadata for: {', '.join(langs)}")
