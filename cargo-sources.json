@@ -5001,14 +5001,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/libc/libc-0.2.186.crate",
-        "sha256": "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66",
-        "dest": "cargo/vendor/libc-0.2.186"
+        "url": "https://static.crates.io/crates/libc/libc-0.2.188.crate",
+        "sha256": "22053b6a34f84abc97f9129e61334f40174659a1b9bd18c970b83db6a9a6348b",
+        "dest": "cargo/vendor/libc-0.2.188"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66\", \"files\": {}}",
-        "dest": "cargo/vendor/libc-0.2.186",
+        "contents": "{\"package\": \"22053b6a34f84abc97f9129e61334f40174659a1b9bd18c970b83db6a9a6348b\", \"files\": {}}",
+        "dest": "cargo/vendor/libc-0.2.188",
         "dest-filename": ".cargo-checksum.json"
     },
     {
