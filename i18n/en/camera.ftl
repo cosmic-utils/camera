@@ -748,9 +748,9 @@ metainfo-feature-modes = Photo, video and timelapse modes, with a self timer and
 metainfo-feature-controls = Manual controls: exposure, ISO, shutter, focus and white balance
 # Feature list item. QR and WiFi are product names and stay as they are.
 metainfo-feature-qr = QR code scanner: open links, connect to WiFi, and more
-# Feature list item. The filter names are the same ones used in the app, so
-# translate them the same way there.
-metainfo-feature-filters = 14 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more
+# Feature list item. The filter names are pulled straight from the filter
+# picker above, so translate them there and they follow here on their own.
+metainfo-feature-filters = 14 creative filters: { filter-mono }, { filter-sepia }, { filter-vivid }, { filter-noir }, { filter-pencil }, and more
 # Feature list item.
 metainfo-feature-virtual-camera = Virtual camera: use your filtered camera feed in video calls and other apps
 # Feature list item.
