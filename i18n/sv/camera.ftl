@@ -1,4 +1,4 @@
-app-title = Kamera
+camera = Kamera
 about = Om
 repository = Källkod
 # Lägesväxlare
@@ -22,7 +22,6 @@ dark = Mörkt
 light = Ljust
 settings-default-mode = Standard läge
 settings-default-mode-description = Kamera läge att använda när programmet startar
-settings-camera = Kamera
 settings-video = Video
 settings-device = Enhet
 settings-microphone = Mikrofon

@@ -7,8 +7,12 @@
 ### Product names (COSMIC, PipeWire, GStreamer, libcamera, V4L2, DNG, JPEG, PNG,
 ### HDR+, Opus, AAC, MJPEG, NV12) are not translated.
 
-# Application name, shown in the About page header and the window title.
-app-title = Camera
+# The word "Camera", used for every place the app names itself or a camera
+# device: the window title and About page header, the launcher and software
+# centre entry, the camera settings page, and the camera shortcut category. It
+# is also referenced inside longer strings as { camera }, so keep it a single
+# noun that reads correctly at the start of a sentence.
+camera = Camera
 # Row that opens the About page, and the label of the F1 shortcut. Reused in
 # both places, so it has to work as a navigation row and as an action name.
 about = About
@@ -115,8 +119,6 @@ overlay-effect-off = Off
 settings-default-mode = Default mode
 # Description under the default mode dropdown.
 settings-default-mode-description = Camera mode to use when the app launches
-# Settings row, page title and section title for camera device options.
-settings-camera = Camera
 # Settings row, page title and section title for video recording options.
 settings-video = Video
 # Label of the camera selection row. This row also holds an info button and the
@@ -634,8 +636,6 @@ insights-capture-burst = Capture Burst
 
 # Groups the shutter and snapshot shortcuts.
 shortcut-category-capture = Capture
-# Groups camera switching, focus and flash shortcuts.
-shortcut-category-camera = Camera
 # Groups the shortcuts that open the exposure, colour, motor, format and
 # settings panels.
 shortcut-category-pickers = Pickers
@@ -720,11 +720,6 @@ keybindings-record-save = Save
 ## are the only strings here that are not shown inside the application itself.
 ## The trademark sign in COSMIC™ must be kept.
 
-# Application name in the launcher. Keep it short, it appears under the icon.
-desktop-name = Camera
-# Generic description of the application type, shown by some launchers instead
-# of, or alongside, the name above.
-desktop-generic-name = Camera
 # One line tooltip shown in the launcher.
 desktop-comment = Third-party camera app for the COSMIC™ desktop
 # Search terms for the launcher, separated by semicolons and ending with one.
@@ -736,13 +731,11 @@ desktop-keywords = camera;webcam;photo;video;
 ## Software centre listing, shown by GNOME Software, KDE Discover and Flathub.
 ## The release notes in the metainfo file are deliberately not translated.
 
-# Application name in software centres. Should match the launcher name above.
-metainfo-name = Camera
 # One line summary shown under the name in a software centre. Keep it under
 # about 60 characters, as listings truncate it.
 metainfo-summary = Capture photos and videos
 # First paragraph of the long description.
-metainfo-description-intro = Camera is a third-party camera application for the COSMIC™ desktop environment. Whether you need to snap a quick photo, record a video, or scan a QR code, Camera provides a clean and intuitive interface that stays out of your way.
+metainfo-description-intro = { camera } is a third-party camera application for the COSMIC™ desktop environment. Whether you need to snap a quick photo, record a video, or scan a QR code, { camera } provides a clean and intuitive interface that stays out of your way.
 # Second paragraph of the long description.
 metainfo-description-usage = Just open the app and start capturing moments. Add fun filters to your photos, scan QR codes to open links or connect to WiFi, or use virtual camera mode to look great in video calls with your favorite filter applied.
 # Heading introducing the feature list below. Ends with a colon.

@@ -1,11 +1,21 @@
 [Desktop Entry]
 Type=Application
 Name=Camera
+Name[bg]=Камера
 Name[cs]=Kamera
+Name[de]=Kamera
+Name[es]=Cámara
+Name[fr]=Caméra
+Name[sv]=Kamera
 Name[uk]=Камера
 Name[zh_CN]=相机
 GenericName=Camera
+GenericName[bg]=Камера
 GenericName[cs]=Kamera
+GenericName[de]=Kamera
+GenericName[es]=Cámara
+GenericName[fr]=Caméra
+GenericName[sv]=Kamera
 GenericName[uk]=Камера
 GenericName[zh_CN]=相机
 Comment=Third-party camera app for the COSMIC™ desktop

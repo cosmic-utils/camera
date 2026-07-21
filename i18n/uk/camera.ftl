@@ -1,4 +1,4 @@
-app-title = Камера
+camera = Камера
 about = Про «Камеру»
 repository = Сховище
 # Mode switcher
@@ -24,7 +24,6 @@ dark = Темна
 light = Світла
 settings-default-mode = Режим камери
 settings-default-mode-description = Типовий режим під час запуску застосунку
-settings-camera = Камера
 settings-video = Відео
 settings-device = Пристрій
 settings-microphone = Мікрофон
@@ -244,7 +243,6 @@ insights-capture = Зйомка
 insights-capture-burst = Серійна зйомка
 # Keyboard shortcuts — categories
 shortcut-category-capture = Зйомка
-shortcut-category-camera = Камера
 shortcut-category-pickers = Вибір параметрів
 shortcut-category-display = Дисплей
 shortcut-category-zoom = Масштаб і кадрування
@@ -280,12 +278,10 @@ keybindings-record-replace = Замінити
 keybindings-record-cancel = Скасувати
 keybindings-record-save = Зберегти
 
-desktop-name = Камера
-desktop-generic-name = Камера
 desktop-comment = Застосунок камери для середовища COSMIC™
 desktop-keywords = камера;kamera;camera;вебкамера;знімок;фото;видиво;відео;запис;космік;photo;video;
 metainfo-summary = Знімайте фото та відео
-metainfo-description-intro = Камера — це сторонній застосунок камери для середовища COSMIC™. Потрібно швидко зробити знімок, записати відео чи відсканувати QR-код? Камера пропонує чистий, інтуїтивний інтерфейс, який не плутатиме вас.
+metainfo-description-intro = { camera } — це сторонній застосунок камери для середовища COSMIC™. Потрібно швидко зробити знімок, записати відео чи відсканувати QR-код? { camera } пропонує чистий, інтуїтивний інтерфейс, який не плутатиме вас.
 metainfo-description-usage = Просто відкрийте застосунок і починайте творити. Застосовуйте креативні фільтри до знімків, миттєво скануйте QR-коди для переходу за посиланнями чи підключення до Wi-Fi, або скористайтеся режимом віртуальної камери, щоб виглядати бездоганно у відеодзвінках з улюбленим фільтром.
 metainfo-description-features-title = Основні можливості:
 metainfo-feature-capture = Знімки та відеозйомка: висока якість і апаратне прискорення

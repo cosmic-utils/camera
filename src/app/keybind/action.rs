@@ -231,7 +231,7 @@ impl ActionCategory {
         use crate::fl;
         match self {
             ActionCategory::Capture => fl!("shortcut-category-capture"),
-            ActionCategory::Camera => fl!("shortcut-category-camera"),
+            ActionCategory::Camera => fl!("camera"),
             ActionCategory::Pickers => fl!("shortcut-category-pickers"),
             ActionCategory::Display => fl!("shortcut-category-display"),
             ActionCategory::Zoom => fl!("shortcut-category-zoom"),

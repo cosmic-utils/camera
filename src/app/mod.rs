@@ -254,7 +254,7 @@ impl cosmic::Application for AppModel {
 
         // Create the about widget
         let about = About::default()
-            .name(fl!("app-title"))
+            .name(fl!("camera"))
             .icon(widget::icon::from_raster_bytes(APP_ICON))
             .version(env!("GIT_VERSION"))
             .author("Frederic Laing")

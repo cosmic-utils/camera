@@ -1,4 +1,4 @@
-app-title = Kamera
+camera = Kamera
 about = Über
 repository = Repository
 # Mode switcher
@@ -22,7 +22,6 @@ settings-theme = Design
 match-desktop = An Desktop anpassen
 dark = Dunkel
 light = Hell
-settings-camera = Kamera
 settings-video = Video
 settings-device = Gerät
 settings-microphone = Mikrofon
@@ -237,7 +236,6 @@ insights-capture = Aufnahme
 insights-capture-burst = Serienaufnahme
 # Keyboard shortcuts — categories (placeholder, needs translation)
 shortcut-category-capture = Aufnahme
-shortcut-category-camera = Camera
 shortcut-category-pickers = Auswahlmenüs
 shortcut-category-display = Anzeige
 shortcut-category-zoom = Zoom & Bildausschnitt

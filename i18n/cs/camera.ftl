@@ -1,4 +1,4 @@
-app-title = Kamera
+camera = Kamera
 about = O aplikaci
 repository = Repozitář
 # Mode switcher
@@ -24,7 +24,6 @@ dark = Tmavý
 light = Světlý
 settings-default-mode = Výchozí režim
 settings-default-mode-description = Režim kamery při spuštění aplikace
-settings-camera = Kamera
 settings-video = Video
 settings-device = Zařízení
 settings-microphone = Mikrofon
@@ -278,7 +277,6 @@ keybindings-page-title = Klávesové zkratky
 shortcuts-help-unbound = —
 shortcut-category-display = Zobrazení
 shortcut-category-pickers = Nástroje výběru
-shortcut-category-camera = Kamera
 settings-mic-level-initializing = Inicializace…
 settings-mic-level = Úroveň mikrofonu
 settings-overlay-effect = Efekt překrytí
@@ -307,11 +305,8 @@ filter-pencil = Skica
 ptz-pan = Otočení
 ptz-tilt = Náklon
 
-desktop-name = Kamera
-desktop-generic-name = Kamera
 desktop-comment = Aplikace kamery pro prostředí COSMIC™
 desktop-keywords = kamera;fotoaparát;webkamera;fotografie;video;
-metainfo-name = Kamera
 metainfo-summary = Pořizujte fotografie a videa
 metainfo-description-intro = Aplikace kamery od třetí strany pro prostředí COSMIC™. Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód, aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.
 metainfo-description-usage = Otevřete aplikaci a začněte zachycovat okamžiky. Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech vypadali skvěle s aplikovaným oblíbeným filtrem.
