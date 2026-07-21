@@ -755,9 +755,6 @@ metainfo-feature-filters = 14 creative filters: { filter-mono }, { filter-sepia 
 metainfo-feature-virtual-camera = Virtual camera: use your filtered camera feed in video calls and other apps
 # Feature list item.
 metainfo-feature-multi-camera = Multi-camera support: easily switch between cameras and microphones
-# Feature list item. Describes the Linux phone support: touch input, portrait
-# layouts, and using the volume keys as a shutter button.
-metainfo-feature-phone = Built for Linux phones too: touch controls, portrait layouts and volume key shutter
 
 ## Screenshot captions in the software centre listing.
 

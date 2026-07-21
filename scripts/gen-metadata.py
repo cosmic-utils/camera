@@ -62,7 +62,6 @@ METAINFO_DESCRIPTION = {
         "metainfo-feature-filters",
         "metainfo-feature-virtual-camera",
         "metainfo-feature-multi-camera",
-        "metainfo-feature-phone",
     ],
 }
 METAINFO_SCREENSHOTS = {
