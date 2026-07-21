@@ -1,4 +1,4 @@
-### Camera, a COSMIC desktop camera application.
+### Camera, a camera application for Linux desktops and phones.
 ###
 ### Notes for translators:
 ### Screen space is tight in this app. Most strings sit in overlays drawn on top
@@ -718,10 +718,9 @@ keybindings-record-save = Save
 ## are generated into resources/*.desktop and resources/*.metainfo.xml by
 ## scripts/gen-metadata.py, so those two files are never edited by hand. They
 ## are the only strings here that are not shown inside the application itself.
-## The trademark sign in COSMIC™ must be kept.
 
 # One line tooltip shown in the launcher.
-desktop-comment = Third-party camera app for the COSMIC™ desktop
+desktop-comment = Take photos, record video, and scan QR codes
 # Search terms for the launcher, separated by semicolons and ending with one.
 # Translate the terms, and feel free to add extra words people in your language
 # would search for. Keeping the English words as well is useful, since many
@@ -735,22 +734,30 @@ desktop-keywords = camera;webcam;photo;video;
 # about 60 characters, as listings truncate it.
 metainfo-summary = Capture photos and videos
 # First paragraph of the long description.
-metainfo-description-intro = { camera } is a third-party camera application for the COSMIC™ desktop environment. Whether you need to snap a quick photo, record a video, or scan a QR code, { camera } provides a clean and intuitive interface that stays out of your way.
+metainfo-description-intro = { camera } is a modern camera application for Linux, built for desktops and phones alike. Whether you need to snap a quick photo, record a video, or scan a QR code, { camera } provides a clean and intuitive interface that stays out of your way.
 # Second paragraph of the long description.
 metainfo-description-usage = Just open the app and start capturing moments. Add fun filters to your photos, scan QR codes to open links or connect to WiFi, or use virtual camera mode to look great in video calls with your favorite filter applied.
 # Heading introducing the feature list below. Ends with a colon.
 metainfo-description-features-title = Key features:
 # Feature list item.
 metainfo-feature-capture = Photo and video capture: high quality and hardware accelerated
+# Feature list item. Names the three capture modes, which are also translated
+# in the mode carousel above, so keep the wording the same.
+metainfo-feature-modes = Photo, video and timelapse modes, with a self timer and composition guides
+# Feature list item.
+metainfo-feature-controls = Manual controls: exposure, ISO, shutter, focus and white balance
 # Feature list item. QR and WiFi are product names and stay as they are.
 metainfo-feature-qr = QR code scanner: open links, connect to WiFi, and more
 # Feature list item. The filter names are the same ones used in the app, so
 # translate them the same way there.
-metainfo-feature-filters = 15 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more
+metainfo-feature-filters = 14 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more
 # Feature list item.
 metainfo-feature-virtual-camera = Virtual camera: use your filtered camera feed in video calls and other apps
 # Feature list item.
 metainfo-feature-multi-camera = Multi-camera support: easily switch between cameras and microphones
+# Feature list item. Describes the Linux phone support: touch input, portrait
+# layouts, and using the volume keys as a shutter button.
+metainfo-feature-phone = Built for Linux phones too: touch controls, portrait layouts and volume key shutter
 
 ## Screenshot captions in the software centre listing.
 

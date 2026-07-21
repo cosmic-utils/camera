@@ -6,11 +6,26 @@
 [![Release](https://github.com/cosmic-utils/camera/actions/workflows/release.yml/badge.svg)](https://github.com/cosmic-utils/camera/actions/workflows/release.yml)
 [![Translation status](https://hosted.weblate.org/widget/cosmic-utils/camera/svg-badge.svg)](https://hosted.weblate.org/engage/cosmic-utils/)
 
-A camera application for the [COSMIC](https://github.com/pop-os/cosmic-epoch) desktop environment.
+A modern camera application for Linux, built for desktops and phones alike.
 
 ![Camera Preview](preview/preview-001.png)
 
 [View more screenshots](preview/README.md)
+
+## Features
+
+- **Photo, video and timelapse** modes, with a self timer, composition guides and aspect ratios
+- **Manual controls** for exposure, ISO, shutter, focus, white balance and colour, plus pan and tilt on motorised cameras
+- **GPU accelerated** preview, filters and debayering via wgpu, with hardware video encoding (VA-API, NVENC, QSV, AMF, V4L2) and software fallback
+- **14 creative filters** applied live to the preview, photos, recordings and the virtual camera
+- **QR code scanner** that opens links and connects to WiFi through NetworkManager
+- **Virtual camera** over PipeWire, so other apps see your filtered feed in video calls
+- **JPEG, PNG and DNG** output, including true sensor raw where libcamera exposes a raw stream
+- **Multi-camera and multi-microphone** switching with hotplug support
+- **Built for Linux phones too**: touch controls, portrait layouts, volume key shutter, hardware flash and haptics
+- **Rebindable keyboard shortcuts**, plus an insights panel and bug report generator for diagnostics
+
+Built with [libcosmic](https://github.com/pop-os/libcosmic). It runs on any Wayland or X11 desktop, following the system light/dark preference through the XDG portal, and integrates natively with COSMIC where available.
 
 ## Status
 

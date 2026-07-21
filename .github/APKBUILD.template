@@ -3,7 +3,7 @@
 pkgname=camera
 pkgver=@@VERSION@@
 pkgrel=0
-pkgdesc="Camera application for the COSMIC Desktop Environment"
+pkgdesc="Modern camera app for Linux desktops and phones"
 url="https://github.com/cosmic-utils/camera"
 arch="all"
 license="GPL-3.0-only"
