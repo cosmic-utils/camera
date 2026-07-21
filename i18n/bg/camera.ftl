@@ -1,4 +1,4 @@
-app-title = Камера
+camera = Камера
 about = Относно
 repository = Хранилище
 
@@ -19,7 +19,6 @@ filters-title = Филтри
 
 # Settings
 settings-title = Настройки
-settings-camera = Камера
 settings-video = Видео
 settings-device = Устройство
 settings-microphone = Микрофон

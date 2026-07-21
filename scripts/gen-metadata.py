@@ -34,10 +34,14 @@ SOURCE_LANG = "en"
 # the ones generated from here. These prefixes mark the latter.
 KEY_PREFIXES = ("desktop-", "metainfo-")
 
+# In-app keys the metadata reuses instead of duplicating, either as a value of
+# their own or through a { key } reference inside another string.
+SHARED_KEYS = ("camera",)
+
 # Desktop entry key -> Fluent key.
 DESKTOP_KEYS = {
-    "Name": "desktop-name",
-    "GenericName": "desktop-generic-name",
+    "Name": "camera",
+    "GenericName": "camera",
     "Comment": "desktop-comment",
     "Keywords": "desktop-keywords",
 }
@@ -45,7 +49,7 @@ DESKTOP_KEYS = {
 # Metainfo elements, in document order within their region, mapped to Fluent
 # keys. The nth English (untagged) element of each kind takes the nth key.
 METAINFO_HEAD = {
-    "name": ["metainfo-name"],
+    "name": ["camera"],
     "summary": ["metainfo-summary"],
 }
 METAINFO_DESCRIPTION = {
@@ -81,9 +85,34 @@ def read_translations() -> dict[str, dict[str, str]]:
         lang = path.parent.name
         for line in path.read_text(encoding="utf-8").splitlines():
             match = re.match(r"^([a-z0-9-]+) = (.*)$", line)
-            if match and match.group(1).startswith(KEY_PREFIXES):
+            if match and (match.group(1).startswith(KEY_PREFIXES)
+                          or match.group(1) in SHARED_KEYS):
                 out.setdefault(match.group(1), {})[lang] = match.group(2).strip()
     return out
+
+
+def resolve_references(translations: dict[str, dict[str, str]]) -> None:
+    """Expand { key } placeables in place, falling back to the source language.
+
+    Fluent resolves these itself for the strings the application renders, but
+    the desktop and metainfo files are plain text, so they need the final value.
+    """
+    reference = re.compile(r"\{\s*([a-z0-9-]+)\s*\}")
+
+    def expand(key: str, lang: str, seen: frozenset[str]) -> str:
+        if key in seen:
+            sys.exit(f"error: circular reference to {{ {key} }} in i18n/{lang}/camera.ftl")
+        values = translations.get(key)
+        if not values:
+            sys.exit(f"error: unknown reference {{ {key} }} in i18n/{lang}/camera.ftl")
+        value = values.get(lang, values.get(SOURCE_LANG, ""))
+        return reference.sub(
+            lambda m: expand(m.group(1), lang, seen | {key}), value
+        )
+
+    for key, values in translations.items():
+        for lang in values:
+            values[lang] = expand(key, lang, frozenset())
 
 
 def langs_for(translations: dict[str, dict[str, str]], key: str) -> list[str]:
@@ -200,6 +229,8 @@ def main() -> int:
         sys.exit(f"error: missing from i18n/{SOURCE_LANG}/camera.ftl: {', '.join(sorted(missing))}")
     if extra := source_keys - expected:
         sys.exit(f"error: unmapped keys in i18n/{SOURCE_LANG}/camera.ftl: {', '.join(sorted(extra))}")
+
+    resolve_references(translations)
 
     langs = sorted({lang for v in translations.values() for lang in v if lang != SOURCE_LANG})
     print(f"Generating metadata for: {', '.join(langs)}")

@@ -1,4 +1,4 @@
-app-title = Cámara
+camera = Cámara
 about = Acerca de
 repository = Repositorio
 
@@ -24,7 +24,6 @@ settings-theme = Tema
 match-desktop = Coincidir con el escritorio
 dark = Oscuro
 light = Claro
-settings-camera = Cámara
 settings-video = Video
 settings-device = Dispositivo
 settings-microphone = Micrófono

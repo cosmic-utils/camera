@@ -1,4 +1,4 @@
-app-title = Caméra
+camera = Caméra
 about = À propos
 repository = Dépôt
 # Sélecteur de mode
@@ -24,7 +24,6 @@ dark = Sombre
 light = Clair
 settings-default-mode = Mode par défaut
 settings-default-mode-description = Mode caméra à utiliser au lancement de l'application
-settings-camera = Caméra
 settings-video = Vidéo
 settings-device = Périphérique
 settings-microphone = Microphone
@@ -280,7 +279,6 @@ action-toggle-flash = Activer/désactiver le flash
 action-toggle-focus-auto = Activer/désactiver la mise au point automatique
 action-toggle-format-picker = Activer/désactiver le sélecteur de format
 action-toggle-settings = Ouvrir les paramètres
-shortcut-category-camera = Caméra
 shortcut-category-pickers = Sélecteurs
 shortcut-category-display = Affichage
 shortcut-category-capture = Capture

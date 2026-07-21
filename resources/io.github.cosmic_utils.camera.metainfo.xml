@@ -4,7 +4,13 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>Camera</name>
+  <name xml:lang="bg">Камера</name>
   <name xml:lang="cs">Kamera</name>
+  <name xml:lang="de">Kamera</name>
+  <name xml:lang="es">Cámara</name>
+  <name xml:lang="fr">Caméra</name>
+  <name xml:lang="sv">Kamera</name>
+  <name xml:lang="uk">Камера</name>
   <name xml:lang="zh-CN">相机</name>
   <summary>Capture photos and videos</summary>
   <summary xml:lang="cs">Pořizujte fotografie a videa</summary>

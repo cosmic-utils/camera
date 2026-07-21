@@ -40,7 +40,7 @@ impl AppModel {
         match self.settings_page {
             SettingsPage::Root => self.settings_root_view(),
             SettingsPage::Camera => {
-                self.settings_subpage(fl!("settings-camera"), self.camera_sections())
+                self.settings_subpage(fl!("camera"), self.camera_sections())
             }
             SettingsPage::Photo => {
                 self.settings_subpage(fl!("settings-photo"), self.photo_sections())
@@ -80,7 +80,7 @@ impl AppModel {
         let categories = widget::list_column()
             .add(self.settings_nav_row(
                 "camera-photo-symbolic",
-                fl!("settings-camera"),
+                fl!("camera"),
                 Message::OpenSettingsPage(SettingsPage::Camera),
                 true,
             ))
@@ -267,7 +267,7 @@ impl AppModel {
             .width(Length::Fill);
 
         let mut camera_section = widget::settings::section()
-            .title(fl!("settings-camera"))
+            .title(fl!("camera"))
             .add(widget::settings::item_row(vec![
                 device_label_with_info.into(),
             ]))
