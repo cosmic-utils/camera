@@ -299,3 +299,6 @@ filter-chroma = Chromatisch
 filter-pencil = Skizze
 ptz-pan = Schwenk
 ptz-tilt = Neigung
+desktop-comment = Fotos aufnehmen, Videos aufzeichnen und QR-Codes scannen
+desktop-keywords = camera;webcam;photo;video;kamera;foto;
+metainfo-summary = Fotos und Videos aufnehmen
