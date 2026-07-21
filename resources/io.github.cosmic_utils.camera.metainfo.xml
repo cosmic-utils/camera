@@ -49,7 +49,6 @@
       <li xml:lang="cs">Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
       <li xml:lang="uk">Підтримка кількох камер: легко перемикайтеся між камерами та мікрофонами</li>
       <li xml:lang="zh-CN">多摄像头支持：轻松切换摄像头和麦克风</li>
-      <li>Built for Linux phones too: touch controls, portrait layouts and volume key shutter</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.cosmic_utils.camera.desktop</launchable>

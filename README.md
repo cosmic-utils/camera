@@ -22,7 +22,6 @@ A modern camera application for Linux, built for desktops and phones alike.
 - **Virtual camera** over PipeWire, so other apps see your filtered feed in video calls
 - **JPEG, PNG and DNG** output, including true sensor raw where libcamera exposes a raw stream
 - **Multi-camera and multi-microphone** switching with hotplug support
-- **Built for Linux phones too**: touch controls, portrait layouts, volume key shutter, hardware flash and haptics
 - **Rebindable keyboard shortcuts**, plus an insights panel and bug report generator for diagnostics
 
 Built with [libcosmic](https://github.com/pop-os/libcosmic). It runs on any Wayland or X11 desktop, following the system light/dark preference through the XDG portal, and integrates natively with COSMIC where available.
