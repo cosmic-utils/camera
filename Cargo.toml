@@ -3,7 +3,7 @@ name = "camera"
 version = "0.3.4"
 edition = "2024"
 license = "GPL-3.0-only"
-description = "Camera application for the COSMIC™ desktop"
+description = "Modern camera app for Linux desktops and phones"
 repository = "https://github.com/cosmic-utils/camera"
 authors = ["Frederic Laing <frederic.laing.development@gmail.com>"]
 

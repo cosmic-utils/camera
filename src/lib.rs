@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! Camera - A camera application for the COSMIC desktop environment
+//! Camera - Modern camera app for Linux desktops and phones
 //!
 //! This library provides the core functionality for the Camera application,
 //! including camera capture, video recording, and photo processing.

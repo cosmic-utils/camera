@@ -60,10 +60,13 @@ METAINFO_DESCRIPTION = {
     ],
     "li": [
         "metainfo-feature-capture",
+        "metainfo-feature-modes",
+        "metainfo-feature-controls",
         "metainfo-feature-qr",
         "metainfo-feature-filters",
         "metainfo-feature-virtual-camera",
         "metainfo-feature-multi-camera",
+        "metainfo-feature-phone",
     ],
 }
 METAINFO_SCREENSHOTS = {
@@ -121,16 +124,22 @@ def langs_for(translations: dict[str, dict[str, str]], key: str) -> list[str]:
 
 
 def render_desktop(translations: dict[str, dict[str, str]], text: str) -> str:
-    """Rewrite the localised Key[lang]= lines of a desktop entry."""
+    """Rewrite the mapped values of a desktop entry, English line included.
+
+    The metainfo renderer rewrites its English elements too, so doing the same
+    here keeps both files fully generated. Anything unmapped (Icon, Exec, and
+    the rest) is copied through untouched.
+    """
     # Desktop entries use POSIX locale names, so zh-CN becomes zh_CN.
     lines = [ln for ln in text.splitlines() if not re.match(r"^\w+\[[^\]]+\]=", ln)]
     out: list[str] = []
     for line in lines:
-        out.append(line)
         match = re.match(r"^(\w+)=", line)
         if not match or match.group(1) not in DESKTOP_KEYS:
+            out.append(line)
             continue
         key = DESKTOP_KEYS[match.group(1)]
+        out.append(f"{match.group(1)}={translations[key][SOURCE_LANG]}")
         for lang in langs_for(translations, key):
             out.append(f"{match.group(1)}[{lang.replace('-', '_')}]={translations[key][lang]}")
     return "\n".join(out) + "\n"

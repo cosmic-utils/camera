@@ -17,10 +17,7 @@
   <summary xml:lang="uk">Знімайте фото та відео</summary>
   <summary xml:lang="zh-CN">拍摄照片和视频</summary>
   <description>
-    <p>Camera is a third-party camera application for the COSMIC™ desktop environment. Whether you need to snap a quick photo, record a video, or scan a QR code, Camera provides a clean and intuitive interface that stays out of your way.</p>
-    <p xml:lang="cs">Aplikace kamery od třetí strany pro prostředí COSMIC™. Ať už potřebujete rychle pořídit fotografii, nahrát video nebo naskenovat QR kód, aplikace nabízí čisté a intuitivní rozhraní, které vám rozhodně nebude překážet.</p>
-    <p xml:lang="uk">Камера — це сторонній застосунок камери для середовища COSMIC™. Потрібно швидко зробити знімок, записати відео чи відсканувати QR-код? Камера пропонує чистий, інтуїтивний інтерфейс, який не плутатиме вас.</p>
-    <p xml:lang="zh-CN">相机是 COSMIC™ 桌面环境的第三方相机应用程序。 无论您需要快速拍照、录制视频还是扫描二维码， 相机都提供简洁直观的界面，不会妨碍您的操作。</p>
+    <p>Camera is a modern camera application for Linux, built for desktops and phones alike. Whether you need to snap a quick photo, record a video, or scan a QR code, Camera provides a clean and intuitive interface that stays out of your way.</p>
     <p>Just open the app and start capturing moments. Add fun filters to your photos, scan QR codes to open links or connect to WiFi, or use virtual camera mode to look great in video calls with your favorite filter applied.</p>
     <p xml:lang="cs">Otevřete aplikaci a začněte zachycovat okamžiky. Přidejte zábavné filtry ke svým fotografiím, skenujte QR kódy pro otevření odkazů nebo připojení k Wi-Fi, případně použijte režim virtuální kamery, abyste při videohovorech vypadali skvěle s aplikovaným oblíbeným filtrem.</p>
     <p xml:lang="uk">Просто відкрийте застосунок і починайте творити. Застосовуйте креативні фільтри до знімків, миттєво скануйте QR-коди для переходу за посиланнями чи підключення до Wi-Fi, або скористайтеся режимом віртуальної камери, щоб виглядати бездоганно у відеодзвінках з улюбленим фільтром.</p>
@@ -34,14 +31,13 @@
       <li xml:lang="cs">Pořizování fotografií a videí: vysoká kvalita a hardwarová akcelerace</li>
       <li xml:lang="uk">Знімки та відеозйомка: висока якість і апаратне прискорення</li>
       <li xml:lang="zh-CN">照片和视频捕捉：高质量且支持硬件加速</li>
+      <li>Photo, video and timelapse modes, with a self timer and composition guides</li>
+      <li>Manual controls: exposure, ISO, shutter, focus and white balance</li>
       <li>QR code scanner: open links, connect to WiFi, and more</li>
       <li xml:lang="cs">Skener QR kódů: otevírání odkazů, připojení k Wi-Fi a další</li>
       <li xml:lang="uk">Сканер QR-кодів: відкривайте посилання, підключайтеся до Wi-Fi та багато іншого</li>
       <li xml:lang="zh-CN">二维码扫描器：打开链接、连接 WiFi 等</li>
-      <li>15 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more</li>
-      <li xml:lang="cs">15 kreativních filtrů: Mono, Sepia, Vivid, Noir, Pencil Sketch a další</li>
-      <li xml:lang="uk">15 креативних фільтрів: Моно, Сепія, Насичений, Нуар, Нарис олівцем та інші</li>
-      <li xml:lang="zh-CN">15 种创意滤镜：单色、复古棕褐、鲜艳、黑白、铅笔素描等</li>
+      <li>14 creative filters: Mono, Sepia, Vivid, Noir, Pencil Sketch, and more</li>
       <li>Virtual camera: use your filtered camera feed in video calls and other apps</li>
       <li xml:lang="cs">Virtuální kamera: používejte filtrovaný obraz kamery při videohovorech a v dalších aplikacích</li>
       <li xml:lang="uk">Віртуальна камера: використовуйте відфільтроване зображення у відеодзвінках та інших застосунках</li>
@@ -50,6 +46,7 @@
       <li xml:lang="cs">Podpora více kamer: snadné přepínání mezi kamerami a mikrofony</li>
       <li xml:lang="uk">Підтримка кількох камер: легко перемикайтеся між камерами та мікрофонами</li>
       <li xml:lang="zh-CN">多摄像头支持：轻松切换摄像头和麦克风</li>
+      <li>Built for Linux phones too: touch controls, portrait layouts and volume key shutter</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.cosmic_utils.camera.desktop</launchable>

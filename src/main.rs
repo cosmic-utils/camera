@@ -9,7 +9,7 @@ mod cli;
 
 #[derive(Parser)]
 #[command(name = "camera")]
-#[command(about = "Camera application for the COSMIC desktop")]
+#[command(about = "Modern camera app for Linux desktops and phones")]
 #[command(version)]
 #[command(subcommand_required = false)]
 struct Cli {
