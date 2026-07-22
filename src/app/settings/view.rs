@@ -39,9 +39,7 @@ impl AppModel {
     pub fn settings_view(&self) -> context_drawer::ContextDrawer<'_, Message> {
         match self.settings_page {
             SettingsPage::Root => self.settings_root_view(),
-            SettingsPage::Camera => {
-                self.settings_subpage(fl!("camera"), self.camera_sections())
-            }
+            SettingsPage::Camera => self.settings_subpage(fl!("camera"), self.camera_sections()),
             SettingsPage::Photo => {
                 self.settings_subpage(fl!("settings-photo"), self.photo_sections())
             }
