@@ -98,6 +98,10 @@ run-debug *args:
 # ============================================================================
 
 # Regenerate every derived file that is committed to the repository
+#
+# Deliberately does NOT retake the preview screenshots. This recipe runs in CI
+# (regenerate.yml) on a runner with no /dev/udmabuf and no 30 minute budget for
+# it; generate-previews is a separate, explicitly invoked recipe.
 generate: generate-metadata flatpak-cargo-sources
 
 # Write translations from i18n/*/camera.ftl into the desktop and metainfo files
@@ -105,9 +109,33 @@ generate-metadata:
     python3 scripts/gen-metadata.py
 
 # Check the desktop and metainfo files against their specifications
+#
+# Offline on purpose. The metainfo screenshots are absolute raw.githubusercontent
+# URLs pointing at main, so appstreamcli's network check cannot pass on a pull
+# request that adds a screenshot: the image only exists once the branch is
+# merged. Left on, every previews PR would fail validation until merge, which is
+# a check that structurally cannot be satisfied rather than a real problem.
+# Use validate-metadata-urls to check reachability where it does make sense.
 validate-metadata:
     desktop-file-validate {{desktop-src}}
+    appstreamcli validate --no-net {{metainfo-src}}
+
+# Also check that every screenshot URL actually resolves
+#
+# Only meaningful once the images are on main, so this belongs on a schedule or
+# a post-merge run, never on a pull request.
+validate-metadata-urls:
     appstreamcli validate {{metainfo-src}}
+
+# Retake the preview screenshots in a pinned container, then refresh the metadata
+#
+# Takes roughly 30 minutes for the full matrix and needs /dev/udmabuf on the
+# host. The metadata pass afterwards is what turns newly captured languages into
+# gallery pages and localized <image> entries, so the two belong together.
+# Narrow a run with SHOTS, VARIANTS_FILTER or LOCALES_FILTER, for example:
+#   SHOTS=001 LOCALES_FILTER=none just generate-previews
+generate-previews *args: && generate-metadata
+    preview/generate-previews.sh {{args}}
 
 # Generate PNG icons from the scalable SVG and update desktop file
 generate-icons:

@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Reproducible environment for regenerating the Flathub preview screenshots.
+#
+# The screenshots are pixel-compared to decide whether to open a PR, so the
+# renderer, fonts and icon theme all have to be pinned: a mesa or font update
+# on a CI runner would otherwise redraw every pixel and look like a UI change.
+# Everything that ends up in the image is therefore installed here rather than
+# inherited from the host or the runner image.
+#
+# Build:  podman build -t camera-previews -f preview/Containerfile .
+# Run:    see preview/generate-previews.sh
+FROM registry.fedoraproject.org/fedora:44
+
+# Build dependencies for the app itself. libcamera 0.7 is packaged in Fedora 44,
+# which is why this is a Fedora base: on Ubuntu it has to be built from source
+# (see the `check` job in ci.yml), costing several minutes per run.
+RUN dnf install -y --setopt=install_weak_deps=False \
+        rust cargo \
+        gcc gcc-c++ clang-devel cmake make nasm pkgconf-pkg-config git \
+        gstreamer1-devel \
+        gstreamer1-plugins-base-devel \
+        gstreamer1-plugins-bad-free-devel \
+        libcamera-devel \
+        wayland-devel libxkbcommon-devel systemd-devel dbus-devel \
+    && dnf clean all
+
+# Runtime: a headless wlroots compositor (sway) to host the window, software
+# Vulkan (lavapipe) for the app's wgpu renderer, wtype to drive the keyboard
+# shortcuts, and grim to capture the window rectangle.
+RUN dnf install -y --setopt=install_weak_deps=False \
+        sway grim wtype jq \
+        mesa-vulkan-drivers vulkan-loader \
+        mesa-libGL mesa-libEGL mesa-dri-drivers \
+        gstreamer1-plugins-base gstreamer1-plugins-good \
+        gstreamer1-plugins-bad-free gstreamer1-plugins-ugly-free \
+        gstreamer1-libav \
+        # H.264 encoder. Without one the app can start a recording but fails to
+        # save it, so the recording shot ends up showing an idle Video mode.
+        # The -ugly-free package above does not carry x264enc; openh264 is the
+        # encoder Fedora can ship.
+        gstreamer1-plugin-openh264 \
+        dbus-daemon procps-ng \
+    && dnf clean all
+
+# Appearance: COSMIC's icon theme and the default interface font (Open Sans).
+# Without these the UI renders with blank icons and a fallback font, which is a
+# far bigger visual diff than any real UI change.
+RUN dnf install -y --setopt=install_weak_deps=False \
+        cosmic-icon-theme adwaita-icon-theme hicolor-icon-theme \
+        open-sans-fonts \
+    && dnf clean all
+
+# COSMIC's default theme. libcosmic only carries a built-in fallback palette,
+# whose accent is cyan; the accent every COSMIC desktop actually shows is the
+# blue defined by these files. Without them the screenshots are recognisably not
+# a COSMIC app and differ from every previously committed shot.
+#
+# Extracted from the RPM rather than installed: the files are ~350K of RON, and
+# `dnf install cosmic-settings` would pull the entire settings GUI and its
+# dependency tree into an image that never runs it.
+RUN dnf install -y --setopt=install_weak_deps=False 'dnf-command(download)' cpio \
+    && dnf download --destdir /tmp/cosmic-theme cosmic-settings \
+    && ( cd / && rpm2cpio /tmp/cosmic-theme/cosmic-settings-*.rpm \
+           | cpio -idmv './usr/share/cosmic/com.system76.CosmicTheme.*' ) \
+    # A silent miss here would be invisible until someone noticed the accent, so
+    # fail the build instead.
+    && test -f /usr/share/cosmic/com.system76.CosmicTheme.Dark/v1/accent \
+    && test -f /usr/share/cosmic/com.system76.CosmicTheme.Light/v1/accent \
+    && rm -rf /tmp/cosmic-theme \
+    && dnf clean all
+
+# Fedora ships sway with `cap_sys_nice=ep` for realtime scheduling. A container
+# without that capability in its bounding set cannot exec a file that requests
+# it at all ("Operation not permitted"), and nothing here needs realtime
+# scheduling, so drop the capability rather than widen the container's.
+RUN setcap -r /usr/bin/sway
+
+# ImageMagick compares a fresh capture against the committed PNG, so shots that
+# only differ by a few antialiased pixels don't open a pull request.
+RUN dnf install -y --setopt=install_weak_deps=False ImageMagick && dnf clean all
+
+# Software Vulkan only: a runner that happens to expose a GPU must not render
+# these screenshots differently from one that doesn't.
+ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+    WGPU_BACKEND=vulkan \
+    LIBGL_ALWAYS_SOFTWARE=1 \
+    WLR_BACKENDS=headless \
+    WLR_RENDERER=pixman \
+    WLR_LIBINPUT_NO_DEVICES=1 \
+    XDG_RUNTIME_DIR=/tmp/runtime \
+    CARGO_TERM_COLOR=always \
+    RUST_LOG=warn
+
+WORKDIR /src
+# The repository is bind-mounted at /src; preview/generate-previews.sh passes
+# the capture and compare steps as a command.
+ENTRYPOINT ["/bin/bash"]
+CMD ["-c", "preview/capture-previews.sh /tmp/shots && preview/sync-previews.sh /tmp/shots preview"]

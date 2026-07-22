@@ -18,10 +18,12 @@ pub enum Action {
     ToggleFlash,
 
     // Pickers / drawers
+    ToggleToolsMenu,
     ToggleExposurePicker,
     ToggleColorPicker,
     ToggleMotorPicker,
     ToggleFormatPicker,
+    ToggleFilters,
     ToggleSettings,
 
     // Mode / display
@@ -64,10 +66,12 @@ impl Action {
         Action::ToggleFocusAuto,
         Action::ToggleFlash,
         // Pickers
+        Action::ToggleToolsMenu,
         Action::ToggleExposurePicker,
         Action::ToggleColorPicker,
         Action::ToggleMotorPicker,
         Action::ToggleFormatPicker,
+        Action::ToggleFilters,
         Action::ToggleSettings,
         // Display
         Action::NextMode,
@@ -91,10 +95,12 @@ impl Action {
             Action::SwitchCamera | Action::ToggleFocusAuto | Action::ToggleFlash => {
                 ActionCategory::Camera
             }
-            Action::ToggleExposurePicker
+            Action::ToggleToolsMenu
+            | Action::ToggleExposurePicker
             | Action::ToggleColorPicker
             | Action::ToggleMotorPicker
             | Action::ToggleFormatPicker
+            | Action::ToggleFilters
             | Action::ToggleSettings => ActionCategory::Pickers,
             Action::NextMode | Action::PrevMode => ActionCategory::Display,
             Action::ZoomIn
@@ -127,10 +133,14 @@ impl Action {
             Action::ToggleFocusAuto => kb(vec![], Key::Character("a".into())),
             Action::ToggleFlash => kb(vec![], Key::Character("f".into())),
 
+            Action::ToggleToolsMenu => kb(vec![], Key::Character("t".into())),
             Action::ToggleExposurePicker => kb(vec![], Key::Character("e".into())),
             Action::ToggleColorPicker => kb(vec![], Key::Character("c".into())),
             Action::ToggleMotorPicker => kb(vec![], Key::Character("p".into())),
             Action::ToggleFormatPicker => kb(ctrl(), Key::Character("f".into())),
+            // `f` is flash and Ctrl+F the format picker, so filters take `l`
+            // ("looks") rather than a third f-variant.
+            Action::ToggleFilters => kb(vec![], Key::Character("l".into())),
             Action::ToggleSettings => kb(ctrl(), Key::Character(",".into())),
 
             Action::NextMode => kb(vec![], Key::Character("m".into())),
@@ -167,10 +177,12 @@ impl Action {
             Action::ToggleFocusAuto => Message::ToggleFocusAuto,
             Action::ToggleFlash => Message::ToggleFlash,
 
+            Action::ToggleToolsMenu => Message::ToggleToolsMenu,
             Action::ToggleExposurePicker => Message::ToggleExposurePicker,
             Action::ToggleColorPicker => Message::ToggleColorPicker,
             Action::ToggleMotorPicker => Message::ToggleMotorPicker,
             Action::ToggleFormatPicker => Message::ToggleFormatPicker,
+            Action::ToggleFilters => Message::ToggleContextPage(ContextPage::Filters),
             Action::ToggleSettings => Message::ToggleContextPage(ContextPage::Settings),
 
             Action::NextMode => Message::NextMode,
@@ -197,10 +209,12 @@ impl Action {
             Action::SwitchCamera => fl!("action-switch-camera"),
             Action::ToggleFocusAuto => fl!("action-toggle-focus-auto"),
             Action::ToggleFlash => fl!("action-toggle-flash"),
+            Action::ToggleToolsMenu => fl!("action-toggle-tools-menu"),
             Action::ToggleExposurePicker => fl!("action-toggle-exposure-picker"),
             Action::ToggleColorPicker => fl!("action-toggle-color-picker"),
             Action::ToggleMotorPicker => fl!("action-toggle-motor-picker"),
             Action::ToggleFormatPicker => fl!("action-toggle-format-picker"),
+            Action::ToggleFilters => fl!("action-toggle-filters"),
             Action::ToggleSettings => fl!("action-toggle-settings"),
             Action::NextMode => fl!("action-next-mode"),
             Action::PrevMode => fl!("action-prev-mode"),

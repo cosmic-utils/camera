@@ -70,6 +70,16 @@ METAINFO_DESCRIPTION = {
         "metainfo-feature-multi-camera",
     ],
 }
+# Appearance combinations captured by preview/capture-previews.sh. Keep in sync
+# with VARIANTS and PUBLISHED_VARIANT there. The published variant is stored as
+# the plain preview-0NN.png that metainfo.xml points at, not under variants/.
+VARIANT_THEMES = ["dark", "light"]
+VARIANT_OVERLAYS = ["frosted", "translucent", "off"]
+PUBLISHED_VARIANT = "dark-frosted"
+
+# Where capture-previews.sh puts one published shot per translated language.
+LOCALES_DIR = "locales"
+
 METAINFO_SCREENSHOTS = {
     "caption": [
         "metainfo-caption-photo-tools",
@@ -211,14 +221,61 @@ def render_metainfo(translations: dict[str, dict[str, str]], text: str) -> str:
     head_end = dev.start() if dev else desc[0]
 
     # Rewrite back to front so earlier offsets stay valid.
-    text = text[: shots[0]] + render_region(
+    text = text[: shots[0]] + render_screenshot_images(render_region(
         text[shots[0]:shots[1]], METAINFO_SCREENSHOTS, translations
-    ) + text[shots[1]:]
+    )) + text[shots[1]:]
     text = text[: desc[0]] + render_region(
         text[desc[0]:desc[1]], METAINFO_DESCRIPTION, translations
     ) + text[desc[1]:]
     text = render_region(text[:head_end], METAINFO_HEAD, translations) + text[head_end:]
     return text
+
+
+def localized_images(image: str) -> dict[str, str]:
+    """Languages that have their own capture of one screenshot, to its URL.
+
+    Driven by what preview/capture-previews.sh actually produced rather than by
+    the language list, so a language whose shots have not been taken yet simply
+    has no localized screenshot instead of a link to a missing file.
+    """
+    name = Path(image).name
+    found = {}
+    for path in sorted((PREVIEW_README.parent / LOCALES_DIR).glob(f"*/{name}")):
+        found[path.parent.name] = f"{LOCALES_DIR}/{path.parent.name}/{name}"
+    return found
+
+
+def render_screenshot_images(region: str) -> str:
+    """Give each <image> an xml:lang sibling per language captured for it.
+
+    AppStream picks the <image> matching the user's language and falls back to
+    the untagged one, so a browser in German shows German screenshots while
+    everyone else still sees the English originals.
+
+    Same group shape as render_region: the English element plus the xml:lang
+    siblings that follow it are replaced together, so re-running is idempotent
+    and a language whose captures were deleted loses its entries again.
+    """
+    pattern = re.compile(
+        r'^([ \t]*)<image(?:\s+xml:lang="[^"]+")?>(.*?)</image>', re.S | re.M
+    )
+    groups: list[list] = []  # [start, end, indent, english url]
+    for match in pattern.finditer(region):
+        if "xml:lang" not in match.group(0).split(">", 1)[0]:
+            groups.append([match.start(), match.end(), match.group(1),
+                           match.group(2).strip()])
+        elif groups:
+            groups[-1][1] = match.end()
+
+    for start, end, indent, url in reversed(groups):
+        parts = [f"{indent}<image>{escape(url)}</image>"]
+        base = url.rsplit("/", 1)[0]
+        for lang, rel in localized_images(url).items():
+            parts.append(
+                f'{indent}<image xml:lang="{lang}">{escape(f"{base}/{rel}")}</image>'
+            )
+        region = region[:start] + "\n".join(parts) + region[end:]
+    return region
 
 
 def screenshot_images(metainfo: str) -> list[str]:
@@ -228,6 +285,151 @@ def screenshot_images(metainfo: str) -> list[str]:
         Path(match.group(1).strip()).name
         for match in re.finditer(r"<image>(.*?)</image>", metainfo[start:end], re.S)
     ]
+
+
+def variant_image(image: str, theme: str, overlay: str) -> str:
+    """Path of one appearance variant of a published screenshot."""
+    variant = f"{theme}-{overlay}"
+    if variant == PUBLISHED_VARIANT:
+        return image
+    return f"variants/{Path(image).stem}-{variant}.png"
+
+
+def render_variant_gallery(translations: dict[str, dict[str, str]],
+                           images: list[str], keys: list[str]) -> list[str]:
+    """A theme x overlay-effect table for each screenshot.
+
+    Variants that have not been captured are skipped rather than linked, so a
+    partial run produces a shorter page instead of a page full of broken images.
+    """
+    lines: list[str] = []
+    for image, key in zip(images, keys):
+        available = {
+            (theme, overlay): variant_image(image, theme, overlay)
+            for theme in VARIANT_THEMES
+            for overlay in VARIANT_OVERLAYS
+            if (PREVIEW_README.parent / variant_image(image, theme, overlay)).exists()
+        }
+        if not available:
+            continue
+
+        caption = translations[key][SOURCE_LANG]
+        overlays = [o for o in VARIANT_OVERLAYS
+                    if any((t, o) in available for t in VARIANT_THEMES)]
+
+        lines += [
+            "",
+            f"### {caption}",
+            "",
+            "|  | " + " | ".join(o.capitalize() for o in overlays) + " |",
+            "| :--- |" + " :---: |" * len(overlays),
+        ]
+        for theme in VARIANT_THEMES:
+            if not any((theme, o) in available for o in overlays):
+                continue
+            cells = []
+            for overlay in overlays:
+                path = available.get((theme, overlay))
+                cells.append(
+                    f"![{caption}, {theme} {overlay}]({path})" if path else ""
+                )
+            lines.append(f"| **{theme.capitalize()}** | " + " | ".join(cells) + " |")
+    return lines
+
+
+def captured_languages(images: list[str]) -> dict[str, dict[str, str]]:
+    """Language -> {published image: its localized counterpart}."""
+    by_lang: dict[str, dict[str, str]] = {}
+    for image in images:
+        for lang, rel in localized_images(image).items():
+            by_lang.setdefault(lang, {})[image] = rel
+    return by_lang
+
+
+def render_locale_gallery(images: list[str], keys: list[str],
+                          translations: dict[str, dict[str, str]]) -> list[str]:
+    """An index of the per-language galleries, one row each.
+
+    Only an index: embedding sixty screenshots here would bury the published
+    gallery this page exists for. Each language's own page carries its shots.
+    """
+    by_lang = captured_languages(images)
+    if not by_lang:
+        return []
+
+    def entry(lang: str) -> str:
+        # The app's own name in that language doubles as a preview of the
+        # translation, so the list shows what the reader is clicking into.
+        name = translations["camera"].get(lang, translations["camera"][SOURCE_LANG])
+        done = sum(1 for key in keys if lang in translations[key])
+        shots = len(by_lang[lang])
+        return (f"- [**{name}** (`{lang}`)]({LOCALES_DIR}/{lang}/README.md)"
+                f" &mdash; {shots} shot{'s' if shots != 1 else ''},"
+                f" {done}/{len(keys)} captions translated")
+
+    return [
+        "",
+        "---",
+        "",
+        "## Languages",
+        "",
+        "The published shots in every language the app is translated into, including the",
+        "partly translated ones: untranslated labels stay in English and show what is left",
+        f"to do. Only {SOURCE_LANG} gets the full appearance matrix above.",
+        "",
+        *(entry(lang) for lang in sorted(by_lang)),
+        "",
+    ]
+
+
+def render_locale_readme(lang: str, images: list[str], keys: list[str],
+                         translations: dict[str, dict[str, str]]) -> str:
+    """The gallery page that sits beside one language's screenshots.
+
+    Captions fall back to English per string rather than per page, so a partly
+    translated language reads the same way its screenshots look: translated
+    where it has been done, English where it has not.
+    """
+    def text(key: str) -> str:
+        return translations[key].get(lang, translations[key][SOURCE_LANG])
+
+    cells = []
+    for image, key in zip(images, keys):
+        rel = localized_images(image).get(lang)
+        if not rel:
+            continue
+        caption = text(key).replace("|", "\\|")
+        alt = caption.replace("]", "\\]")
+        # The page lives in the same directory as the images it shows.
+        cells.append(f"![{alt}]({Path(rel).name})<br>**{caption}**")
+
+    rows = [cells[i:i + 2] for i in range(0, len(cells), 2)]
+    missing = [key for key in keys if lang not in translations[key]]
+
+    return "\n".join([
+        f"<!-- Generated by scripts/{Path(__file__).name}. Edit the captions in "
+        f"i18n/{lang}/camera.ftl and run `just generate`. -->",
+        "",
+        f"# {text('camera')} ({lang})",
+        "",
+        f"*{text('metainfo-summary')}.*",
+        "",
+        "|  |  |",
+        "| :---: | :---: |",
+        *(f"| {' | '.join(row + [''] * (2 - len(row)))} |" for row in rows),
+        "",
+        *([
+            f"> {len(missing)} of {len(keys)} captions are not translated into `{lang}` yet",
+            "> and are shown in English. Translations are welcome in",
+            f"> [`i18n/{lang}/camera.ftl`](../../../i18n/{lang}/camera.ftl).",
+            "",
+        ] if missing else []),
+        "---",
+        "",
+        f"[All languages](../../README.md#languages) ·",
+        f"[{SOURCE_LANG} screenshots, including every theme and overlay effect](../../README.md)",
+        "",
+    ])
 
 
 def render_preview_readme(translations: dict[str, dict[str, str]], metainfo: str) -> str:
@@ -269,8 +471,17 @@ def render_preview_readme(translations: dict[str, dict[str, str]], metainfo: str
         "",
         "---",
         "",
-        "To retake them, build the app and run [`take-screenshots.sh`](take-screenshots.sh),",
-        "which replays the frames in `source/` so every shot is reproducible.",
+        "## Appearance variants",
+        "",
+        "Each shot in every combination of theme and overlay effect the app offers.",
+        f"The published screenshots above are the {PUBLISHED_VARIANT.replace('-', ', ')} ones.",
+        *render_variant_gallery(translations, images, keys),
+        *render_locale_gallery(images, keys, translations),
+        "",
+        "---",
+        "",
+        "To retake them, run [`generate-previews.sh`](generate-previews.sh), which drives the app",
+        "against a fixed image feed inside a pinned container so every shot is reproducible.",
         "",
         "[Back to the project README](../README.md)",
         "",
@@ -278,6 +489,13 @@ def render_preview_readme(translations: dict[str, dict[str, str]], metainfo: str
 
 
 def write_if_changed(path: Path, content: str) -> bool:
+    # The per-language pages are created as their screenshots appear, so a
+    # missing file is normal here rather than a sign the tree is broken.
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        print(f"  created    {path.relative_to(ROOT)}")
+        return True
     if path.read_text(encoding="utf-8") == content:
         print(f"  unchanged  {path.relative_to(ROOT)}")
         return False
@@ -314,6 +532,21 @@ def main() -> int:
     metainfo = render_metainfo(translations, METAINFO.read_text(encoding="utf-8"))
     write_if_changed(METAINFO, metainfo)
     write_if_changed(PREVIEW_README, render_preview_readme(translations, metainfo))
+
+    # One gallery page per language, beside that language's screenshots. Driven
+    # by what was captured, so languages are picked up automatically and a
+    # language whose shots were removed loses its stale page too.
+    images = screenshot_images(metainfo)
+    keys = METAINFO_SCREENSHOTS["caption"]
+    locales_root = PREVIEW_README.parent / LOCALES_DIR
+    captured = captured_languages(images)
+    for lang in sorted(captured):
+        write_if_changed(locales_root / lang / "README.md",
+                         render_locale_readme(lang, images, keys, translations))
+    for stale in sorted(locales_root.glob("*/README.md")):
+        if stale.parent.name not in captured:
+            stale.unlink()
+            print(f"  removed    {stale.relative_to(ROOT)}")
     return 0
 
 

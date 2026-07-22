@@ -132,7 +132,19 @@ impl AppModel {
     // =========================================================================
 
     pub(crate) fn handle_toggle_tools_menu(&mut self) -> Task<cosmic::Action<Message>> {
+        // The top bar hides the tools button entirely in View mode and disables
+        // it mid-transition, so before the keyboard shortcut existed these
+        // states were simply unreachable. Opening the menu here anyway gives a
+        // panel with no buttons in it, since every tool is gated on a mode or a
+        // camera capability View mode has none of, on top of a full-window
+        // overlay that swallows the next click wherever the user aims it.
+        // Only opening is blocked: closing has to keep working, or a menu left
+        // open by a mode switch could never be dismissed with the keyboard.
         let opening = !self.tools_menu_visible;
+        if opening && (self.mode.is_view_only() || self.transition_state.ui_disabled) {
+            return Task::none();
+        }
+
         self.close_all_pickers();
         self.tools_menu_visible = opening;
         info!(visible = self.tools_menu_visible, "Tools menu toggled");
