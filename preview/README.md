@@ -14,7 +14,76 @@ application metadata and shown on
 
 ---
 
-To retake them, build the app and run [`take-screenshots.sh`](take-screenshots.sh),
-which replays the frames in `source/` so every shot is reproducible.
+## Appearance variants
+
+Each shot in every combination of theme and overlay effect the app offers.
+The published screenshots above are the dark, frosted ones.
+
+### Photo mode with tools menu
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![Photo mode with tools menu, dark frosted](preview-001.png) | ![Photo mode with tools menu, dark translucent](variants/preview-001-dark-translucent.png) | ![Photo mode with tools menu, dark off](variants/preview-001-dark-off.png) |
+| **Light** | ![Photo mode with tools menu, light frosted](variants/preview-001-light-frosted.png) | ![Photo mode with tools menu, light translucent](variants/preview-001-light-translucent.png) | ![Photo mode with tools menu, light off](variants/preview-001-light-off.png) |
+
+### Photo mode on a Linux phone
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![Photo mode on a Linux phone, dark frosted](preview-002.png) | ![Photo mode on a Linux phone, dark translucent](variants/preview-002-dark-translucent.png) | ![Photo mode on a Linux phone, dark off](variants/preview-002-dark-off.png) |
+| **Light** | ![Photo mode on a Linux phone, light frosted](variants/preview-002-light-frosted.png) | ![Photo mode on a Linux phone, light translucent](variants/preview-002-light-translucent.png) | ![Photo mode on a Linux phone, light off](variants/preview-002-light-off.png) |
+
+### Filter picker
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![Filter picker, dark frosted](preview-003.png) | ![Filter picker, dark translucent](variants/preview-003-dark-translucent.png) | ![Filter picker, dark off](variants/preview-003-dark-off.png) |
+| **Light** | ![Filter picker, light frosted](variants/preview-003-light-frosted.png) | ![Filter picker, light translucent](variants/preview-003-light-translucent.png) | ![Filter picker, light off](variants/preview-003-light-off.png) |
+
+### Video recording in progress
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![Video recording in progress, dark frosted](preview-004.png) | ![Video recording in progress, dark translucent](variants/preview-004-dark-translucent.png) | ![Video recording in progress, dark off](variants/preview-004-dark-off.png) |
+| **Light** | ![Video recording in progress, light frosted](variants/preview-004-light-frosted.png) | ![Video recording in progress, light translucent](variants/preview-004-light-translucent.png) | ![Video recording in progress, light off](variants/preview-004-light-off.png) |
+
+### QR code detection
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![QR code detection, dark frosted](preview-005.png) | ![QR code detection, dark translucent](variants/preview-005-dark-translucent.png) | ![QR code detection, dark off](variants/preview-005-dark-off.png) |
+| **Light** | ![QR code detection, light frosted](variants/preview-005-light-frosted.png) | ![QR code detection, light translucent](variants/preview-005-light-translucent.png) | ![QR code detection, light off](variants/preview-005-light-off.png) |
+
+### Advanced settings
+
+|  | Frosted | Translucent | Off |
+| :--- | :---: | :---: | :---: |
+| **Dark** | ![Advanced settings, dark frosted](preview-006.png) | ![Advanced settings, dark translucent](variants/preview-006-dark-translucent.png) | ![Advanced settings, dark off](variants/preview-006-dark-off.png) |
+| **Light** | ![Advanced settings, light frosted](variants/preview-006-light-frosted.png) | ![Advanced settings, light translucent](variants/preview-006-light-translucent.png) | ![Advanced settings, light off](variants/preview-006-light-off.png) |
+
+---
+
+## Languages
+
+The published shots in every language the app is translated into, including the
+partly translated ones: untranslated labels stay in English and show what is left
+to do. Only en gets the full appearance matrix above.
+
+- [**كاميرا** (`ar`)](locales/ar/README.md) &mdash; 6 shots, 0/6 captions translated
+- [**Камера** (`bg`)](locales/bg/README.md) &mdash; 6 shots, 0/6 captions translated
+- [**Kamera** (`cs`)](locales/cs/README.md) &mdash; 6 shots, 6/6 captions translated
+- [**Kamera** (`de`)](locales/de/README.md) &mdash; 6 shots, 6/6 captions translated
+- [**Cámara** (`es`)](locales/es/README.md) &mdash; 6 shots, 0/6 captions translated
+- [**Caméra** (`fr`)](locales/fr/README.md) &mdash; 6 shots, 0/6 captions translated
+- [**Wênekêş** (`kmr`)](locales/kmr/README.md) &mdash; 6 shots, 0/6 captions translated
+- [**Kamera** (`sv`)](locales/sv/README.md) &mdash; 6 shots, 6/6 captions translated
+- [**Камера** (`uk`)](locales/uk/README.md) &mdash; 6 shots, 4/6 captions translated
+- [**相机** (`zh-CN`)](locales/zh-CN/README.md) &mdash; 6 shots, 4/6 captions translated
+
+
+---
+
+To retake them, run [`generate-previews.sh`](generate-previews.sh), which drives the app
+against a fixed image feed inside a pinned container so every shot is reproducible.
 
 [Back to the project README](../README.md)

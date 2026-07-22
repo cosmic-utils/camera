@@ -96,6 +96,16 @@
       <caption xml:lang="de">Fotomodus mit Werkzeugmenü</caption>
       <caption xml:lang="sv">Fotoläge med verktygsmeny</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-001.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-001.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-001.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-001.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-001.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-001.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-001.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-001.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-001.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-001.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-001.png</image>
     </screenshot>
     <screenshot>
       <caption>Photo mode on a Linux phone</caption>
@@ -103,6 +113,16 @@
       <caption xml:lang="de">Fotomodus auf einem Linux-Smartphone</caption>
       <caption xml:lang="sv">Fotoläge med en Linux telefon</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-002.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-002.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-002.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-002.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-002.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-002.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-002.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-002.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-002.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-002.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-002.png</image>
     </screenshot>
     <screenshot>
       <caption>Filter picker</caption>
@@ -112,6 +132,16 @@
       <caption xml:lang="uk">Вибір фільтрів</caption>
       <caption xml:lang="zh-CN">滤镜选择器</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-003.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-003.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-003.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-003.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-003.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-003.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-003.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-003.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-003.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-003.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-003.png</image>
     </screenshot>
     <screenshot>
       <caption>Video recording in progress</caption>
@@ -121,6 +151,16 @@
       <caption xml:lang="uk">Запис відео триває</caption>
       <caption xml:lang="zh-CN">视频录制中</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-004.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-004.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-004.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-004.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-004.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-004.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-004.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-004.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-004.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-004.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-004.png</image>
     </screenshot>
     <screenshot>
       <caption>QR code detection</caption>
@@ -130,6 +170,16 @@
       <caption xml:lang="uk">Виявлення QR-коду</caption>
       <caption xml:lang="zh-CN">二维码检测</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-005.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-005.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-005.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-005.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-005.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-005.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-005.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-005.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-005.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-005.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-005.png</image>
     </screenshot>
     <screenshot>
       <caption>Advanced settings</caption>
@@ -139,6 +189,16 @@
       <caption xml:lang="uk">Розширені налаштування</caption>
       <caption xml:lang="zh-CN">高级设置</caption>
       <image>https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/preview-006.png</image>
+      <image xml:lang="ar">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/ar/preview-006.png</image>
+      <image xml:lang="bg">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/bg/preview-006.png</image>
+      <image xml:lang="cs">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/cs/preview-006.png</image>
+      <image xml:lang="de">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/de/preview-006.png</image>
+      <image xml:lang="es">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/es/preview-006.png</image>
+      <image xml:lang="fr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/fr/preview-006.png</image>
+      <image xml:lang="kmr">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/kmr/preview-006.png</image>
+      <image xml:lang="sv">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/sv/preview-006.png</image>
+      <image xml:lang="uk">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/uk/preview-006.png</image>
+      <image xml:lang="zh-CN">https://raw.githubusercontent.com/cosmic-utils/camera/main/preview/locales/zh-CN/preview-006.png</image>
     </screenshot>
   </screenshots>
   <releases>

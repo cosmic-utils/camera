@@ -22,3 +22,5 @@ flatpak-cargo-generator.py
 *.flatpak
 test-recordings/
 apk-out/
+# Container cache for preview/generate-previews.sh (cargo registry + target dir)
+.preview-cache/

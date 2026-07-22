@@ -661,6 +661,9 @@ action-switch-camera = Switch camera
 action-toggle-focus-auto = Toggle auto focus
 # Turns the flash on or off.
 action-toggle-flash = Toggle flash
+# Shows or hides the tools menu holding timer, aspect, exposure, colour and
+# filter shortcuts.
+action-toggle-tools-menu = Toggle tools menu
 # Shows or hides the exposure panel.
 action-toggle-exposure-picker = Toggle exposure picker
 # Shows or hides the colour panel.
@@ -669,6 +672,8 @@ action-toggle-color-picker = Toggle color picker
 action-toggle-motor-picker = Toggle motor controls
 # Shows or hides the resolution and frame rate panel.
 action-toggle-format-picker = Toggle format picker
+# Shows or hides the filter picker.
+action-toggle-filters = Toggle filter picker
 # Opens the settings panel.
 action-toggle-settings = Open settings
 # Moves to the next capture mode in the carousel.

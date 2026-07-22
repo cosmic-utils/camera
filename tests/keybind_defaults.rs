@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 #[test]
 fn all_contains_every_variant_exactly_once() {
-    // 21 variants in the enum — keep this in sync with the spec.
-    assert_eq!(Action::ALL.len(), 21);
+    // 23 variants in the enum — keep this in sync with the spec.
+    assert_eq!(Action::ALL.len(), 23);
 
     let set: HashSet<Action> = Action::ALL.iter().copied().collect();
     assert_eq!(set.len(), Action::ALL.len(), "ALL contains duplicates");
