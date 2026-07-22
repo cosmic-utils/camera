@@ -10,8 +10,8 @@ fn test_config_default() {
     let config = Config::default();
 
     // Check sensible defaults
-    assert_eq!(
-        config.mirror_preview, true,
+    assert!(
+        config.mirror_preview,
         "Mirror preview should be enabled by default"
     );
 }

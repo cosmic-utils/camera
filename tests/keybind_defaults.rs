@@ -35,13 +35,13 @@ fn every_category_has_at_least_one_action() {
 fn defaults_have_no_duplicates() {
     let mut seen: HashMap<KeyBind, Action> = HashMap::new();
     for &a in Action::ALL {
-        if let Some(kb) = a.default_keybind() {
-            if let Some(prev) = seen.insert(kb.clone(), a) {
-                panic!(
-                    "default keybind {:?} bound to both {:?} and {:?}",
-                    kb, prev, a
-                );
-            }
+        if let Some(kb) = a.default_keybind()
+            && let Some(prev) = seen.insert(kb.clone(), a)
+        {
+            panic!(
+                "default keybind {:?} bound to both {:?} and {:?}",
+                kb, prev, a
+            );
         }
     }
 }
