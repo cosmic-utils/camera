@@ -1528,17 +1528,31 @@ fn nearest_mode_to_viewport_center(
         .unwrap_or(0)
 }
 
-/// Compute the button inward slide distance for the current animation state.
-/// Called from `update()` so the value is fresh each event cycle without
-/// mutating state inside `draw()`.
-fn compute_button_slide(bounds: Rectangle, viewport: &Rectangle, state: &CarouselState) -> f32 {
+/// The resting (collapsed) inward slide for the side buttons, derived purely
+/// from the carousel's on-screen bounds — the value `compute_button_slide`
+/// returns when `full_expand_t == 0`. Exposed so the recording-state capture
+/// row can reproduce the same offset without a live carousel in the tree
+/// (during recording the carousel isn't rendered, so nothing else writes the
+/// shared slide atomic). See `SlidePrimer`.
+pub fn resting_button_slide(bounds: Rectangle) -> f32 {
     let spacing = cosmic::theme::spacing();
     let fade_w_max = bounds.width / 4.0;
     let button_spacing = spacing.space_s as f32;
     let padding = spacing.space_m as f32;
     let gap = (bounds.x - padding - BUTTON_WIDTH).max(0.0);
+    gap - fade_w_max - button_spacing
+}
 
-    let medium_pos = gap - fade_w_max - button_spacing;
+/// Compute the button inward slide distance for the current animation state.
+/// Called from `update()` so the value is fresh each event cycle without
+/// mutating state inside `draw()`.
+fn compute_button_slide(bounds: Rectangle, viewport: &Rectangle, state: &CarouselState) -> f32 {
+    let spacing = cosmic::theme::spacing();
+    let button_spacing = spacing.space_s as f32;
+    let padding = spacing.space_m as f32;
+    let gap = (bounds.x - padding - BUTTON_WIDTH).max(0.0);
+
+    let medium_pos = resting_button_slide(bounds);
 
     let needed_per_side = compute_needed_per_side(bounds.width, state);
     let viewport_half = (viewport.width - bounds.width) / 2.0;

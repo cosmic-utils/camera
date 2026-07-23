@@ -181,3 +181,116 @@ impl<'a> From<SlideH<'a>> for cosmic::Element<'a, Message> {
         cosmic::Element::new(slide)
     }
 }
+
+/// Transparent wrapper that publishes the carousel's resting inward-slide into
+/// the shared atomic at draw time, derived from its child's on-screen bounds.
+///
+/// The recording-state capture row mirrors the bottom bar's three-column shape,
+/// so its center container occupies exactly the bounds the mode carousel would.
+/// During recording the carousel isn't in the widget tree, so nothing writes
+/// the shared slide atomic; wrapping the center container keeps the side
+/// `SlideH` buttons (the photo-during-recording button) at the correct offset
+/// instead of falling back to zero — a mismatch visible in preview screenshots
+/// that boot straight into an active recording. Layout and drawing are
+/// unchanged; only the atomic is updated as a side effect.
+pub struct SlidePrimer<'a> {
+    child: cosmic::Element<'a, Message>,
+    slide_shared: Arc<AtomicU32>,
+}
+
+impl<'a> SlidePrimer<'a> {
+    pub fn new(child: cosmic::Element<'a, Message>, slide_shared: Arc<AtomicU32>) -> Self {
+        Self {
+            child,
+            slide_shared,
+        }
+    }
+}
+
+impl<'a> Widget<Message, Theme, Renderer> for SlidePrimer<'a> {
+    fn tag(&self) -> cosmic::iced::advanced::widget::tree::Tag {
+        self.child.as_widget().tag()
+    }
+
+    fn state(&self) -> cosmic::iced::advanced::widget::tree::State {
+        self.child.as_widget().state()
+    }
+
+    fn children(&self) -> Vec<cosmic::iced::advanced::widget::Tree> {
+        self.child.as_widget().children()
+    }
+
+    fn diff(&mut self, tree: &mut Tree) {
+        self.child.as_widget_mut().diff(tree);
+    }
+
+    fn size(&self) -> Size<Length> {
+        self.child.as_widget().size()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut Tree,
+        renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        self.child.as_widget_mut().layout(tree, renderer, limits)
+    }
+
+    fn draw(
+        &self,
+        tree: &Tree,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        // Publish the resting slide computed from the center container's bounds
+        // (== the carousel's bounds) so the sibling SlideH buttons in this row
+        // read the correct offset. The row draws children left-to-right, so this
+        // runs before the photo button's SlideH in the same frame.
+        let slide = crate::app::bottom_bar::mode_carousel::resting_button_slide(layout.bounds());
+        self.slide_shared
+            .store(slide.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.child
+            .as_widget()
+            .draw(tree, renderer, theme, style, layout, cursor, viewport);
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut Tree,
+        event: &Event,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn Clipboard,
+        shell: &mut Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        self.child.as_widget_mut().update(
+            tree, event, layout, cursor, renderer, clipboard, shell, viewport,
+        );
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &Renderer,
+    ) -> mouse::Interaction {
+        self.child
+            .as_widget()
+            .mouse_interaction(tree, layout, cursor, viewport, renderer)
+    }
+}
+
+impl<'a> From<SlidePrimer<'a>> for cosmic::Element<'a, Message> {
+    fn from(primer: SlidePrimer<'a>) -> Self {
+        cosmic::Element::new(primer)
+    }
+}

@@ -533,10 +533,19 @@ impl AppModel {
             // doesn't shift when the layout flips between idle and recording.
             crate::app::bottom_bar::three_col_row(
                 left_slot,
-                widget::container(stop_circle)
-                    .width(Length::Fixed(center_width))
-                    .center_x(center_width)
-                    .into(),
+                // Wrap the center container in a SlidePrimer so it publishes the
+                // resting carousel slide (from its own bounds) into the shared
+                // atomic. During recording the carousel isn't in the tree, so
+                // without this the photo button's SlideH would read a stale/zero
+                // offset — the misplacement seen in spoofed preview screenshots.
+                crate::app::bottom_bar::slide_h::SlidePrimer::new(
+                    widget::container(stop_circle)
+                        .width(Length::Fixed(center_width))
+                        .center_x(center_width)
+                        .into(),
+                    std::sync::Arc::clone(&self.carousel_button_slide),
+                )
+                .into(),
                 SlideH::new(photo_button, slide, -1.0).into(),
                 [spacing.space_xs, spacing.space_m],
             )
