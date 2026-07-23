@@ -1,0 +1,111 @@
+name: Regenerate Preview Screenshots
+
+# Keeps the committed preview screenshots (preview/*.png plus the variant and
+# per-locale galleries) in sync with the UI after it changes on main.
+#
+# This is the sibling of "Regenerate Derived Files", but it cannot push to main
+# the way that job does: the screenshots are produced by rendering the app in a
+# pinned container and can only be signed off by a human looking at the images,
+# so a regenerated set is proposed as a pull request rather than committed
+# straight to the branch.
+#
+# It is a separate workflow because the capture harness needs things the
+# derived-files runner does not: /dev/udmabuf (libcamera's virtual camera exports
+# its frames through dma-buf) and roughly half an hour of wall clock.
+#
+# Self-retrigger is avoided by the paths filter below: it lists only the *inputs*
+# that affect the screenshots, never the screenshot outputs, so merging this
+# job's own PR (which only touches preview/) does not start it again.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # UI code — the main reason a screenshot changes.
+      - 'src/**'
+      # The harness itself and what it feeds the app.
+      - 'preview/shots.conf'
+      - 'preview/source/**'
+      - 'preview/capture-previews.sh'
+      - 'preview/sync-previews.sh'
+      - 'preview/Containerfile'
+      # Dependency bumps (e.g. libcosmic) can change how the app renders.
+      - 'Cargo.lock'
+      # Localized shot text — the per-locale galleries render translated strings.
+      - 'i18n/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Only the newest main matters. Cancel an in-flight regeneration when a newer
+# commit lands rather than queueing another ~30-minute run behind it.
+concurrency:
+  group: regenerate-previews
+  cancel-in-progress: true
+
+jobs:
+  regenerate-previews:
+    name: Regenerate and open PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Free up disk space
+        # The pinned Fedora image, the release build and the container layers do
+        # not fit alongside the runner's preinstalled SDKs.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: Load udmabuf
+        # The fake camera allocates its frame buffers through /dev/udmabuf. The
+        # container opens the node as the mapped (non-root) user, so it has to be
+        # world-accessible; without it the app renders an empty preview.
+        run: |
+          sudo modprobe udmabuf
+          sudo chmod 0666 /dev/udmabuf
+          test -e /dev/udmabuf
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Regenerate previews
+        # Renders every shot in the pinned container, pixel-compares against the
+        # committed PNGs and overwrites only what actually changed, then refreshes
+        # the README/metainfo galleries that reference them.
+        env:
+          CONTAINER_ENGINE: podman
+        run: just generate-previews
+
+      - name: Open pull request if screenshots changed
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Scope the PR to preview/ (PNGs + generated galleries). Any metadata
+          # the generate-metadata pass rewrites under resources/ is left to the
+          # "Regenerate Derived Files" job, which owns those files.
+          add-paths: |
+            preview
+          commit-message: "chore: regenerate preview screenshots"
+          title: "chore: regenerate preview screenshots"
+          body: |
+            ## Preview screenshots
+
+            The UI changed on `main`, so the committed preview screenshots were
+            re-rendered in the pinned container. Only images whose pixels
+            actually changed are included; if this PR is empty the previews were
+            already up to date.
+
+            Please review the image diffs before merging — this is a visual
+            change that no automated check can sign off on.
+
+            ---
+            *Automatically created by the Regenerate Preview Screenshots workflow.*
+          branch: ci/regenerate-previews
+          delete-branch: true
+          labels: previews
