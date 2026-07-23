@@ -59,7 +59,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false   # skip the slow apt-get remove (~2 min); the other toggles free enough disk
           docker-images: true
           swap-storage: true
 
@@ -115,16 +115,10 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v4
 
-      - name: Cache cargo registry
-        uses: actions/cache@v6
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          cache-all-crates: true
 
       - name: Run checks
         run: just check
@@ -165,7 +159,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false   # skip the slow apt-get remove (~2 min); the other toggles free enough disk
           docker-images: true
           swap-storage: true
 
@@ -179,6 +173,12 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+          cache-all-crates: true
 
       - name: Install system dependencies (native build)
         if: ${{ !matrix.use_cross }}
@@ -326,7 +326,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false   # skip the slow apt-get remove (~2 min); the other toggles free enough disk
           docker-images: true
           swap-storage: true
 
@@ -374,7 +374,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false   # skip the slow apt-get remove (~2 min); the other toggles free enough disk
           docker-images: true
           swap-storage: true
 
@@ -427,7 +427,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false   # skip the slow apt-get remove (~2 min); the other toggles free enough disk
           docker-images: true
           swap-storage: true
 
