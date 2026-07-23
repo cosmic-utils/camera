@@ -889,6 +889,12 @@ impl AppModel {
             self.current_frame_is_file_source = true;
             // Reset aspect ratio to Native so the file source displays uncropped
             self.photo_aspect_ratio = crate::app::state::PhotoAspectRatio::Native;
+            // Readiness signal for the screenshot harness: the first preview
+            // frame is now set, so the app has something to draw and is ready to
+            // capture. Emitted on a dedicated `preview_ready` target so it is
+            // filtered out of normal runs unless the harness opts in via
+            // RUST_LOG=...,preview_ready=debug (see preview/capture-previews.sh).
+            tracing::debug!(target: "preview_ready", "first preview frame ready");
         } else {
             warn!("Failed to load file source preview");
         }
