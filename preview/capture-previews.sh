@@ -90,7 +90,9 @@ CAMERA="${CAMERA_BIN:-}"
 if [[ -z "$CAMERA" ]]; then
     log "Building camera (release-fast)"
     ( cd "$REPO_DIR" && cargo build --profile release-fast )
-    CAMERA="$REPO_DIR/target/release-fast/camera"
+    # Honour CARGO_TARGET_DIR: generate-previews.sh points it at the mounted
+    # cache (/target), so the binary lands there, not under $REPO_DIR/target.
+    CAMERA="${CARGO_TARGET_DIR:-$REPO_DIR/target}/release-fast/camera"
 fi
 [[ -x "$CAMERA" ]] || die "camera binary not found or not executable: $CAMERA"
 
