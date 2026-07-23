@@ -32,6 +32,11 @@ fn format_duration(seconds: u64) -> String {
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }
 
+/// Placeholder elapsed time shown by the recording indicator under
+/// `--preview-spoof-recording`, so the screenshot reads a believable duration
+/// (00:07) deterministically rather than whatever the live timer happened to be.
+const PREVIEW_SPOOF_RECORDING_SECS: u64 = 7;
+
 impl AppModel {
     /// Wrap a status-indicator `row` (dot + label) in the standard frosted
     /// overlay pill shared by the recording, streaming and timelapse indicators.
@@ -63,7 +68,12 @@ impl AppModel {
         }
 
         let spacing = cosmic::theme::spacing();
-        let duration_text = format_duration(self.recording.elapsed_duration());
+        let elapsed = if self.preview_spoof_recording {
+            PREVIEW_SPOOF_RECORDING_SECS
+        } else {
+            self.recording.elapsed_duration()
+        };
+        let duration_text = format_duration(elapsed);
 
         let row = widget::Row::new()
             .push(indicator_dot(Color::from_rgb(1.0, 0.0, 0.0)))

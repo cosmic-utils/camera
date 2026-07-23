@@ -381,6 +381,9 @@ impl cosmic::Application for AppModel {
         info!("Creating libcamera backend");
         let backend_manager = crate::backends::camera::CameraBackendManager::new();
 
+        // Read the Copy flags before `flags.preview_source` is moved below.
+        let preview_spoof_recording = flags.preview_spoof_recording;
+
         // Convert preview source path to FileSource if provided
         let preview_file_source = flags.preview_source.and_then(|path| {
             if !path.exists() {
@@ -431,6 +434,7 @@ impl cosmic::Application for AppModel {
             photo_btn_scale_to: 1.0,
             photo_btn_anim_start: None,
             recording: RecordingState::default(),
+            preview_spoof_recording,
             recording_session_counter: 0,
             virtual_camera: VirtualCameraState::default(),
             virtual_camera_file_source: preview_file_source,
@@ -619,6 +623,26 @@ impl cosmic::Application for AppModel {
         app.update_pixel_format_options();
         app.update_framerate_options();
         app.update_codec_options();
+
+        // Preview harness only (`--preview-spoof-recording`): enter Video mode
+        // with a spoofed active recording so the "recording in progress" shot can
+        // be captured without running the encoder. `recording` is set to
+        // `Recording` so every is_recording()-gated widget renders correctly, but
+        // no GStreamer pipeline is started and no frames are diverted from the
+        // preview (we never call `set_recording_sender`); the indicator shows a
+        // fixed placeholder duration. See preview/capture-previews.sh.
+        if preview_spoof_recording {
+            app.mode = CameraMode::Video;
+            app.recording_session_counter += 1;
+            let (stop_tx, _stop_rx) = tokio::sync::oneshot::channel();
+            app.recording = RecordingState::start(
+                app.recording_session_counter,
+                String::new(),
+                stop_tx,
+                Some(Default::default()),
+            );
+            app.update_mode_options();
+        }
 
         // Initialize cameras — camera enum thread was started before the event loop
         // so it overlaps with framework Vulkan init (~280ms). We wrap the join in an
