@@ -69,16 +69,16 @@ The published shots in every language the app is translated into, including the
 partly translated ones: untranslated labels stay in English and show what is left
 to do. Only en gets the full appearance matrix above.
 
-- [**كاميرا** (`ar`)](locales/ar/README.md) &mdash; 6 shots, 0/6 captions translated
-- [**Камера** (`bg`)](locales/bg/README.md) &mdash; 6 shots, 0/6 captions translated
-- [**Kamera** (`cs`)](locales/cs/README.md) &mdash; 6 shots, 6/6 captions translated
-- [**Kamera** (`de`)](locales/de/README.md) &mdash; 6 shots, 6/6 captions translated
-- [**Cámara** (`es`)](locales/es/README.md) &mdash; 6 shots, 0/6 captions translated
-- [**Caméra** (`fr`)](locales/fr/README.md) &mdash; 6 shots, 0/6 captions translated
-- [**Wênekêş** (`kmr`)](locales/kmr/README.md) &mdash; 6 shots, 0/6 captions translated
-- [**Kamera** (`sv`)](locales/sv/README.md) &mdash; 6 shots, 6/6 captions translated
-- [**Камера** (`uk`)](locales/uk/README.md) &mdash; 6 shots, 4/6 captions translated
-- [**相机** (`zh-CN`)](locales/zh-CN/README.md) &mdash; 6 shots, 4/6 captions translated
+- &lrm;[**كاميرا** (`ar`)](locales/ar/README.md) &mdash; 6 shots, 0/6 captions translated
+- &lrm;[**Камера** (`bg`)](locales/bg/README.md) &mdash; 6 shots, 0/6 captions translated
+- &lrm;[**Kamera** (`cs`)](locales/cs/README.md) &mdash; 6 shots, 6/6 captions translated
+- &lrm;[**Kamera** (`de`)](locales/de/README.md) &mdash; 6 shots, 6/6 captions translated
+- &lrm;[**Cámara** (`es`)](locales/es/README.md) &mdash; 6 shots, 0/6 captions translated
+- &lrm;[**Caméra** (`fr`)](locales/fr/README.md) &mdash; 6 shots, 0/6 captions translated
+- &lrm;[**Wênekêş** (`kmr`)](locales/kmr/README.md) &mdash; 6 shots, 0/6 captions translated
+- &lrm;[**Kamera** (`sv`)](locales/sv/README.md) &mdash; 6 shots, 6/6 captions translated
+- &lrm;[**Камера** (`uk`)](locales/uk/README.md) &mdash; 6 shots, 4/6 captions translated
+- &lrm;[**相机** (`zh-CN`)](locales/zh-CN/README.md) &mdash; 6 shots, 4/6 captions translated
 
 
 ---
