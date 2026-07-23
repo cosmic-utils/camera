@@ -281,9 +281,10 @@ pub enum OverlayEffect {
     Off,
 }
 
-/// Defaults to whatever preserves the behaviour the app had before this setting
-/// existed: follow COSMIC where there is a setting to follow, frosted elsewhere
-/// (which is what the old code hardcoded off-COSMIC).
+/// Defaults to `System` on COSMIC — follow the desktop's window-frosting toggle
+/// — and to [`Self::Translucent`] elsewhere. Translucent is the safe baseline
+/// off-COSMIC: no compositor blur to lean on, no per-frame blur chain to pay
+/// for. `Frosted` and `Off` are only ever reached by the user picking them.
 ///
 /// Environment-dependent, like [`AppTheme::theme`] — and stable for the process
 /// lifetime, since `is_cosmic_desktop()` caches.
@@ -292,7 +293,7 @@ impl Default for OverlayEffect {
         if is_cosmic_desktop() {
             Self::System
         } else {
-            Self::Frosted
+            Self::Translucent
         }
     }
 }
@@ -330,8 +331,8 @@ impl OverlayEffect {
     /// [`Self::available`] as a pure function of the environment.
     ///
     /// Off-COSMIC there is no desktop flag to follow, so `System` would resolve
-    /// to exactly [`Self::Frosted`] — a choice the user could make that changes
-    /// nothing. Hiding it removes a distinction without a difference.
+    /// to exactly [`Self::Translucent`] — a choice the user could make that
+    /// changes nothing. Hiding it removes a distinction without a difference.
     fn available_for(is_cosmic: bool) -> &'static [Self] {
         if is_cosmic {
             &Self::ALL
@@ -354,7 +355,7 @@ impl OverlayEffect {
     /// [`Self::effective`] as a pure function of the environment.
     pub(crate) fn effective_for(self, is_cosmic: bool) -> Self {
         if self == Self::System && !is_cosmic {
-            Self::Frosted
+            Self::Translucent
         } else {
             self
         }
@@ -491,7 +492,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             app_theme: AppTheme::default(),           // Default to System theme
-            overlay_effect: OverlayEffect::default(), // System on COSMIC, Frosted elsewhere
+            overlay_effect: OverlayEffect::default(), // System on COSMIC, Translucent elsewhere
             default_mode: crate::app::CameraMode::default(), // Default to Photo
             save_folder_name: crate::constants::DEFAULT_SAVE_FOLDER.to_string(),
             last_camera_path: None,
@@ -527,7 +528,7 @@ mod tests {
     use super::*;
 
     /// Off-COSMIC there is no frosting flag to follow, so `System` would mean
-    /// exactly `Frosted`. It must not be offered.
+    /// exactly `Translucent`. It must not be offered.
     #[test]
     fn system_is_offered_only_on_cosmic() {
         assert!(OverlayEffect::available_for(true).contains(&OverlayEffect::System));
@@ -632,8 +633,8 @@ mod tests {
         let index = OverlayEffect::System.dropdown_index_for(false);
         assert_eq!(
             OverlayEffect::from_dropdown_index_for(index, false),
-            Some(OverlayEffect::Frosted),
-            "System off-COSMIC must display as Frosted"
+            Some(OverlayEffect::Translucent),
+            "System off-COSMIC must display as Translucent"
         );
         assert!(index < OverlayEffect::available_for(false).len());
     }
@@ -657,7 +658,7 @@ mod tests {
     fn stored_system_falls_back_off_cosmic() {
         assert_eq!(
             OverlayEffect::System.effective_for(false),
-            OverlayEffect::Frosted
+            OverlayEffect::Translucent
         );
         // ...and is preserved on COSMIC, which is why we resolve at read time
         // instead of normalising on load.
@@ -678,26 +679,26 @@ mod tests {
         }
     }
 
-    /// The default is environment-dependent: it must reproduce the behaviour the
-    /// app had before the setting existed, on either desktop.
+    /// The default is environment-dependent: `System` on COSMIC (follow the
+    /// desktop), `Translucent` elsewhere (the flat off-COSMIC baseline).
     #[test]
-    fn default_effect_matches_the_pre_setting_behaviour() {
+    fn default_effect_is_system_on_cosmic_translucent_elsewhere() {
         // The pure form, so both branches are covered wherever this runs.
         let default_for = |is_cosmic| {
             if is_cosmic {
                 OverlayEffect::System
             } else {
-                OverlayEffect::Frosted
+                OverlayEffect::Translucent
             }
         };
         assert_eq!(default_for(true), OverlayEffect::System);
-        assert_eq!(default_for(false), OverlayEffect::Frosted);
+        assert_eq!(default_for(false), OverlayEffect::Translucent);
 
         // The real `Default` agrees with the pure form for this environment...
         assert_eq!(
             OverlayEffect::default(),
             default_for(is_cosmic_desktop()),
-            "Default disagrees with the pre-setting behaviour"
+            "Default disagrees with the expected environment default"
         );
 
         // ...and the default is always offered by the dropdown it defaults in.

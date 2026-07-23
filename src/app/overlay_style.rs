@@ -118,10 +118,10 @@ impl OverlaySurface {
 /// toggle the user flips in Appearance settings).
 ///
 /// Off-COSMIC there is no such flag, and `OverlayEffect::effective_for` has
-/// already rewritten a stored `System` to `Frosted` by the time we match on it.
-/// That preserves the old behaviour, which hardcoded frosted off-COSMIC: those
-/// desktops have no frosting setting to read and the app produces the blur
-/// itself.
+/// already rewritten a stored `System` to `Translucent` by the time we match on
+/// it — the flat off-COSMIC baseline: those desktops have no frosting setting to
+/// read and no compositor blur to lean on, so a plain translucent tint is the
+/// sensible default there.
 ///
 /// Note the off-COSMIC case diverges from libcosmic's own widgets: they resolve
 /// `Layer::Background` through `Theme::transparent`, which is `false` there, so
@@ -152,11 +152,13 @@ fn resolve_surface(
         OverlayEffect::Translucent => OverlaySurface::Translucent,
         OverlayEffect::Off => OverlaySurface::Opaque,
         // Only reachable on COSMIC: `effective_for` rewrote it otherwise.
+        // Frosting on → frosted; frosting off → translucent (never opaque, which
+        // the user must pick deliberately via `Off`).
         OverlayEffect::System => {
             if theme_transparent {
                 OverlaySurface::Frosted
             } else {
-                OverlaySurface::Opaque
+                OverlaySurface::Translucent
             }
         }
     }
@@ -533,20 +535,22 @@ mod tests {
     /// The full override matrix: 4 effects x COSMIC on/off x `theme.transparent`.
     ///
     /// Pins two things at once — that the three explicit effects ignore the
-    /// environment entirely, and that `System` alone reads it (COSMIC → follow
-    /// `transparent`; off-COSMIC → frosted, the pre-setting behaviour).
+    /// environment entirely, and that `System` alone reads it (COSMIC → frosting
+    /// on/off maps to frosted/translucent; off-COSMIC → translucent, the flat
+    /// baseline).
     #[test]
     fn resolve_surface_covers_every_effect_and_environment() {
         use OverlaySurface::{Frosted, Opaque, Translucent};
         // (effect, is_cosmic, theme.transparent) -> surface
         let cases = [
-            // System is the only row that reads the environment...
+            // System is the only row that reads the environment: on COSMIC,
+            // frosting on → frosted, frosting off → translucent (not opaque).
             (OverlayEffect::System, true, true, Frosted),
-            (OverlayEffect::System, true, false, Opaque),
-            // ...and off-COSMIC it is frosted either way: there is no desktop
+            (OverlayEffect::System, true, false, Translucent),
+            // ...and off-COSMIC it is translucent either way: there is no desktop
             // flag to follow, so `transparent` must not leak in.
-            (OverlayEffect::System, false, true, Frosted),
-            (OverlayEffect::System, false, false, Frosted),
+            (OverlayEffect::System, false, true, Translucent),
+            (OverlayEffect::System, false, false, Translucent),
             // The other three pin one surface regardless.
             (OverlayEffect::Frosted, true, true, Frosted),
             (OverlayEffect::Frosted, true, false, Frosted),
@@ -580,14 +584,14 @@ mod tests {
     }
 
     /// A config written on COSMIC, then read on a desktop that never offers
-    /// `System`. It must land on Frosted — the off-COSMIC default — and must
+    /// `System`. It must land on Translucent — the off-COSMIC default — and must
     /// never fall through to opaque or blank chrome.
     #[test]
-    fn system_effect_stored_off_cosmic_resolves_to_frosted() {
+    fn system_effect_stored_off_cosmic_resolves_to_translucent() {
         for transparent in [true, false] {
             assert_eq!(
                 resolve_surface(OverlayEffect::System, false, transparent),
-                OverlaySurface::Frosted,
+                OverlaySurface::Translucent,
                 "System off-COSMIC (transparent={transparent})"
             );
         }
@@ -704,43 +708,44 @@ mod tests {
         init_overlay_effect(OverlayEffect::default());
     }
 
-    /// The default must be the behaviour the app had before this setting
-    /// existed, so an upgrade changes nothing until the user asks: follow COSMIC
-    /// where there is a flag to follow, frosted where the old code hardcoded it.
+    /// The default follows COSMIC where there is a flag to follow, and is a flat
+    /// translucent tint elsewhere.
     ///
     /// `is_cosmic_desktop()` caches in a `LazyLock`, so the test can only assert
     /// against whichever environment it happens to run in; the branch it does
-    /// not take is covered by `default_effect_matches_the_pre_setting_behaviour`
-    /// in `config`, which tests the pure form.
+    /// not take is covered by
+    /// `default_effect_is_system_on_cosmic_translucent_elsewhere` in `config`,
+    /// which tests the pure form.
     #[test]
-    fn default_effect_preserves_the_pre_setting_behaviour() {
+    fn default_effect_is_system_on_cosmic_translucent_elsewhere() {
         let want = if crate::config::is_cosmic_desktop() {
             OverlayEffect::System
         } else {
-            OverlayEffect::Frosted
+            OverlayEffect::Translucent
         };
         assert_eq!(OverlayEffect::default(), want);
         assert_eq!(crate::config::Config::default().overlay_effect, want);
     }
 
-    /// Whatever the default is, it must resolve to the surface the app rendered
-    /// before the setting existed — frosted off-COSMIC, and on COSMIC whatever
-    /// `theme.transparent` says.
+    /// Whatever the default is, it must resolve to the intended surface:
+    /// translucent off-COSMIC, and on COSMIC frosted when frosting is on and
+    /// translucent when it is off. Opaque is never a default — only `Off` reaches
+    /// it, and only by the user picking it.
     #[test]
-    fn default_effect_resolves_like_the_old_bool() {
+    fn default_effect_resolves_to_the_intended_surface() {
         for transparent in [true, false] {
-            // Off-COSMIC the old code returned `true` (frosted) unconditionally.
+            // Off-COSMIC the default is translucent, regardless of `transparent`.
             assert_eq!(
-                resolve_surface(OverlayEffect::Frosted, false, transparent),
-                OverlaySurface::Frosted
+                resolve_surface(OverlayEffect::Translucent, false, transparent),
+                OverlaySurface::Translucent
             );
-            // On COSMIC it returned `theme.transparent`.
+            // On COSMIC `System` maps frosting on/off to frosted/translucent.
             assert_eq!(
                 resolve_surface(OverlayEffect::System, true, transparent),
                 if transparent {
                     OverlaySurface::Frosted
                 } else {
-                    OverlaySurface::Opaque
+                    OverlaySurface::Translucent
                 }
             );
         }

@@ -160,9 +160,10 @@ seed_cosmic_theme() {
 }
 
 # Pins the two settings the shots vary over. Neither may be left to its default:
-# both default to `System`, which off COSMIC has no desktop setting to read and
-# resolves to light/frosted by fallback, so an unseeded run silently produces a
-# light-themed shot that differs from the dark one in every pixel.
+# app_theme defaults to `System` (→ light off COSMIC) and overlay_effect to
+# `System` too, which off COSMIC has no desktop setting to read and resolves to
+# translucent by fallback, so an unseeded run silently produces a light,
+# translucent shot that differs from a dark, frosted one in every pixel.
 #
 # $3 is a shot's optional `config` column: comma-separated field=value pairs for
 # state that has no keyboard shortcut, such as the fit/fill preview toggle.
@@ -605,16 +606,17 @@ capture_shot() {
 # `preview-0NN.png` that metainfo.xml points at, and the rest land under
 # `variants/` for the gallery in preview/README.md.
 VARIANTS=(
-    "Dark|Frosted|dark-frosted"
     "Dark|Translucent|dark-translucent"
+    "Dark|Frosted|dark-frosted"
     "Dark|Off|dark-off"
     "Light|Frosted|light-frosted"
     "Light|Translucent|light-translucent"
     "Light|Off|light-off"
 )
 
-# The combination published to Flathub as preview-0NN.png.
-PUBLISHED_VARIANT="dark-frosted"
+# The combination published to Flathub as preview-0NN.png: the app's default
+# appearance (Translucent overlay), so the store shot matches a fresh install.
+PUBLISHED_VARIANT="dark-translucent"
 
 # The language the published shots and the appearance matrix are taken in.
 BASE_LOCALE="en"

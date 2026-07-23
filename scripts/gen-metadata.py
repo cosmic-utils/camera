@@ -75,7 +75,7 @@ METAINFO_DESCRIPTION = {
 # the plain preview-0NN.png that metainfo.xml points at, not under variants/.
 VARIANT_THEMES = ["dark", "light"]
 VARIANT_OVERLAYS = ["frosted", "translucent", "off"]
-PUBLISHED_VARIANT = "dark-frosted"
+PUBLISHED_VARIANT = "dark-translucent"
 
 # Where capture-previews.sh puts one published shot per translated language.
 LOCALES_DIR = "locales"
