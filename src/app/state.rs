@@ -740,6 +740,11 @@ pub struct AppModel {
     pub preview_fit_to_view: bool,
     /// In-flight fit/fill transition, or `None` when settled on `preview_fit_to_view`.
     pub fit_animation: Option<FitAnimation>,
+    /// Hide every piece of overlay chrome (top bar, carousel, capture button,
+    /// fit/fill and zoom chips) leaving just the live preview. Session-only and
+    /// deliberately not persisted: restoring it at launch would open the app
+    /// with no visible controls. Esc and the shortcut both bring the UI back.
+    pub ui_hidden: bool,
     /// Path to last generated bug report
     pub last_bug_report_path: Option<String>,
     /// Path to the most recently saved photo or video (for gallery pre-selection)
@@ -1620,6 +1625,8 @@ pub enum Message {
     ResetZoom,
     /// Toggle between Cover (fill) and Contain (fit) preview mode
     TogglePreviewFit,
+    /// Show/hide all overlay chrome, leaving just the live preview
+    ToggleUiChrome,
     /// Animation tick for fit/fill transition
     FitAnimationTick,
     /// Animation tick for the zoom-reset transition

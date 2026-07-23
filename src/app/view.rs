@@ -92,11 +92,11 @@ impl AppModel {
             && self.screen_height > self.screen_width
     }
 
-    /// Settled top-bar scrim / shader bar height. 0 in View mode (the
-    /// preview takes the full window in fit/fill); `TOP_BAR_HEIGHT`
-    /// otherwise.
+    /// Settled top-bar scrim / shader bar height. 0 in View mode and while
+    /// the chrome is hidden (the preview takes the full window in fit/fill);
+    /// `TOP_BAR_HEIGHT` otherwise.
     pub fn settled_top_ui_height(&self) -> f32 {
-        if self.mode.is_view_only() {
+        if self.mode.is_view_only() || self.ui_hidden {
             0.0
         } else {
             TOP_BAR_HEIGHT
@@ -115,9 +115,10 @@ impl AppModel {
 
     /// Settled pixel height of the bottom UI scrim. The top edge sits at:
     ///
-    /// - **View mode**: 0. The preview extends to the window's bottom edge
-    ///   in fit/fill (the carousel renders on top of the live preview
-    ///   without a scrim).
+    /// - **View mode / hidden chrome**: 0. The preview extends to the
+    ///   window's bottom edge in fit/fill (the carousel renders on top of the
+    ///   live preview without a scrim, and with the chrome hidden there is no
+    ///   carousel at all).
     /// - **Photo mode**: the top of the capture-button area. By construction
     ///   the symmetric `space_xs` paddings (`build_capture_button`'s top
     ///   padding and the zoom row's `control_spacing` bottom padding) make
@@ -132,7 +133,7 @@ impl AppModel {
     /// settled value so a shot taken mid-animation isn't cropped against
     /// an in-flight value.
     pub fn settled_bottom_ui_height(&self) -> f32 {
-        if self.mode.is_view_only() {
+        if self.mode.is_view_only() || self.ui_hidden {
             return 0.0;
         }
         let spacing = cosmic::theme::spacing();
@@ -163,9 +164,10 @@ impl AppModel {
 
     /// Settled height of the empty placeholder above the bottom bar. 0 in
     /// View (no capture button — fit/zoom row sits flush above the
-    /// carousel); the capture button area otherwise.
+    /// carousel) and while the chrome is hidden; the capture button area
+    /// otherwise.
     pub fn settled_capture_area_height(&self) -> f32 {
-        if self.mode.is_view_only() {
+        if self.mode.is_view_only() || self.ui_hidden {
             0.0
         } else {
             let spacing = cosmic::theme::spacing();
@@ -200,7 +202,7 @@ impl AppModel {
     ///
     /// Used by `build_overlay_popup` to keep popups out of the chip strip.
     fn zoom_chip_strip_height(&self) -> f32 {
-        if self.mode.supports_fit_and_zoom() && !self.tools_menu_visible {
+        if self.mode.supports_fit_and_zoom() && !self.tools_menu_visible && !self.ui_hidden {
             let spacing = cosmic::theme::spacing();
             f32::from(spacing.space_l) + f32::from(spacing.space_xs)
         } else {
@@ -485,8 +487,9 @@ impl AppModel {
         let top_bar = self.build_top_bar();
 
         // Zoom/fit row is shown in modes that allow manual zoom and the
-        // fit-to-view toggle (Photo, View).
-        let show_zoom_label = self.mode.supports_fit_and_zoom();
+        // fit-to-view toggle (Photo, View), and never while the chrome is
+        // hidden.
+        let show_zoom_label = self.mode.supports_fit_and_zoom() && !self.ui_hidden;
 
         // Capture button area - changes based on recording/streaming state and video file selection
         // Check if we have video file controls (play/pause button for video file sources)
@@ -617,8 +620,17 @@ impl AppModel {
             .clip(true)
             .into();
 
-        // Bottom area: always show bottom bar (filter picker is now a sidebar overlay)
-        let bottom_area: Element<'_, Message> = self.build_bottom_bar();
+        // Bottom area: always show bottom bar (filter picker is now a sidebar
+        // overlay). Skipped entirely while the chrome is hidden — the column
+        // below drops it, so building the carousel would be wasted work.
+        let bottom_area: Element<'_, Message> = if self.ui_hidden {
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Shrink)
+                .into()
+        } else {
+            self.build_bottom_bar()
+        };
 
         // Immersive layout: camera preview fills the screen, all UI overlaid on top.
         // Aspect ratio crop is shown as translucent top/bottom bars (canvas overlay).
@@ -628,11 +640,17 @@ impl AppModel {
 
             let mut bottom_controls = widget::Column::new().width(Length::Fill);
 
-            if let Some(progress_bar) = self.build_video_progress_bar() {
-                bottom_controls = bottom_controls.push(progress_bar);
-            }
+            // Hidden chrome: the whole bottom column collapses — no progress
+            // bar, no capture button, no carousel. `show_zoom_label` above
+            // already dropped the fit/zoom chips, so the bottom stack child
+            // becomes an empty layer over the preview.
+            if !self.ui_hidden {
+                if let Some(progress_bar) = self.build_video_progress_bar() {
+                    bottom_controls = bottom_controls.push(progress_bar);
+                }
 
-            bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
+                bottom_controls = bottom_controls.push(capture_button_area).push(bottom_area);
+            }
 
             // Bottom section: zoom label + bottom controls
             let mut bottom_section = widget::Column::new().width(Length::Fill);
@@ -763,10 +781,12 @@ impl AppModel {
 
     /// Build the top bar with recording indicator and format button
     fn build_top_bar(&self) -> Element<'_, Message> {
-        // View mode strips every top-bar button (and the title-bar window
-        // controls) but keeps the draggable row so the user can still move
-        // / double-click-to-maximize the window.
-        if self.mode.is_view_only() {
+        // View mode and hidden chrome strip every top-bar button (and the
+        // title-bar window controls) but keep the draggable row so the user
+        // can still move / double-click-to-maximize the window. Without it a
+        // hidden-chrome window would be unmovable on compositors that have no
+        // titlebar of their own.
+        if self.mode.is_view_only() || self.ui_hidden {
             let empty = widget::container(
                 widget::Space::new()
                     .width(Length::Fill)

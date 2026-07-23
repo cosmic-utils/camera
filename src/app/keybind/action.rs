@@ -29,11 +29,16 @@ pub enum Action {
     // Mode / display
     NextMode,
     PrevMode,
+    /// Hide every overlay control (top bar, carousel, capture button,
+    /// fit/fill and zoom chips) leaving just the live preview, or bring it
+    /// all back.
+    ToggleUiChrome,
 
     // Zoom / framing
     ZoomIn,
     ZoomOut,
     ResetZoom,
+    TogglePreviewFit,
     CyclePhotoAspectRatio,
 
     // App
@@ -76,10 +81,12 @@ impl Action {
         // Display
         Action::NextMode,
         Action::PrevMode,
+        Action::ToggleUiChrome,
         // Zoom
         Action::ZoomIn,
         Action::ZoomOut,
         Action::ResetZoom,
+        Action::TogglePreviewFit,
         Action::CyclePhotoAspectRatio,
         // App
         Action::OpenGallery,
@@ -102,10 +109,11 @@ impl Action {
             | Action::ToggleFormatPicker
             | Action::ToggleFilters
             | Action::ToggleSettings => ActionCategory::Pickers,
-            Action::NextMode | Action::PrevMode => ActionCategory::Display,
+            Action::NextMode | Action::PrevMode | Action::ToggleUiChrome => ActionCategory::Display,
             Action::ZoomIn
             | Action::ZoomOut
             | Action::ResetZoom
+            | Action::TogglePreviewFit
             | Action::CyclePhotoAspectRatio => ActionCategory::Zoom,
             Action::OpenGallery
             | Action::ToggleAbout
@@ -145,10 +153,16 @@ impl Action {
 
             Action::NextMode => kb(vec![], Key::Character("m".into())),
             Action::PrevMode => kb(vec![], Key::Character("n".into())),
+            // `h` for hide. Tab is the cross-app convention for "hide all
+            // panels" but is left free here for future focus traversal.
+            Action::ToggleUiChrome => kb(vec![], Key::Character("h".into())),
 
             Action::ZoomIn => kb(ctrl(), Key::Character("+".into())),
             Action::ZoomOut => kb(ctrl(), Key::Character("-".into())),
             Action::ResetZoom => kb(ctrl(), Key::Character("0".into())),
+            // `f` is flash and Ctrl+0 resets zoom, so the fit/fill toggle
+            // takes `v` ("view fit").
+            Action::TogglePreviewFit => kb(vec![], Key::Character("v".into())),
             Action::CyclePhotoAspectRatio => kb(ctrl(), Key::Character("a".into())),
 
             Action::OpenGallery => kb(vec![], Key::Character("g".into())),
@@ -187,10 +201,12 @@ impl Action {
 
             Action::NextMode => Message::NextMode,
             Action::PrevMode => Message::PrevMode,
+            Action::ToggleUiChrome => Message::ToggleUiChrome,
 
             Action::ZoomIn => Message::ZoomIn,
             Action::ZoomOut => Message::ZoomOut,
             Action::ResetZoom => Message::ResetZoom,
+            Action::TogglePreviewFit => Message::TogglePreviewFit,
             Action::CyclePhotoAspectRatio => Message::CyclePhotoAspectRatio,
 
             Action::OpenGallery => Message::OpenGallery,
@@ -218,9 +234,11 @@ impl Action {
             Action::ToggleSettings => fl!("action-toggle-settings"),
             Action::NextMode => fl!("action-next-mode"),
             Action::PrevMode => fl!("action-prev-mode"),
+            Action::ToggleUiChrome => fl!("action-toggle-ui-chrome"),
             Action::ZoomIn => fl!("action-zoom-in"),
             Action::ZoomOut => fl!("action-zoom-out"),
             Action::ResetZoom => fl!("action-reset-zoom"),
+            Action::TogglePreviewFit => fl!("action-toggle-preview-fit"),
             Action::CyclePhotoAspectRatio => fl!("action-cycle-photo-aspect-ratio"),
             Action::OpenGallery => fl!("action-open-gallery"),
             Action::ToggleAbout => fl!("about"),

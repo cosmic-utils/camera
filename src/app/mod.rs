@@ -502,6 +502,7 @@ impl cosmic::Application for AppModel {
             zoom_animation: None,
             preview_fit_to_view: initial_preview_fit,
             fit_animation: None,
+            ui_hidden: false,
             last_bug_report_path: None,
             last_media_path: None,
             pending_close: false,
@@ -905,6 +906,13 @@ impl cosmic::Application for AppModel {
             self.core.window.show_context = false;
             self.sync_audio_probe();
             return Task::none();
+        }
+
+        // Last: bring hidden chrome back. With everything hidden there is no
+        // on-screen affordance left, so Esc has to be a way out for anyone who
+        // doesn't remember the toggle shortcut.
+        if self.ui_hidden {
+            return self.handle_toggle_ui_chrome();
         }
 
         Task::none()

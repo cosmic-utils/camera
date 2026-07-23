@@ -204,6 +204,7 @@ impl AppModel {
                 self.persist_config_async();
                 self.start_fit_animation(from)
             }
+            Message::ToggleUiChrome => self.handle_toggle_ui_chrome(),
             Message::FitAnimationTick => self.tick_animation_until(
                 crate::app::view::FIT_ANIMATION_DURATION,
                 Message::FitAnimationTick,

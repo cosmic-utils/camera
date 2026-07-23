@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 #[test]
 fn all_contains_every_variant_exactly_once() {
-    // 23 variants in the enum — keep this in sync with the spec.
-    assert_eq!(Action::ALL.len(), 23);
+    // 25 variants in the enum — keep this in sync with the spec.
+    assert_eq!(Action::ALL.len(), 25);
 
     let set: HashSet<Action> = Action::ALL.iter().copied().collect();
     assert_eq!(set.len(), Action::ALL.len(), "ALL contains duplicates");
@@ -67,6 +67,22 @@ fn mode_cycle_defaults() {
         .expect("NextMode must have a default");
     assert_eq!(n.key, cosmic::iced::keyboard::Key::Character("n".into()));
     assert_eq!(m.key, cosmic::iced::keyboard::Key::Character("m".into()));
+}
+
+#[test]
+fn chrome_and_fit_defaults_are_unmodified_letters() {
+    // Both are one-key toggles reached constantly while framing a shot, so a
+    // modifier would defeat the point.
+    for (action, key) in [
+        (Action::ToggleUiChrome, "h"),
+        (Action::TogglePreviewFit, "v"),
+    ] {
+        let kb = action
+            .default_keybind()
+            .unwrap_or_else(|| panic!("{action:?} must have a default"));
+        assert_eq!(kb.key, cosmic::iced::keyboard::Key::Character(key.into()));
+        assert!(kb.modifiers.is_empty(), "{action:?} must be unmodified");
+    }
 }
 
 #[test]
