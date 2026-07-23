@@ -64,9 +64,13 @@ jobs:
 
       - name: Load udmabuf
         # The fake camera allocates its frame buffers through /dev/udmabuf. The
-        # container opens the node as the mapped (non-root) user, so it has to be
-        # world-accessible; without it the app renders an empty preview.
+        # hosted runner's base kernel package does not ship the udmabuf module,
+        # so pull the matching linux-modules-extra package before loading it. The
+        # container opens the node as the mapped (non-root) user, so it also has
+        # to be world-accessible; without it the app renders an empty preview.
         run: |
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
           sudo modprobe udmabuf
           sudo chmod 0666 /dev/udmabuf
           test -e /dev/udmabuf
