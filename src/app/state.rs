@@ -635,6 +635,11 @@ pub struct AppModel {
     pub photo_btn_anim_start: Option<std::time::Instant>,
     /// Recording state (idle, recording, or paused)
     pub recording: RecordingState,
+    /// Preview harness only: when set, the recording indicator shows a fixed
+    /// placeholder duration instead of the live elapsed time, so the "recording
+    /// in progress" screenshot is deterministic. Enabled by
+    /// `--preview-spoof-recording`; see `AppFlags::preview_spoof_recording`.
+    pub preview_spoof_recording: bool,
     /// Monotonic counter that mints a unique ID for each recording session.
     /// `handle_start_recording` increments this before assigning the new
     /// session; `handle_recording_stopped` uses it to ignore late stop events
@@ -1040,6 +1045,12 @@ pub struct AppFlags {
     /// Optional file to use as the camera preview source instead of a real camera.
     /// Can be an image (PNG, JPG, JPEG, WEBP) or video (MP4, WEBM, MKV).
     pub preview_source: Option<std::path::PathBuf>,
+    /// Preview harness only: start in Video mode with a spoofed active recording
+    /// — the recording indicator and a fixed elapsed timer are shown, but no
+    /// encoder pipeline is started. Lets the screenshot harness capture the
+    /// "recording in progress" state without spending CI resources on a real
+    /// encode. See `preview/capture-previews.sh`.
+    pub preview_spoof_recording: bool,
     /// Pre-warmed results from background thread started before the event loop.
     /// If present, init() skips the synchronous enumeration.
     pub prewarm: Option<std::thread::JoinHandle<PrewarmResults>>,

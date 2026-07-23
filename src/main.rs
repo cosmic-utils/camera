@@ -27,6 +27,13 @@ struct Cli {
     /// alongside `--preview-source`. Defaults to 900x700.
     #[arg(long, value_name = "WIDTHxHEIGHT", value_parser = parse_window_size)]
     preview_window: Option<(f32, f32)>,
+
+    /// Preview harness only: boot straight into Video mode showing an active
+    /// recording indicator, without starting the encoder. Lets the screenshot
+    /// harness capture the "recording in progress" state without spending CI
+    /// resources on a real encode. The elapsed timer shows a fixed placeholder.
+    #[arg(long)]
+    preview_spoof_recording: bool,
 }
 
 fn parse_window_size(s: &str) -> Result<(f32, f32), String> {
@@ -151,13 +158,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Process { mode }) => match mode {
             ProcessMode::BurstMode { input, output } => cli::process_burst_mode(input, output),
         },
-        None => run_gui(cli.preview_source, cli.preview_window),
+        None => run_gui(
+            cli.preview_source,
+            cli.preview_window,
+            cli.preview_spoof_recording,
+        ),
     }
 }
 
 fn run_gui(
     preview_source: Option<PathBuf>,
     preview_window: Option<(f32, f32)>,
+    preview_spoof_recording: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Start pre-warming on background threads BEFORE the iced event loop.
     // This overlaps GStreamer init, device enumeration, and camera discovery
@@ -242,6 +254,7 @@ fn run_gui(
     // Create app flags with pre-warm handle
     let flags = camera::app::AppFlags {
         preview_source,
+        preview_spoof_recording,
         prewarm: Some(prewarm_handle),
     };
 

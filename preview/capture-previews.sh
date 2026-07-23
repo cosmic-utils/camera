@@ -308,13 +308,13 @@ EOF
 # Called for EVERY shot, not only the ones asking for `seed-photo`. The app picks
 # its thumbnail as the newest file by mtime across both the photo and the video
 # directory, and nothing else here resets $HOME between shots, so a shot without
-# its own gallery state used to inherit whatever ran before it: in a full run the
-# previous shot's seeded photo, alone the empty placeholder, and on a second
-# variant the video the previous variant had just recorded. Three different valid
-# screenshots of the same shot depending on what preceded it.
+# its own gallery state would otherwise inherit whatever ran before it: in a full
+# run the previous shot's seeded photo, or alone the empty placeholder. Resetting
+# to a known state keeps each shot's gallery button deterministic.
 #
-# Clearing the video directory also stops recordings accumulating: shot 004
-# records once per variant per language, which is 66 clips over a full run.
+# The video directory is cleared for the same reason. Shot 004 spoofs recording
+# (--preview-spoof-recording) and writes no file, so nothing accumulates there,
+# but the reset still guards against a stray clip from an interrupted run.
 seed_gallery() {
     local source_path="${1:-}"
     local photos_dir="$HOME/Pictures/Camera"
@@ -487,7 +487,16 @@ capture_shot() {
     # flag only takes effect alongside `--preview-source`, which would replace
     # the virtual camera with a file source and put the app back into its
     # no-camera UI.
-    "$CAMERA" >"$SESSION_DIR/camera-$tag.log" 2>&1 &
+    #
+    # A shot can ask the app to boot into a spoofed "recording in progress" state
+    # (Video mode + recording indicator, no encoder). It is a launch-time flag,
+    # not a keystroke, so it is resolved here like seed-photo and skipped in the
+    # step loop below. See --preview-spoof-recording in src/main.rs.
+    local app_args=()
+    if [[ ",$steps," == *,spoof-recording,* ]]; then
+        app_args+=(--preview-spoof-recording)
+    fi
+    "$CAMERA" "${app_args[@]}" >"$SESSION_DIR/camera-$tag.log" 2>&1 &
     APP_PID=$!
 
     local geometry=""
@@ -534,6 +543,8 @@ capture_shot() {
         [[ -z "$step" ]] && continue
         # Handled before launch rather than by a keystroke; see seed_gallery.
         [[ "$step" == "seed-photo" ]] && continue
+        # Resolved into a launch flag above, not a keystroke.
+        [[ "$step" == "spoof-recording" ]] && continue
         local keys="${STEP_KEYS[$step]:-}"
         [[ -n "$keys" ]] || { warn "$tag: unknown step '$step'"; continue; }
         # A dropped keystroke leaves the app in the wrong UI state, which still
