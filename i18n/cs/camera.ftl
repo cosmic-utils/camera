@@ -323,3 +323,5 @@ desktop-comment = Pořizujte fotografie, natáčejte videa a skenujte QR kódy
 metainfo-description-intro = { camera } je moderní aplikace kamery pro Linux, navržená pro stolní počítače i mobilní zařízení. Ať už potřebujete rychle vyfotit snímek, natočit video nebo naskenovat QR kód, { camera } nabízí čisté a intuitivní rozhraní, které vás při používání neruší.
 metainfo-feature-controls = Manuální ovládání: expozice, ISO, závěrka, ostření a vyvážení bílé
 metainfo-feature-modes = Režimy fotografie, videa a časosběru, se samospouští a kompoziční mřížkou
+action-toggle-filters = Přepnout výběr filtrů
+action-toggle-tools-menu = Přepnout nabídku nástrojů
