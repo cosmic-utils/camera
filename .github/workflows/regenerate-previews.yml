@@ -9,9 +9,11 @@ name: Regenerate Preview Screenshots
 # so a regenerated set is proposed as a pull request rather than committed
 # straight to the branch.
 #
-# It is a separate workflow because the capture harness needs things the
-# derived-files runner does not: /dev/udmabuf (libcamera's virtual camera exports
-# its frames through dma-buf) and roughly half an hour of wall clock.
+# It is a separate workflow because the capture harness renders the app in a
+# pinned container and takes roughly half an hour of wall clock. It needs no
+# camera and no device access: the app fakes its own camera in CPU memory
+# (--preview-fake-camera plus --preview-source), so no dma-buf provider is
+# involved and it runs on a stock hosted runner.
 #
 # Self-retrigger is avoided by the paths filter below: it lists only the *inputs*
 # that affect the screenshots, never the screenshot outputs, so merging this
@@ -61,19 +63,6 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
-
-      - name: Load udmabuf
-        # The fake camera allocates its frame buffers through /dev/udmabuf. The
-        # hosted runner's base kernel package does not ship the udmabuf module,
-        # so pull the matching linux-modules-extra package before loading it. The
-        # container opens the node as the mapped (non-root) user, so it also has
-        # to be world-accessible; without it the app renders an empty preview.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
-          sudo modprobe udmabuf
-          sudo chmod 0666 /dev/udmabuf
-          test -e /dev/udmabuf
 
       - name: Install just
         uses: extractions/setup-just@v4

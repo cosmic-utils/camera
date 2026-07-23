@@ -383,6 +383,7 @@ impl cosmic::Application for AppModel {
 
         // Read the Copy flags before `flags.preview_source` is moved below.
         let preview_spoof_recording = flags.preview_spoof_recording;
+        let preview_fake_camera = flags.preview_fake_camera;
 
         // Convert preview source path to FileSource if provided
         let preview_file_source = flags.preview_source.and_then(|path| {
@@ -650,7 +651,18 @@ impl cosmic::Application for AppModel {
         let last_camera_path = app.config.last_camera_path.clone();
         let failed_camera_paths = app.config.failed_camera_paths.clone();
 
-        let init_task = if let Some(handle) = camera_enum_handle {
+        let init_task = if preview_fake_camera {
+            // Preview harness (`--preview-fake-camera`): skip real enumeration and
+            // present synthetic devices so the full camera UI renders. Frames come
+            // from `--preview-source`; with a file source active the camera
+            // subscription never runs, so these devices are never opened. The
+            // prewarm enumeration handle, if any, is simply dropped.
+            let (cameras, formats) =
+                crate::backends::camera::synthetic::synthetic_preview_cameras();
+            Task::done(cosmic::Action::App(Message::CamerasInitialized(
+                cameras, 0, formats,
+            )))
+        } else if let Some(handle) = camera_enum_handle {
             let failed_paths = failed_camera_paths.clone();
             Task::perform(
                 async move {

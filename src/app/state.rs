@@ -1051,6 +1051,11 @@ pub struct AppFlags {
     /// "recording in progress" state without spending CI resources on a real
     /// encode. See `preview/capture-previews.sh`.
     pub preview_spoof_recording: bool,
+    /// Preview harness only: present synthetic camera devices instead of real
+    /// enumeration, so the full camera UI renders while frames come from the
+    /// file source. Lets the harness run with no camera and no dma-buf provider.
+    /// See `crate::backends::camera::synthetic`.
+    pub preview_fake_camera: bool,
     /// Pre-warmed results from background thread started before the event loop.
     /// If present, init() skips the synchronous enumeration.
     pub prewarm: Option<std::thread::JoinHandle<PrewarmResults>>,
