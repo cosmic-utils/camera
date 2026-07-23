@@ -318,3 +318,5 @@ metainfo-caption-filters = Filterauswahl
 metainfo-caption-recording = Laufende Videoaufnahme
 metainfo-caption-qr = QR-Code-Erkennung
 metainfo-caption-settings = Erweiterte Einstellungen
+action-toggle-tools-menu = Werkzeugmenü umschalten
+action-toggle-filters = Filterauswahl umschalten
