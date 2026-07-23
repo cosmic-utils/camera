@@ -680,12 +680,17 @@ action-toggle-settings = Open settings
 action-next-mode = Next mode
 # Moves to the previous capture mode in the carousel.
 action-prev-mode = Previous mode
+# Hides every on-screen control so only the live preview remains, or brings
+# them all back.
+action-toggle-ui-chrome = Toggle interface
 # Zooms the preview in.
 action-zoom-in = Zoom in
 # Zooms the preview out.
 action-zoom-out = Zoom out
 # Returns the zoom to its default level.
 action-reset-zoom = Reset zoom
+# Switches the preview between filling the window and showing the whole frame.
+action-toggle-preview-fit = Toggle fit / fill
 # Steps through the available photo aspect ratios.
 action-cycle-photo-aspect-ratio = Cycle photo aspect ratio
 # Opens saved photos and videos in the system gallery.

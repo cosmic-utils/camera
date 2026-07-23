@@ -121,6 +121,29 @@ impl AppModel {
         Task::none()
     }
 
+    /// Show or hide every piece of overlay chrome, leaving just the live
+    /// preview. Hiding also dismisses anything currently open (pickers, tools
+    /// menu, context drawer) so no panel is left floating over an otherwise
+    /// bare preview with no visible way back to it.
+    pub(crate) fn handle_toggle_ui_chrome(&mut self) -> Task<cosmic::Action<Message>> {
+        // Snapshot before flipping, like TogglePreviewFit: the bar heights
+        // animate to and from zero exactly as they do across the Photo↔View
+        // boundary, so a mid-animation reversal starts from where the eye is.
+        let from = self.capture_fit_state();
+        self.ui_hidden = !self.ui_hidden;
+
+        if self.ui_hidden {
+            self.close_all_pickers();
+            if self.core.window.show_context {
+                self.core.window.show_context = false;
+                self.sync_audio_probe();
+            }
+        }
+
+        info!(hidden = self.ui_hidden, "UI chrome toggled");
+        self.start_fit_animation(from)
+    }
+
     pub(crate) fn handle_toggle_device_info(&mut self) -> Task<cosmic::Action<Message>> {
         self.device_info_visible = !self.device_info_visible;
         info!(visible = self.device_info_visible, "Device info toggled");
