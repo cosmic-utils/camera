@@ -84,6 +84,9 @@ jobs:
             python3-ply \
             libyaml-dev
 
+      # Built from source: ubuntu-latest (currently Ubuntu 24.04) ships only
+      # libcamera 0.2.0 in apt. When the runner moves to Ubuntu 26.04 or later
+      # (which packages 0.7.0), drop this step and install libcamera-dev from apt.
       - name: Build and install libcamera 0.7.0 (native build)
         if: ${{ !matrix.use_cross }}
         run: |
