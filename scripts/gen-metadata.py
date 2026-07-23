@@ -363,7 +363,10 @@ def render_locale_gallery(images: list[str], keys: list[str],
         name = translations["camera"].get(lang, translations["camera"][SOURCE_LANG])
         done = sum(1 for key in keys if lang in translations[key])
         shots = len(by_lang[lang])
-        return (f"- [**{name}** (`{lang}`)]({LOCALES_DIR}/{lang}/README.md)"
+        # A leading Left-to-Right Mark keeps the list left aligned. Without it,
+        # a right-to-left native name (Arabic here) sets the base direction and
+        # GitHub right aligns every bullet in the list.
+        return (f"- &lrm;[**{name}** (`{lang}`)]({LOCALES_DIR}/{lang}/README.md)"
                 f" &mdash; {shots} shot{'s' if shots != 1 else ''},"
                 f" {done}/{len(keys)} captions translated")
 
