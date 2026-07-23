@@ -34,6 +34,14 @@ struct Cli {
     /// resources on a real encode. The elapsed timer shows a fixed placeholder.
     #[arg(long)]
     preview_spoof_recording: bool,
+
+    /// Preview harness only: present synthetic camera devices instead of
+    /// enumerating real ones, so the full camera UI (preview, switcher, format
+    /// pickers) renders while frames come from `--preview-source`. This lets the
+    /// screenshot harness run with no camera and no dma-buf provider, so it works
+    /// on any runner. Meaningful only alongside `--preview-source`.
+    #[arg(long)]
+    preview_fake_camera: bool,
 }
 
 fn parse_window_size(s: &str) -> Result<(f32, f32), String> {
@@ -162,6 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli.preview_source,
             cli.preview_window,
             cli.preview_spoof_recording,
+            cli.preview_fake_camera,
         ),
     }
 }
@@ -170,6 +179,7 @@ fn run_gui(
     preview_source: Option<PathBuf>,
     preview_window: Option<(f32, f32)>,
     preview_spoof_recording: bool,
+    preview_fake_camera: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Start pre-warming on background threads BEFORE the iced event loop.
     // This overlaps GStreamer init, device enumeration, and camera discovery
@@ -255,6 +265,7 @@ fn run_gui(
     let flags = camera::app::AppFlags {
         preview_source,
         preview_spoof_recording,
+        preview_fake_camera,
         prewarm: Some(prewarm_handle),
     };
 

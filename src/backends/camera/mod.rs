@@ -30,6 +30,7 @@
 
 pub mod libcamera;
 pub mod manager;
+pub mod synthetic;
 pub mod types;
 pub mod v4l2_controls;
 pub mod v4l2_utils;

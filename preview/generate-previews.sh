@@ -37,13 +37,10 @@ fi
 
 IMAGE="${PREVIEW_IMAGE:-camera-previews}"
 
-# Checked here rather than inside the container, where the failure surfaces
-# only as an empty preview in an otherwise valid-looking screenshot.
-if [[ ! -e /dev/udmabuf ]]; then
-    echo "error: /dev/udmabuf is missing. The fake camera cannot allocate buffers." >&2
-    echo "       Load the module with: sudo modprobe udmabuf" >&2
-    exit 1
-fi
+# The app fakes its own camera in CPU memory (--preview-fake-camera plus
+# --preview-source), so no dma-buf provider (/dev/udmabuf or a dma_heap) and no
+# device access is needed. This is what lets the harness run on GitHub-hosted
+# runners, whose kernel ships no udmabuf module.
 
 # Cargo's registry and target directory live outside the repo tree so a
 # container build never fights with the host toolchain over target/.
@@ -57,16 +54,6 @@ fi
 
 run_args=(
     --rm
-    # libcamera's virtual pipeline exports its frame buffers through dma-buf,
-    # and with no provider it fails to allocate and the app renders an empty
-    # preview. /dev/udmabuf is the one providers container-accessible here;
-    # /dev/dma_heap/system is root-only on Fedora. Load it with
-    # `modprobe udmabuf` if the device is missing.
-    #
-    # SELinux denies the container access to the device node even when it is
-    # passed in, so labelling has to be off for this run.
-    --device /dev/udmabuf
-    --security-opt label=disable
     -v "$REPO_DIR:/src:Z"
     -v "$CACHE_DIR/cargo:/cargo:Z"
     -v "$CACHE_DIR/target:/target:Z"

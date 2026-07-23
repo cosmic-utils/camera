@@ -3,10 +3,11 @@
 #
 # Regenerates the Flathub preview screenshots without a user present.
 #
-# Runs a headless wlroots compositor (sway), points libcamera's virtual pipeline
-# handler at a still image so the app sees a real camera with a fixed feed,
-# launches the app once per shot, drives it into the right UI state with its own
-# keyboard shortcuts, and captures the window rectangle with grim.
+# Runs a headless wlroots compositor (sway) and launches the app once per shot
+# with a synthetic camera fed by a still image (--preview-fake-camera plus
+# --preview-source), so it sees a fixed camera feed with no hardware and no
+# dma-buf provider. Each shot is driven into the right UI state with the app's
+# own keyboard shortcuts and captured with grim.
 #
 # In English each shot is taken in every theme / overlay-effect combination (see
 # VARIANTS); every other translated language gets the published combination only,
@@ -75,9 +76,9 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # Prerequisites
 # ---------------------------------------------------------------------------
 
-# identify sizes the virtual camera from the source image and reads captures
-# back; magick compares a localized shot against its English counterpart. Both
-# were previously undeclared, and both fail in ways that look like a valid shot.
+# identify reads captured screenshots back to check their size; magick compares
+# a localized shot against its English counterpart. Both were previously
+# undeclared, and both fail in ways that look like a valid shot.
 for tool in sway swaymsg grim wtype jq identify magick awk dbus-daemon; do
     command -v "$tool" >/dev/null || die "$tool is not installed (run this inside preview/Containerfile)"
 done
@@ -211,104 +212,17 @@ seed_config() {
 # Fake camera
 # ---------------------------------------------------------------------------
 #
-# libcamera's `virtual` pipeline handler enumerates a camera backed by still
-# images, so the app sees a genuine capture device with no hardware present.
+# The app fakes its own camera: `--preview-fake-camera` presents synthetic
+# devices (a back and a front, so the switcher shows) while `--preview-source`
+# feeds each shot's still image as the frames. Both are wired at launch below.
 #
-# This matters beyond just filling the preview: almost every control in the UI
-# is driven off the enumerated device list, so with no camera the exposure and
-# colour tools are missing from the tools menu, capture does nothing and the
-# gallery stays empty. Feeding frames in any other way produces a screenshot of
-# an app that thinks it has no camera.
-VIRTUAL_CONFIG_DIR="${VIRTUAL_CONFIG_DIR:-/usr/share/libcamera/pipeline/virtual}"
-FRAME_DIR="$SESSION_DIR/frames"
-
-# Points the virtual camera at exactly one image. The generator cycles through
-# every file in the directory, so a directory holding one image yields a still,
-# identical frame on every capture, which is what makes the shots comparable.
-setup_virtual_camera() {
-    local source_path="$1"
-
-    rm -rf "$FRAME_DIR"
-    # If any of this fails, the *previous* shot's virtual.yaml stays in place and
-    # this shot is captured against the previous shot's image: a completely valid
-    # PNG of the wrong scene. Under docker the config dir is also unwritable
-    # (generate-previews.sh runs it with --user), in which case libcamera falls
-    # back to its own defaults and every frame is a colour-bar test pattern.
-    mkdir -p "$FRAME_DIR" "$VIRTUAL_CONFIG_DIR" || {
-        warn "cannot create $VIRTUAL_CONFIG_DIR (unwritable? running as non-root?)"
-        return 1
-    }
-    cp "$source_path" "$FRAME_DIR/frame.jpg" || {
-        warn "cannot stage frame from $source_path"
-        return 1
-    }
-
-    # Advertise the source image's own aspect ratio. The generator scales each
-    # frame to whatever the camera claims to produce, so a fixed 16:9 sensor
-    # stretches a 4:3 or portrait source, enough to stop the QR decoder
-    # recognising a code, and enough to make every shot subtly wrong.
-    # libcamera rejects odd widths, so both axes are rounded down to even.
-    local src_w src_h long
-    read -r src_w src_h < <(identify -format '%w %h' "$source_path[0]" 2>/dev/null; echo)
-    # Deliberately not a 1920x1080 fallback: guessing a 16:9 sensor for a 4:3 or
-    # portrait source is exactly the stretch described above, and it produces a
-    # plausible-looking shot rather than an obvious failure.
-    if [[ -z "${src_w:-}" || -z "${src_h:-}" ]]; then
-        warn "could not read dimensions of $source_path"
-        return 1
-    fi
-
-    # Cap the long edge so software decoding of every frame stays affordable.
-    long=$(( src_w > src_h ? src_w : src_h ))
-    local cam_w cam_h
-    if (( long > 1920 )); then
-        cam_w=$(( src_w * 1920 / long ))
-        cam_h=$(( src_h * 1920 / long ))
-    else
-        cam_w=$src_w cam_h=$src_h
-    fi
-    cam_w=$(( cam_w - cam_w % 2 ))
-    cam_h=$(( cam_h - cam_h % 2 ))
-
-    # The camera id is the top-level key: there is no `cameras:` wrapper, and
-    # adding one is parsed as a camera named "cameras" whose (unrecognised)
-    # settings are silently replaced by defaults: a colour-bar test pattern.
-    # `location` takes libcamera's property spelling, not "front".
-    #
-    # Two cameras are advertised so the bottom bar shows the camera-switch
-    # button, which it only renders when more than one camera is present
-    # (src/app/bottom_bar/camera_switcher.rs). The app starts on the first one
-    # (Virtual0), and no shot presses switch, so both stream the same seeded
-    # frame and every shot displays the back camera's image.
-    if ! cat >"$VIRTUAL_CONFIG_DIR/virtual.yaml" <<EOF
-%YAML 1.1
----
-"Virtual0":
-  supported_formats:
-    - width: $cam_w
-      height: $cam_h
-      frame_rates:
-        - 30
-  frames:
-    path: "$FRAME_DIR"
-  location: "CameraLocationBack"
-  model: "Virtual Camera"
-"Virtual1":
-  supported_formats:
-    - width: $cam_w
-      height: $cam_h
-      frame_rates:
-        - 30
-  frames:
-    path: "$FRAME_DIR"
-  location: "CameraLocationFront"
-  model: "Virtual Front Camera"
-EOF
-    then
-        warn "cannot write $VIRTUAL_CONFIG_DIR/virtual.yaml"
-        return 1
-    fi
-}
+# This replaced libcamera's `virtual` pipeline handler, which exported its
+# buffers through dma-buf and so required /dev/udmabuf (or a dma_heap) on the
+# host — a provider GitHub-hosted runners do not ship. The file-source path is
+# pure CPU memory, so the harness now runs anywhere with no device access. The
+# synthetic devices matter beyond filling the preview: almost every control in
+# the UI is driven off the enumerated device list, so without them the preview,
+# switcher and format pickers would fall back to the "no camera" placeholder.
 
 # Drops a photo into the gallery directory so the gallery button shows a
 # thumbnail instead of its empty placeholder.
@@ -492,7 +406,6 @@ capture_shot() {
     # because it is called as an `if ! capture_shot ...` condition, so an
     # unchecked failure here would go on to screenshot the wrong thing and be
     # counted as a successful shot.
-    setup_virtual_camera "$source_path" || return 1
     seed_config "$theme" "$overlay" "$shot_config" || return 1
     if [[ ",$steps," == *,seed-photo,* ]]; then
         seed_gallery "$source_path" || return 1
@@ -500,16 +413,21 @@ capture_shot() {
         seed_gallery || return 1
     fi
 
-    # The window is sized by sway below rather than by `--preview-window`: that
-    # flag only takes effect alongside `--preview-source`, which would replace
-    # the virtual camera with a file source and put the app back into its
-    # no-camera UI.
+    # The app renders a synthetic camera (--preview-fake-camera) fed by the shot's
+    # source image (--preview-source): no real camera, no libcamera virtual
+    # pipeline, so no /dev/udmabuf or dma-buf provider is needed anywhere. The
+    # window opens at the shot's size via --preview-window; sway reconfirms it
+    # below (it owns the size for tiled windows).
     #
-    # A shot can ask the app to boot into a spoofed "recording in progress" state
-    # (Video mode + recording indicator, no encoder). It is a launch-time flag,
-    # not a keystroke, so it is resolved here like seed-photo and skipped in the
-    # step loop below. See --preview-spoof-recording in src/main.rs.
-    local app_args=()
+    # A shot can additionally ask the app to boot into a spoofed "recording in
+    # progress" state (Video mode + recording indicator, no encoder). That is a
+    # launch-time flag, not a keystroke, so it is resolved here like seed-photo
+    # and skipped in the step loop below. See --preview-spoof-recording.
+    local app_args=(
+        --preview-source "$source_path"
+        --preview-fake-camera
+        --preview-window "$window"
+    )
     if [[ ",$steps," == *,spoof-recording,* ]]; then
         app_args+=(--preview-spoof-recording)
     fi
