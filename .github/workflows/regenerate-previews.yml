@@ -64,15 +64,51 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
 
+      - name: Cache Rust build
+        # generate-previews.sh points CARGO_HOME and CARGO_TARGET_DIR at
+        # .preview-cache, so caching it turns the ~9 minute from-scratch build
+        # into an incremental one (only the camera crate recompiles). Keyed on
+        # Cargo.lock: the compiled dependencies are reused until they change, and
+        # restore-keys falls back to the most recent cache otherwise. The pinned
+        # container keeps rustc constant, so the cached artifacts stay valid.
+        uses: actions/cache@v4
+        with:
+          path: .preview-cache
+          key: preview-rust-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            preview-rust-
+
+      - name: Cache container image
+        # The Fedora image (dnf install of the toolchain) rebuilds only when the
+        # Containerfile changes.
+        id: image-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/preview-image.tar
+          key: preview-image-${{ hashFiles('preview/Containerfile') }}
+
+      - name: Build or load container image
+        run: |
+          if [ -f ~/preview-image.tar ]; then
+            echo "Loading cached image"
+            podman load -i ~/preview-image.tar
+          else
+            echo "Building image"
+            podman build -t camera-previews -f preview/Containerfile .
+            podman save -o ~/preview-image.tar camera-previews
+          fi
+
       - name: Install just
         uses: extractions/setup-just@v4
 
       - name: Regenerate previews
         # Renders every shot in the pinned container, pixel-compares against the
         # committed PNGs and overwrites only what actually changed, then refreshes
-        # the README/metainfo galleries that reference them.
+        # the README/metainfo galleries that reference them. The image is already
+        # built/loaded above, so NO_BUILD_IMAGE skips rebuilding it here.
         env:
           CONTAINER_ENGINE: podman
+          NO_BUILD_IMAGE: "1"
         run: just generate-previews
 
       - name: Open pull request if screenshots changed

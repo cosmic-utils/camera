@@ -63,8 +63,17 @@ STEP_PAUSE=1.8
 # Sleeping first lets the client finish the handshake, after which every key in
 # the same invocation lands.
 KEY_WARMUP_MS=800
-# How long to wait for the file source to produce the first frame.
-FRAME_WAIT=6
+# The app logs this on a dedicated tracing target the moment its first preview
+# frame is set (src/app/handlers/virtual_camera.rs). The app is launched with
+# `RUST_LOG=...,preview_ready=debug` so the line reaches the log, and each shot
+# waits for it rather than for a fixed guess — the frame comes from a decoded
+# still image, so how long that takes varies with runner load. Grepping the
+# app's own log is why this is a substring, not the whole formatted line.
+PREVIEW_READY_MARKER="preview_ready"
+# Safety net if the marker never arrives (a hang, or the line silently renamed):
+# proceed after this many seconds rather than blocking the whole run. The
+# per-shot `settle_ms` still runs afterwards, adding margin before the capture.
+READY_TIMEOUT=15
 # How long to wait for the window to appear before giving up on a shot.
 WINDOW_TIMEOUT=60
 
@@ -433,7 +442,11 @@ capture_shot() {
     if [[ ",$steps," == *,spoof-recording,* ]]; then
         app_args+=(--preview-spoof-recording)
     fi
-    "$CAMERA" "${app_args[@]}" >"$SESSION_DIR/camera-$tag.log" 2>&1 &
+    # Enable the `preview_ready` marker (see wait below) without turning on the
+    # rest of the app's debug logging, which would be a per-frame firehose. The
+    # container otherwise sets RUST_LOG=warn.
+    RUST_LOG="warn,preview_ready=debug" \
+        "$CAMERA" "${app_args[@]}" >"$SESSION_DIR/camera-$tag.log" 2>&1 &
     APP_PID=$!
 
     local geometry=""
@@ -470,9 +483,26 @@ capture_shot() {
     fi
     swaymsg "[pid=$APP_PID] focus" >/dev/null || true
 
-    # Let the camera start streaming and reach the first rendered frame before
-    # sending any input, since shortcuts pressed before then are dropped.
-    sleep "$FRAME_WAIT"
+    # Wait for the app to log that its first preview frame is set, then proceed
+    # the moment it is genuinely ready rather than after a fixed guess. Input
+    # sent before the first frame renders is dropped, so this gate matters.
+    local ready_waited=0
+    until grep -q "$PREVIEW_READY_MARKER" "$SESSION_DIR/camera-$tag.log" 2>/dev/null; do
+        if ! kill -0 "$APP_PID" 2>/dev/null; then
+            cat "$SESSION_DIR/camera-$tag.log" >&2
+            warn "$tag: app exited before signalling readiness"
+            APP_PID=""
+            return 1
+        fi
+        # Tenths of a second; bail out to the fixed timeout if the marker never
+        # comes so one stuck shot cannot hang the whole run.
+        if (( ready_waited >= READY_TIMEOUT * 10 )); then
+            warn "$tag: preview never signalled ready within ${READY_TIMEOUT}s; capturing anyway"
+            break
+        fi
+        sleep 0.1
+        ready_waited=$(( ready_waited + 1 ))
+    done
 
     local step
     IFS=',' read -ra step_list <<<"$steps"
