@@ -273,6 +273,12 @@ setup_virtual_camera() {
     # adding one is parsed as a camera named "cameras" whose (unrecognised)
     # settings are silently replaced by defaults: a colour-bar test pattern.
     # `location` takes libcamera's property spelling, not "front".
+    #
+    # Two cameras are advertised so the bottom bar shows the camera-switch
+    # button, which it only renders when more than one camera is present
+    # (src/app/bottom_bar/camera_switcher.rs). The app starts on the first one
+    # (Virtual0), and no shot presses switch, so both stream the same seeded
+    # frame and every shot displays the back camera's image.
     if ! cat >"$VIRTUAL_CONFIG_DIR/virtual.yaml" <<EOF
 %YAML 1.1
 ---
@@ -286,6 +292,16 @@ setup_virtual_camera() {
     path: "$FRAME_DIR"
   location: "CameraLocationBack"
   model: "Virtual Camera"
+"Virtual1":
+  supported_formats:
+    - width: $cam_w
+      height: $cam_h
+      frame_rates:
+        - 30
+  frames:
+    path: "$FRAME_DIR"
+  location: "CameraLocationFront"
+  model: "Virtual Front Camera"
 EOF
     then
         warn "cannot write $VIRTUAL_CONFIG_DIR/virtual.yaml"
