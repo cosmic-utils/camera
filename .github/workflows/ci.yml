@@ -349,6 +349,14 @@ jobs:
       - name: Install Flatpak dependencies
         run: just flatpak-deps x86_64
 
+      # Regenerate cargo-sources.json from Cargo.lock before building so the
+      # offline Flatpak build sees the current crate set. Dependabot bumps
+      # Cargo.lock but cannot regenerate this derived file, which would
+      # otherwise fail the build with a stale vendored crate. Not committed
+      # here; regenerate.yml reconciles the committed file after merge.
+      - name: Regenerate cargo sources
+        run: just flatpak-cargo-sources
+
       - name: Build Flatpak bundle
         run: just flatpak-bundle x86_64
 
