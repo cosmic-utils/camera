@@ -2,7 +2,7 @@
 
 # Caméra (fr)
 
-*Capture photos and videos.*
+*Prendre des photos et vidéos.*
 
 |  |  |
 | :---: | :---: |
