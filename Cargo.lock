@@ -1745,17 +1745,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derivative"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1888,11 +1877,10 @@ dependencies = [
 
 [[package]]
 name = "dng"
-version = "1.5.4"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71410875e6e6c6272e5cdbf00154ae7425a31f92a888f5676d2cf3308903f900"
+checksum = "28801145d7fe6befefdaba2354a955196f1041037e01dde43940bae450b58f81"
 dependencies = [
- "derivative",
  "json",
 ]
 
@@ -6922,9 +6910,9 @@ dependencies = [
 
 [[package]]
 name = "turbojpeg"
-version = "1.4.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b12ab1b96184a3879b4b16a74ee67436a5ef8833c0e6954a8cbf47ec9036559"
+checksum = "81313fcd64aaa30ddfd59eaa122968136b2dd9cd41d9619b126cf71e67a01702"
 dependencies = [
  "gcd",
  "libc",
