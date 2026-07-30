@@ -6,8 +6,7 @@ pkgrel=0
 pkgdesc="Modern camera app for Linux desktops and phones"
 url="https://github.com/cosmic-utils/cosmic-ext-camera"
 # armhf, armv7, x86: 32-bit is problematic for libcosmic apps
-# riscv64: blocked by cosmic-icons
-arch="all !armhf !armv7 !riscv64 !x86"
+arch="all !armhf !armv7 !x86"
 license="GPL-3.0-only"
 depends="
 	cosmic-icons
