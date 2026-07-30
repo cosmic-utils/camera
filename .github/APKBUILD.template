@@ -11,6 +11,7 @@ license="GPL-3.0-only"
 depends="
 	cosmic-icons
 	gst-libav
+	gst-plugin-pipewire
 	gst-plugins-bad
 	gst-plugins-base
 	gst-plugins-good
