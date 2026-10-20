@@ -37,7 +37,7 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 dirs = "7.0.0"
 rqrr = "0.11.0"
 rfd = "0.17.2"
-zbus = "5.16.0"
+zbus = "6.0.0"
 # XDG portal integration for color-scheme detection on non-COSMIC desktops
 ashpd = { version = "0.13.11", default-features = false, features = [
     "open_uri",
