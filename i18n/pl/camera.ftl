@@ -44,7 +44,7 @@ settings-video = Film
 settings-device = Urządzenie
 settings-microphone = Mikrofon
 settings-record-audio = Nagraj dźwięk
-settings-audio-encoder = Enkoder dźwięku
+settings-audio-encoder = Enkoder dźwięku w filmach
 settings-mic-level = Poziom mikrofonu
 settings-mic-level-initializing = Inicjalizacja…
 settings-encoder = Enkoder
@@ -299,3 +299,21 @@ settings-controls-position-description = Daj interfejs sterowania uwiecznianiem 
 controls-position-bottom = Dół
 controls-position-left = Lewo
 controls-position-right = Prawo
+shutdown-pending-saves =
+    { $count ->
+        [0] Finalizowanie wyłączania
+        [one] 1 oczekujący film/zdjęcie do zapisania
+        [few] { $count } oczekujące filmy/zdjęcia do zapisania
+       *[other] { $count } oczekujących filmów/zdjęć do zapisania
+    }
+settings-motion-photo = Zdjęcie w Ruchu
+settings-motion-photo-description = Ciągle buforuj krótki film w pamięci używając wybranego enkodera. Zapisz zdjęcia JPEG/AVIF z 1,25 sekundy przed i po migawce. Niedostępne dla PNG/DNG; twoje ustawienia są zapisywane mimo zmiany formatu.
+settings-audio-encoder-description = Odnosi się tylko do zapisu uwiecznianego filmu. Zdjęcia w ruchu zawsze używają AAC, jak wymaga specyfikacja Android Motion Photo.
+no-camera-available = Aparat niedostępny
+settings-demosaicing = Demozaikizacja
+settings-demosaicing-description = Algorytm używany do rekonstrukcji kolorów w zdjęciach RAW
+insights-v4l2-in-backend = Dostępne w { $backend }
+insights-v4l2-active-in-backend = Aktywny w { $backend }
+insights-v4l2-not-in-backend = Niedostępny w { $backend }
+insights-frame-copy-time = Czas kopiowania buforowania ramki
+insights-preview-delivery-drops = Gwałtowny spadek płynności aparatu
